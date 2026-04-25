@@ -15,6 +15,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
-EXPOSE 5900
+EXPOSE 5900 6080
 
 CMD ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

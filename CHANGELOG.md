@@ -2,13 +2,16 @@
 
 All notable changes in this repository, based on git commit history.
 
-## 2026-04-25
+## Unreleased
 
-### `c058457` - Add CHANGELOG.md to document notable changes and updates in the repository
-- **Author:** VjayRam
-- **Summary:** Introduced the repository changelog for tracking historical changes.
-- **Key files changed:**
-  - Added `CHANGELOG.md`
+### Sandbox Streaming Enhancements (Task 1.3 WIP)
+- **Summary:** Added noVNC web bridge runtime wiring on top of the existing Xvfb + x11vnc setup.
+- **Current working tree updates:**
+  - Modified `Backend/sandbox/supervisord.conf` to add managed `websockify` service (`6080 -> 5900`) with startup sequencing.
+  - Modified `Backend/sandbox/Dockerfile` to expose `6080` alongside `5900`.
+- **Verification status:** Container-level validation completed (`websockify` process healthy and `http://localhost:6080/vnc.html` reachable).
+
+## 2026-04-25
 
 ### `d17969c` - Add Xvfb and x11vnc configuration to Dockerfile and create supervisord.conf for managing services
 - **Author:** VjayRam
