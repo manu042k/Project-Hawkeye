@@ -4,12 +4,19 @@ All notable changes in this repository, based on git commit history.
 
 ## Unreleased
 
-### Sandbox Streaming Enhancements (Task 1.3 WIP)
-- **Summary:** Added noVNC web bridge runtime wiring on top of the existing Xvfb + x11vnc setup.
-- **Current working tree updates:**
+### Sandbox Streaming Enhancements (Task 1.3)
+- **Summary:** Completed noVNC web bridge wiring on top of the existing `Xvfb + x11vnc` runtime stack.
+- **Updates:**
   - Modified `Backend/sandbox/supervisord.conf` to add managed `websockify` service (`6080 -> 5900`) with startup sequencing.
   - Modified `Backend/sandbox/Dockerfile` to expose `6080` alongside `5900`.
-- **Verification status:** Container-level validation completed (`websockify` process healthy and `http://localhost:6080/vnc.html` reachable).
+- **Verification status:** Confirmed container process health and noVNC availability at `http://localhost:6080/vnc.html`.
+
+### Validation Script and Runtime Readiness (Task 1.4)
+- **Summary:** Added a Playwright validation script for visible browser automation and ensured fresh containers can run it without manual dependency install.
+- **Updates:**
+  - Added `Backend/sandbox/test.py` to launch headed Chromium on `DISPLAY=:99`, navigate to Wikipedia, and perform slow scrolling.
+  - Modified `Backend/sandbox/Dockerfile` to install `playwright==1.58.0` during image build.
+- **Verification status:** Script execution validated in-container with noVNC stream viewability.
 
 ## 2026-04-25
 
