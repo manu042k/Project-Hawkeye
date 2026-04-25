@@ -148,7 +148,7 @@ You need an LLM capable of robust function calling, reasoning, and ideally, visi
 
 - **Task 1.1**: Base Docker Environment Setup
 
-    - **Development**: Create a Dockerfile using an official Playwright base image (e.g., mcr.microsoft.com/playwright/python:v1.40.0-jammy). Install system dependencies: xvfb, x11vnc, novnc, websockify, and supervisor.
+    - **Development**: Create a Dockerfile using an official Playwright base image (e.g., mcr.microsoft.com/playwright/python:v1.58.0-jammy). Install system dependencies: xvfb, x11vnc, novnc, websockify, and supervisor.
 
     - **Testing**: Build the container and verify bash access.
 
