@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     novnc=1:1.0.0-5 \
     websockify=0.10.0+dfsg1-2build1 \
     supervisor=4.2.1-1ubuntu1 \
+    && python -m pip install --no-cache-dir playwright==1.58.0 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
