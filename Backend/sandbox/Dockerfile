@@ -2,6 +2,7 @@ FROM mcr.microsoft.com/playwright/python:v1.58.0-jammy
 
 USER root
 ENV DEBIAN_FRONTEND=noninteractive
+ENV DISPLAY=:99
 
 # Pin exact Jammy package versions for reproducible builds.
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -12,4 +13,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     supervisor=4.2.1-1ubuntu1 \
     && rm -rf /var/lib/apt/lists/*
 
-USER pwuser
+COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+
+EXPOSE 5900
+
+CMD ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
