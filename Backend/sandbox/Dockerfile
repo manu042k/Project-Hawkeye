@@ -13,3 +13,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 USER pwuser
+
+COPY --chown=pwuser:pwuser supervisord.conf /home/pwuser/sandbox/supervisord.conf
+COPY --chown=pwuser:pwuser entrypoint.sh /home/pwuser/sandbox/entrypoint.sh
+
+EXPOSE 6080
+
+ENTRYPOINT ["/bin/bash", "/home/pwuser/sandbox/entrypoint.sh"]
