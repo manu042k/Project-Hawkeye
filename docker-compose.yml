@@ -1,0 +1,28 @@
+services:
+  hawkeye-sandbox:
+    container_name: hawkeye-sandbox
+    build:
+      context: ./Backend/sandbox
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    ports:
+      - "6080:6080"
+    environment:
+      DISPLAY: ":99"
+      SCREEN_WIDTH: "1280"
+      SCREEN_HEIGHT: "720"
+      SCREEN_DEPTH: "24"
+      # Allow runtime override: CHROME_URL="..." docker compose up -d
+      CHROME_URL: "${CHROME_URL:-https://www.google.com}"
+      # Optional: if your site uses Google services, pass the key through.
+      GOOGLE_API_KEY: "${GOOGLE_API_KEY:-}"
+    restart: unless-stopped
+    shm_size: "1gb"
+    healthcheck:
+      # Root serves an auto-connect noVNC index.html
+      test: ["CMD", "bash", "-lc", "curl -fsS http://localhost:6080/ >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+

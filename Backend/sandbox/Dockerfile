@@ -10,12 +10,33 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     novnc=1:1.0.0-5 \
     websockify=0.10.0+dfsg1-2build1 \
     supervisor=4.2.1-1ubuntu1 \
+    xfce4 \
+    xfce4-terminal \
+    dbus-x11 \
     && rm -rf /var/lib/apt/lists/*
+
+# The Playwright base image bundles browsers, but not necessarily the Python package.
+# Install Playwright (Python) so sandbox scripts can `import playwright` reliably.
+RUN python -m pip install --no-cache-dir playwright==1.58.0
+
+# Pre-create X11/ICE temp dirs (required when running as non-root).
+RUN mkdir -p /tmp/.X11-unix /tmp/.ICE-unix && chmod 1777 /tmp/.X11-unix /tmp/.ICE-unix
 
 USER pwuser
 
 COPY --chown=pwuser:pwuser supervisord.conf /home/pwuser/sandbox/supervisord.conf
 COPY --chown=pwuser:pwuser entrypoint.sh /home/pwuser/sandbox/entrypoint.sh
+COPY --chown=pwuser:pwuser launch_chrome.sh /home/pwuser/sandbox/launch_chrome.sh
+COPY --chown=pwuser:pwuser open_website.py /home/pwuser/sandbox/open_website.py
+COPY --chown=pwuser:pwuser novnc-index.html /home/pwuser/sandbox/novnc-web/index.html
+
+USER root
+RUN /bin/bash -lc 'set -euo pipefail; \
+  mkdir -p /home/pwuser/sandbox/novnc-web; \
+  # Serve upstream noVNC assets, but with our own index.html.
+  for p in /usr/share/novnc/*; do ln -sf "$p" "/home/pwuser/sandbox/novnc-web/$(basename "$p")"; done; \
+  chmod +x /home/pwuser/sandbox/entrypoint.sh /home/pwuser/sandbox/launch_chrome.sh'
+USER pwuser
 
 EXPOSE 6080
 
