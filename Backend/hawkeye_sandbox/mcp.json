@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "chrome-devtools-EXAMPLE": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "chrome-devtools-mcp@latest",
+        "--browser-url=http://127.0.0.1:PORT",
+        "--no-usage-statistics"
+      ]
+    },
+    "playwright-EXAMPLE": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@latest",
+        "--cdp-endpoint=http://127.0.0.1:PORT"
+      ]
+    }
+  }
+}
+

@@ -2,7 +2,7 @@ services:
   hawkeye-sandbox:
     container_name: hawkeye-sandbox
     build:
-      context: ./Backend/hawkeye_orchestrator/sandbox_image
+      context: ./Backend/hawkeye_sandbox/sandbox_image
       dockerfile: Dockerfile
     env_file:
       - .env
