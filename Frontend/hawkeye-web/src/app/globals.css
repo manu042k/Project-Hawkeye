@@ -49,57 +49,57 @@
 }
 
 :root {
-  /* Hawkeye design-system tokens (from stitch_global_theme_configuration/the_design_system/DESIGN.md) */
+  /* Hawkeye design-system tokens (light defaults) */
   --font-sans: var(--font-inter);
   --font-mono: var(--font-jetbrains-mono);
 
-  --background: #10131a;
-  --foreground: #e1e2ec;
+  --background: #f8fafc;
+  --foreground: #0f172a;
 
-  --card: #1d2027; /* surface-container */
-  --card-foreground: #e1e2ec; /* on-surface */
+  --card: #ffffff;
+  --card-foreground: #0f172a;
 
-  --popover: #272a31; /* surface-container-high */
-  --popover-foreground: #e1e2ec;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
 
-  --primary: #adc6ff;
-  --primary-foreground: #002e6a;
+  --primary: #005ac2; /* inverse-primary */
+  --primary-foreground: #ffffff;
 
-  --secondary: #c0c7d3;
-  --secondary-foreground: #2a313b;
+  --secondary: #e2e8f0;
+  --secondary-foreground: #0f172a;
 
-  --muted: #191b23; /* surface-container-low */
-  --muted-foreground: #c2c6d6; /* on-surface-variant */
+  --muted: #f1f5f9;
+  --muted-foreground: #475569;
 
-  --accent: #ffb786; /* tertiary */
-  --accent-foreground: #502400; /* on-tertiary */
+  --accent: #e2e8f0;
+  --accent-foreground: #0f172a;
 
-  --destructive: #ffb4ab; /* error */
+  --destructive: #dc2626;
 
-  --border: #424754; /* outline-variant */
-  --input: #32353c; /* surface-variant */
-  --ring: #adc6ff; /* primary */
+  --border: #e2e8f0;
+  --input: #e2e8f0;
+  --ring: #005ac2;
 
-  --chart-1: #adc6ff;
-  --chart-2: #c0c7d3;
-  --chart-3: #ffb786;
-  --chart-4: #8c909f;
-  --chart-5: #df7412;
+  --chart-1: #005ac2;
+  --chart-2: #0f172a;
+  --chart-3: #df7412;
+  --chart-4: #475569;
+  --chart-5: #8c909f;
 
   --radius: 0.5rem;
 
-  --sidebar: #191b23; /* surface-container-low */
-  --sidebar-foreground: #e1e2ec;
-  --sidebar-primary: #adc6ff;
-  --sidebar-primary-foreground: #002e6a;
-  --sidebar-accent: #272a31; /* surface-container-high */
-  --sidebar-accent-foreground: #e1e2ec;
-  --sidebar-border: #424754;
-  --sidebar-ring: #adc6ff;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0f172a;
+  --sidebar-primary: #005ac2;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f1f5f9;
+  --sidebar-accent-foreground: #0f172a;
+  --sidebar-border: #e2e8f0;
+  --sidebar-ring: #005ac2;
 }
 
 .dark {
-  /* Keep .dark aligned with :root (Hawkeye is dark-first) */
+  /* Hawkeye design-system tokens (dark) */
   --background: #10131a;
   --foreground: #e1e2ec;
   --card: #1d2027;
@@ -112,8 +112,8 @@
   --secondary-foreground: #2a313b;
   --muted: #191b23;
   --muted-foreground: #c2c6d6;
-  --accent: #ffb786;
-  --accent-foreground: #502400;
+  --accent: #272a31;
+  --accent-foreground: #e1e2ec;
   --destructive: #ffb4ab;
   --border: #424754;
   --input: #32353c;

@@ -9,6 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { ThemeToggle } from "@/components/theme/theme-toggle";
 
 import { AppSidebar } from "./app-sidebar";
 
@@ -94,6 +95,8 @@ export function AppTopbar({
 
         <div className="flex items-center gap-2">
           {rightSlot}
+
+          <ThemeToggle />
 
           <button
             type="button"
