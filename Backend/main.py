@@ -1,6 +1,9 @@
-def main():
-    print("Hello from project-hawkeye!")
+from Backend.agent.entrypoints.cli import main as agent_main
+
+
+def main() -> int:
+    return agent_main()
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

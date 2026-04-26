@@ -1,0 +1,84 @@
+{
+  "url_to_test": "https://www.wikipedia.org/",
+  "browser": "chromium",
+  "viewport": {
+    "width": 1366,
+    "height": 768
+  },
+  "test_cases": [
+    {
+      "test_id": "tc-001",
+      "test_name": "Open Wikipedia and search for Avengers Doomsday",
+      "assertions": [
+        {
+          "type": "url_contains",
+          "value": "wikipedia.org"
+        },
+        {
+          "type": "text_present",
+          "value": "Avengers"
+        }
+      ],
+      "actions": [
+        {
+          "type": "navigate",
+          "url": "https://www.wikipedia.org/",
+          "reason": "open wikipedia home"
+        },
+        {
+          "type": "type",
+          "selector": "#searchInput",
+          "text": "avengers doomsday",
+          "reason": "enter search query"
+        },
+        {
+          "type": "click",
+          "selector": "button[type='submit']",
+          "reason": "submit search"
+        },
+        {
+          "type": "wait",
+          "seconds": 2.0
+        }
+      ],
+      "additional_context": {
+        "user_id": "demo-user",
+        "password": "super-secret-password"
+      }
+    },
+    {
+      "test_id": "tc-002",
+      "test_name": "Inspect results page and perform extra interactions",
+      "assertions": [
+        {
+          "type": "title_contains",
+          "value": "Avengers"
+        },
+        {
+          "type": "url_contains",
+          "value": "wikipedia.org"
+        }
+      ],
+      "actions": [
+        {
+          "type": "scroll",
+          "pixels": 900,
+          "reason": "scroll through results/content"
+        },
+        {
+          "type": "wait",
+          "seconds": 1.5
+        },
+        {
+          "type": "scroll",
+          "pixels": -450,
+          "reason": "scroll back up for visibility"
+        }
+      ],
+      "additional_context": {
+        "token": "abc123",
+        "notes": "wikipedia avengers doomsday search scenario"
+      }
+    }
+  ]
+}
