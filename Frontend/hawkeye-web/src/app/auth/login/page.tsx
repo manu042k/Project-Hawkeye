@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { signIn } from "next-auth/react";
 import { useMemo, useState } from "react";
 import { Loader2, Mail, ShieldCheck } from "lucide-react";
 
@@ -135,11 +136,21 @@ export default function LoginPage() {
 
               <CardContent className="space-y-4">
                 <div className="grid gap-2">
-                  <Button type="button" variant="outline" className="h-11 justify-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-11 justify-center gap-2"
+                    onClick={() => signIn("github", { callbackUrl: "/app/dashboard" })}
+                  >
                     <GitHubIcon className="size-4 text-foreground" />
                     Continue with GitHub
                   </Button>
-                  <Button type="button" variant="outline" className="h-11 justify-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-11 justify-center gap-2"
+                    onClick={() => signIn("google", { callbackUrl: "/app/dashboard" })}
+                  >
                     <GoogleIcon className="size-4" />
                     Continue with Google
                   </Button>
