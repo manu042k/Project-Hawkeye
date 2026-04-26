@@ -228,3 +228,4 @@ artifacts/
 # Generated MCP configs (runtime)
 Backend/hawkeye_sandbox/generated.mcp.sandboxes.json
 scripts/
+stitch_global_theme_configuration/
