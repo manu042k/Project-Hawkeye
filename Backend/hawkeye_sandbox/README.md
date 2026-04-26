@@ -25,15 +25,27 @@ docker compose build hawkeye-sandbox
 ## Example: spawn one sandbox
 
 ```bash
-python Backend/hawkeye_sandbox/examples/spawn_one.py
+python Backend/hawkeye_sandbox/examples/spawn_one.py --url "https://example.com"
 ```
 
 It prints a `noVNC` URL you can open.
 
+Record a short MP4 (saved under `artifacts/`):
+
+```bash
+python Backend/hawkeye_sandbox/examples/spawn_one.py --url "https://example.com" --record
+```
+
 ## Example: spawn all supported browsers
 
 ```bash
-python Backend/hawkeye_sandbox/examples/spawn_all.py
+python Backend/hawkeye_sandbox/examples/spawn_all.py --url "https://example.com"
+```
+
+Record one MP4 per container (saved under `artifacts/`):
+
+```bash
+python Backend/hawkeye_sandbox/examples/spawn_all.py --url "https://example.com" --record
 ```
 
 ## MCP (control multiple spawned containers)
@@ -61,11 +73,22 @@ Spawn one sandbox:
 python -m Backend.hawkeye_sandbox.cli --url "https://example.com" --browser chromium
 ```
 
+Spawn one sandbox + record to `artifacts/sandbox-run.mp4`:
+
+```bash
+python -m Backend.hawkeye_sandbox.cli --url "https://example.com" --browser chromium --record
+```
+
 Spawn all:
 
 ```bash
 python -m Backend.hawkeye_sandbox.cli --url "https://example.com" --all
 ```
+
+## Recording notes
+
+- Recording uses `ffmpeg` inside the container to capture `DISPLAY=:99` to an MP4.
+- Works only if the sandbox image includes `ffmpeg` (it does by default in this repo).
 
 ## Notes
 
