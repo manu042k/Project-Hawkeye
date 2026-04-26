@@ -2,19 +2,22 @@ services:
   hawkeye-sandbox:
     container_name: hawkeye-sandbox
     build:
-      context: ./Backend/sandbox
+      context: ./Backend/hawkeye_orchestrator/sandbox_image
       dockerfile: Dockerfile
     env_file:
       - .env
     ports:
       - "6080:6080"
+      - "19223:9223" # CDP proxy for MCP servers (-> 9222 in-container)
     environment:
       DISPLAY: ":99"
       SCREEN_WIDTH: "1280"
       SCREEN_HEIGHT: "720"
       SCREEN_DEPTH: "24"
       # Allow runtime override: CHROME_URL="..." docker compose up -d
-      CHROME_URL: "${CHROME_URL:-https://www.google.com}"
+      CHROME_URL: "${CHROME_URL:-about:blank}"
+      CHROME_CDP_PORT: "${CHROME_CDP_PORT:-9222}"
+      BROWSER: "${BROWSER:-chromium}"
       # Optional: if your site uses Google services, pass the key through.
       GOOGLE_API_KEY: "${GOOGLE_API_KEY:-}"
     restart: unless-stopped
