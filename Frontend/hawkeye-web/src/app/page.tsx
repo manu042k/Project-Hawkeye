@@ -1,14 +1,31 @@
+import Image from "next/image";
+import Link from "next/link";
+import {
+  Activity,
+  ArrowRight,
+  Bug,
+  CheckCircle2,
+  Eye,
+  Gauge,
+  Terminal,
+} from "lucide-react";
+
+import { Badge } from "@/components/ui/badge";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
+
 export default function Home() {
   return (
     <div className="min-h-full bg-background text-foreground">
       <header className="sticky top-0 z-50 w-full border-b border-border/70 bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/70">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-6 py-4">
-          <a href="#" className="flex items-center gap-2 font-semibold tracking-tight">
+          <Link href="/" className="flex items-center gap-2 font-semibold tracking-tight">
             <span className="inline-flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-border/60">
               <Eye className="size-4" aria-hidden="true" />
             </span>
             <span className="text-base">Hawkeye</span>
-          </a>
+          </Link>
 
           <nav className="hidden items-center gap-8 text-sm md:flex">
             <a className="text-muted-foreground transition-colors hover:text-foreground" href="#features">
@@ -17,22 +34,30 @@ export default function Home() {
             <a className="text-muted-foreground transition-colors hover:text-foreground" href="#how-it-works">
               How it Works
             </a>
-            <a className="text-muted-foreground transition-colors hover:text-foreground" href="#docs">
-              Documentation
-            </a>
+            <Link className="text-muted-foreground transition-colors hover:text-foreground" href="/app/dashboard">
+              Product
+            </Link>
             <a className="text-muted-foreground transition-colors hover:text-foreground" href="#pricing">
               Pricing
             </a>
           </nav>
 
           <div className="flex items-center gap-3">
-            <a
-              href="#signin"
+            <Link
+              href="/auth/login"
               className="hidden text-sm font-medium text-muted-foreground transition-colors hover:text-foreground md:block"
             >
               Sign In
-            </a>
-            <Button className="shadow-[0_0_20px_rgba(173,198,255,0.15)]">Get Started</Button>
+            </Link>
+            <Link
+              href="/app/dashboard"
+              className={cn(
+                buttonVariants({ variant: "default" }),
+                "shadow-[0_0_20px_rgba(173,198,255,0.15)]"
+              )}
+            >
+              Get Started
+            </Link>
           </div>
         </div>
       </header>
@@ -66,13 +91,22 @@ export default function Home() {
             </p>
 
             <div className="mt-10 flex flex-col items-stretch justify-center gap-3 sm:flex-row sm:items-center">
-              <Button size="lg" className="h-11 px-7 shadow-[0_0_20px_rgba(173,198,255,0.25)]">
+              <Link
+                href="/app/dashboard"
+                className={cn(
+                  buttonVariants({ variant: "default", size: "lg" }),
+                  "h-11 px-7 shadow-[0_0_20px_rgba(173,198,255,0.25)]"
+                )}
+              >
                 Start Building Free
-              </Button>
-              <Button size="lg" variant="outline" className="h-11 px-7">
+              </Link>
+              <Link
+                href="/app/settings/integrations"
+                className={cn(buttonVariants({ variant: "outline", size: "lg" }), "h-11 px-7")}
+              >
                 <Terminal className="size-4" aria-hidden="true" />
                 Read Documentation
-              </Button>
+              </Link>
             </div>
           </div>
 
@@ -240,13 +274,13 @@ export default function Home() {
                 </p>
 
                 <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-                  <Button size="lg" className="h-11 px-7">
+                  <Link href="/app/dashboard" className={cn(buttonVariants({ variant: "default", size: "lg" }), "h-11 px-7")}>
                     Start Free Trial
-                  </Button>
+                  </Link>
                   <span className="text-sm text-muted-foreground sm:px-2">or</span>
-                  <a className="text-sm text-foreground/90 underline underline-offset-4 hover:text-foreground" href="#sales">
+                  <Link className="text-sm text-foreground/90 underline underline-offset-4 hover:text-foreground" href="/auth/login">
                     Talk to Sales
-                  </a>
+                  </Link>
                 </div>
               </div>
             </Card>
@@ -290,18 +324,3 @@ export default function Home() {
     </div>
   );
 }
-
-import Image from "next/image";
-import {
-  Activity,
-  ArrowRight,
-  Bug,
-  CheckCircle2,
-  Eye,
-  Gauge,
-  Terminal,
-} from "lucide-react";
-
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
