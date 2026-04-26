@@ -227,3 +227,4 @@ __marimo__/
 artifacts/
 # Generated MCP configs (runtime)
 Backend/hawkeye_sandbox/generated.mcp.sandboxes.json
+scripts/

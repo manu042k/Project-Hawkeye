@@ -42,6 +42,7 @@ class SandboxHandle:
     container_name: str
     novnc_url: str
     cdp_url: Optional[str]
+    recording_container_path: Optional[str] = None
 
     def __str__(self) -> str:
         return f"{self.container_name} novnc={self.novnc_url} cdp={self.cdp_url or '-'}"
@@ -58,6 +59,86 @@ class SandboxManager:
     def __init__(self) -> None:
         pass
 
+    def start_recording(
+        self,
+        handle: SandboxHandle,
+        *,
+        width: int = 1366,
+        height: int = 768,
+        fps: int = 20,
+        container_path: str = "/tmp/hawkeye-run.mp4",
+    ) -> SandboxHandle:
+        """
+        Start recording the sandbox X11 display (:99) to an MP4 inside the container.
+        Requires ffmpeg in the sandbox image.
+        """
+        # Wait briefly for Xvfb to come up.
+        for _ in range(30):
+            ready = subprocess.run(
+                ["docker", "exec", handle.container_name, "bash", "-lc", "test -S /tmp/.X11-unix/X99"],
+                check=False,
+            )
+            if ready.returncode == 0:
+                break
+            time.sleep(0.2)
+
+        log_path = "/tmp/hawkeye-ffmpeg.log"
+        cmd = (
+            f"rm -f {container_path} {log_path}; "
+            f"ffmpeg -y -loglevel info -video_size {width}x{height} -framerate {fps} "
+            f"-f x11grab -i :99.0 -c:v libx264 -preset ultrafast -pix_fmt yuv420p {container_path} "
+            f"> {log_path} 2>&1"
+        )
+        subprocess.run(
+            ["docker", "exec", "-d", handle.container_name, "bash", "-lc", cmd],
+            check=False,
+        )
+        return dataclasses.replace(handle, recording_container_path=container_path)
+
+    def stop_recording(self, handle: SandboxHandle) -> None:
+        """
+        Stop ffmpeg recording (SIGINT so mp4 finalizes).
+        """
+        subprocess.run(
+            ["docker", "exec", handle.container_name, "bash", "-lc", "pkill -INT -f 'ffmpeg.*x11grab' || true"],
+            check=False,
+        )
+        subprocess.run(["docker", "exec", handle.container_name, "bash", "-lc", "sleep 1"], check=False)
+
+    def fetch_recording(self, handle: SandboxHandle, *, host_path: str) -> str:
+        """
+        Copy the recorded MP4 from the container to host_path.
+        """
+        if not handle.recording_container_path:
+            raise RuntimeError("No recording_container_path set on handle (did you call start_recording?).")
+        import os
+
+        os.makedirs(os.path.dirname(host_path) or ".", exist_ok=True)
+        # Wait briefly for ffmpeg to create the file.
+        for _ in range(30):
+            test = subprocess.run(
+                ["docker", "exec", handle.container_name, "bash", "-lc", f"test -s {handle.recording_container_path}"],
+                check=False,
+            )
+            if test.returncode == 0:
+                break
+            time.sleep(0.2)
+        cp = subprocess.run(
+            ["docker", "cp", f"{handle.container_name}:{handle.recording_container_path}", host_path],
+            check=False,
+        )
+        if cp.returncode != 0 or not os.path.exists(host_path):
+            # Try to copy ffmpeg log for debugging.
+            subprocess.run(
+                ["docker", "cp", f"{handle.container_name}:/tmp/hawkeye-ffmpeg.log", host_path + ".ffmpeg.log"],
+                check=False,
+            )
+            raise RuntimeError(
+                f"Recording file not found in container at {handle.recording_container_path}. "
+                f"Copied log to {host_path}.ffmpeg.log"
+            )
+        return host_path
+
     @contextlib.contextmanager
     def managed(self, cfg: SandboxConfig, *, timeout_s: int = 45, remove: bool = True) -> Iterator[SandboxHandle]:
         """
@@ -71,6 +152,9 @@ class SandboxManager:
         try:
             yield handle
         finally:
+            # If user started a recording, stop it cleanly before teardown.
+            if handle.recording_container_path:
+                self.stop_recording(handle)
             self.stop(handle, remove=remove)
 
     def spawn(self, cfg: SandboxConfig, *, timeout_s: int = 45) -> SandboxHandle:

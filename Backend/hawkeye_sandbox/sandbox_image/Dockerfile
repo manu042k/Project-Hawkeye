@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xfce4-terminal \
     dbus-x11 \
     socat \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # The Playwright base image bundles browsers, but not necessarily the Python package.
