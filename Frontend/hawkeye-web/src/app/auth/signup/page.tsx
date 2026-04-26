@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { Eye, Loader2, Mail, ShieldCheck } from "lucide-react";
+import { Eye, Loader2, Mail, ShieldCheck, User } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -49,10 +49,17 @@ function GitHubIcon(props: React.SVGProps<SVGSVGElement>) {
   );
 }
 
-export default function LoginPage() {
+export default function SignupPage() {
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  const nameError = useMemo(() => {
+    if (!name) return null;
+    return name.trim().length >= 2 ? null : "Enter your full name.";
+  }, [name]);
 
   const emailError = useMemo(() => {
     if (!email) return null;
@@ -61,10 +68,24 @@ export default function LoginPage() {
 
   const passwordError = useMemo(() => {
     if (!password) return null;
-    return password.length >= 6 ? null : "Password must be at least 6 characters.";
+    return password.length >= 8 ? null : "Password must be at least 8 characters.";
   }, [password]);
 
-  const canSubmit = !emailError && !passwordError && email.length > 0 && password.length > 0 && !submitting;
+  const confirmError = useMemo(() => {
+    if (!confirm) return null;
+    return confirm === password ? null : "Passwords do not match.";
+  }, [confirm, password]);
+
+  const canSubmit =
+    !nameError &&
+    !emailError &&
+    !passwordError &&
+    !confirmError &&
+    name.length > 0 &&
+    email.length > 0 &&
+    password.length > 0 &&
+    confirm.length > 0 &&
+    !submitting;
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -72,7 +93,6 @@ export default function LoginPage() {
     setSubmitting(true);
     await new Promise((r) => setTimeout(r, 700));
     setSubmitting(false);
-    // Static build: route to app dashboard
     window.location.href = "/app/dashboard";
   }
 
@@ -93,28 +113,26 @@ export default function LoginPage() {
                 </span>
                 Hawkeye
               </Link>
-              <h1 className="mt-10 text-3xl font-semibold tracking-tight">
-                Sign in to monitor test runs, baselines, and vault secrets.
-              </h1>
+              <h1 className="mt-10 text-3xl font-semibold tracking-tight">Create your account and explore the demo.</h1>
               <p className="mt-3 max-w-md text-sm text-muted-foreground">
-                This is a static demo UI — your sign-in routes you straight into the product experience.
+                Use email + password, or continue with Google/GitHub. This is a static UI—sign up takes you to the dashboard.
               </p>
             </div>
 
             <div className="grid gap-3 rounded-2xl border border-border/60 bg-card/30 p-6 text-sm text-muted-foreground">
-              <p className="font-medium text-foreground">What you’ll see inside</p>
+              <p className="font-medium text-foreground">Why teams use Hawkeye</p>
               <ul className="space-y-2">
                 <li className="flex items-center gap-2">
                   <span className="inline-block size-1.5 rounded-full bg-primary/80" />
-                  Live execution logs & checkpoints
+                  One place for runs, suites, and baselines
                 </li>
                 <li className="flex items-center gap-2">
                   <span className="inline-block size-1.5 rounded-full bg-primary/80" />
-                  Suites directory & baseline manager
+                  Fast triage with clear status and logs
                 </li>
                 <li className="flex items-center gap-2">
                   <span className="inline-block size-1.5 rounded-full bg-primary/80" />
-                  Vault interactions with reveal/copy affordances
+                  Vault UX designed for safe secret handling
                 </li>
               </ul>
             </div>
@@ -128,8 +146,8 @@ export default function LoginPage() {
                 <div className="mb-3 inline-flex size-12 items-center justify-center rounded-lg border border-border/60 bg-card text-primary">
                   <Eye className="size-6" aria-hidden="true" />
                 </div>
-                <CardTitle className="text-2xl tracking-tight">Welcome back</CardTitle>
-                <CardDescription>Sign in to your Hawkeye account</CardDescription>
+                <CardTitle className="text-2xl tracking-tight">Create your account</CardTitle>
+                <CardDescription>Start with email, or continue with a provider</CardDescription>
               </CardHeader>
 
               <CardContent className="space-y-4">
@@ -152,12 +170,26 @@ export default function LoginPage() {
 
                 <form className="space-y-4" onSubmit={onSubmit}>
                   <div className="space-y-2">
+                    <Label htmlFor="name">Full name</Label>
+                    <div className="relative">
+                      <User className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+                      <Input
+                        id="name"
+                        autoComplete="name"
+                        placeholder="Jane Doe"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        className="h-11 pl-9"
+                        aria-invalid={!!nameError}
+                      />
+                    </div>
+                    {nameError ? <p className="text-xs text-destructive">{nameError}</p> : null}
+                  </div>
+
+                  <div className="space-y-2">
                     <Label htmlFor="email">Email</Label>
                     <div className="relative">
-                      <Mail
-                        className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-                        aria-hidden="true"
-                      />
+                      <Mail className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
                       <Input
                         id="email"
                         type="email"
@@ -173,21 +205,13 @@ export default function LoginPage() {
                   </div>
 
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="password">Password</Label>
-                      <Link className="text-sm text-primary hover:underline" href="/auth/password-recovery">
-                        Forgot password?
-                      </Link>
-                    </div>
+                    <Label htmlFor="password">Password</Label>
                     <div className="relative">
-                      <ShieldCheck
-                        className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-                        aria-hidden="true"
-                      />
+                      <ShieldCheck className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
                       <Input
                         id="password"
                         type="password"
-                        autoComplete="current-password"
+                        autoComplete="new-password"
                         placeholder="••••••••"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
@@ -198,16 +222,34 @@ export default function LoginPage() {
                     {passwordError ? <p className="text-xs text-destructive">{passwordError}</p> : null}
                   </div>
 
+                  <div className="space-y-2">
+                    <Label htmlFor="confirm">Confirm password</Label>
+                    <div className="relative">
+                      <ShieldCheck className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+                      <Input
+                        id="confirm"
+                        type="password"
+                        autoComplete="new-password"
+                        placeholder="••••••••"
+                        value={confirm}
+                        onChange={(e) => setConfirm(e.target.value)}
+                        className="h-11 pl-9"
+                        aria-invalid={!!confirmError}
+                      />
+                    </div>
+                    {confirmError ? <p className="text-xs text-destructive">{confirmError}</p> : null}
+                  </div>
+
                   <Button className="h-11 w-full" disabled={!canSubmit}>
                     {submitting ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : null}
-                    Sign In
+                    Create account
                   </Button>
                 </form>
 
                 <p className="pt-2 text-center text-sm text-muted-foreground">
-                  Don&apos;t have an account?{" "}
-                  <Link className="font-semibold text-primary hover:underline" href="/auth/signup">
-                    Sign up
+                  Already have an account?{" "}
+                  <Link className="font-semibold text-primary hover:underline" href="/auth/login">
+                    Sign in
                   </Link>
                 </p>
               </CardContent>
