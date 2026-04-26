@@ -217,3 +217,14 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 .DS_Store
+.env
+
+# Playwright MCP logs/state (local)
+.playwright-mcp/
+
+# Cursor IDE local config (keep repo-agnostic)
+.cursor/
+artifacts/
+# Generated MCP configs (runtime)
+Backend/hawkeye_sandbox/generated.mcp.sandboxes.json
+scripts/
