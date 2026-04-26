@@ -8,13 +8,13 @@ from hawkeye_sandbox import SandboxManager  # noqa: E402
 
 def main() -> None:
     mgr = SandboxManager()
-    results = mgr.spawn_all(url="https://example.com", width=1366, height=768)
-
-    for browser, handle in results:
-        print(browser)
-        print("  noVNC:", handle.novnc_url)
-        print("  CDP:", handle.cdp_url or "-")
-        print("  container:", handle.container_name)
+    with mgr.managed_all(url="https://example.com", width=1366, height=768) as results:
+        for browser, handle in results:
+            print(browser)
+            print("  noVNC:", handle.novnc_url)
+            print("  CDP:", handle.cdp_url or "-")
+            print("  container:", handle.container_name)
+        input("Press Enter to stop all containers... ")
 
 
 if __name__ == "__main__":

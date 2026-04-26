@@ -5,6 +5,9 @@ import json
 from typing import Any, Dict, Iterable, Optional
 
 from .sandbox import SandboxHandle
+from .logger import get_logger
+
+logger = get_logger()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -26,6 +29,7 @@ def mcp_entries_for_handle(handle: SandboxHandle) -> list[McpServerEntry]:
     Requires handle.cdp_url to be present (chromium-family sandboxes).
     """
     if not handle.cdp_url:
+        logger.debug("no CDP for container=%s; skipping MCP entries", handle.container_name)
         return []
 
     chrome_devtools = McpServerEntry(
@@ -71,5 +75,6 @@ def write_mcp_json(path: str, handles: Iterable[SandboxHandle]) -> str:
     with open(path, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
         f.write("\n")
+    logger.info("wrote MCP config %s", path)
     return path
 

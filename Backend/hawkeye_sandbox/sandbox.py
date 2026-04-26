@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import dataclasses
+import contextlib
 import time
 import uuid
 import subprocess
-from typing import Optional
+from typing import Optional, Iterator, Iterable
+
+from .logger import get_logger
+
+logger = get_logger()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -53,9 +58,25 @@ class SandboxManager:
     def __init__(self) -> None:
         pass
 
+    @contextlib.contextmanager
+    def managed(self, cfg: SandboxConfig, *, timeout_s: int = 45, remove: bool = True) -> Iterator[SandboxHandle]:
+        """
+        Spawn a sandbox and guarantee cleanup on exit.
+
+        Usage:
+            with SandboxManager().managed(SandboxConfig(...)) as handle:
+                ...
+        """
+        handle = self.spawn(cfg, timeout_s=timeout_s)
+        try:
+            yield handle
+        finally:
+            self.stop(handle, remove=remove)
+
     def spawn(self, cfg: SandboxConfig, *, timeout_s: int = 45) -> SandboxHandle:
         run_id = uuid.uuid4().hex[:10]
         name = f"{cfg.name_prefix}-{run_id}"
+        logger.info("spawning sandbox name=%s browser=%s", name, cfg.browser)
 
         env = {
             "DISPLAY": ":99",
@@ -76,6 +97,7 @@ class SandboxManager:
         cmd += ["-p", f"{cfg.host}::{cfg.cdp_proxy_port}"]
         cmd += [cfg.image]
 
+        logger.debug("docker run: %s", " ".join(cmd))
         res = subprocess.run(cmd, check=True, capture_output=True, text=True)
         container_id = res.stdout.strip()
 
@@ -108,12 +130,14 @@ class SandboxManager:
         if cfg.browser.lower() not in ("chromium", "chrome", "msedge", "edge"):
             cdp_url = None
 
-        return SandboxHandle(
+        handle = SandboxHandle(
             container_id=container_id,
             container_name=name,
             novnc_url=novnc_url,
             cdp_url=cdp_url,
         )
+        logger.info("spawned %s", handle)
+        return handle
 
     def spawn_all(
         self,
@@ -147,7 +171,44 @@ class SandboxManager:
             out.append((b, h))
         return out
 
+    @contextlib.contextmanager
+    def managed_all(
+        self,
+        *,
+        url: str,
+        width: int = 1366,
+        height: int = 768,
+        depth: int = 24,
+        image: str = "project-hawkeye-hawkeye-sandbox:latest",
+        host: str = "127.0.0.1",
+        scheme: str = "http",
+        timeout_s: int = 45,
+        remove: bool = True,
+    ) -> Iterator[list[tuple[str, SandboxHandle]]]:
+        """Like spawn_all(), but always stops the spawned containers."""
+        handles: list[tuple[str, SandboxHandle]] = []
+        try:
+            handles = self.spawn_all(
+                url=url,
+                width=width,
+                height=height,
+                depth=depth,
+                image=image,
+                host=host,
+                scheme=scheme,
+                timeout_s=timeout_s,
+            )
+            yield handles
+        finally:
+            for _, h in handles:
+                self.stop(h, remove=remove)
+
+    def stop_all(self, handles: Iterable[SandboxHandle], *, remove: bool = True, timeout_s: int = 10) -> None:
+        for h in handles:
+            self.stop(h, remove=remove, timeout_s=timeout_s)
+
     def stop(self, handle: SandboxHandle, *, remove: bool = True, timeout_s: int = 10) -> None:
+        logger.info("stopping sandbox name=%s remove=%s", handle.container_name, remove)
         if remove:
             subprocess.run(["docker", "rm", "-f", handle.container_id], check=False)
         else:

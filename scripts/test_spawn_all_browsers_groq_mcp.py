@@ -308,34 +308,34 @@ def main() -> int:
 
     mgr = SandboxManager()
     log(f"[spawn] spawning browser={args.browser} url={args.url}")
-    handle = mgr.spawn(
-        cfg=SandboxConfig(
+    with mgr.managed(
+        SandboxConfig(
             url=args.url,
             browser=args.browser,
             width=args.width,
             height=args.height,
         )
-    )
-    log(f"[spawn] container={handle.container_name}")
-    log(f"[spawn] noVNC={handle.novnc_url}")
-    log(f"[spawn] CDP={handle.cdp_url or '-'}")
-    if args.open:
-        maybe_open(handle.novnc_url)
+    ) as handle:
+        log(f"[spawn] container={handle.container_name}")
+        log(f"[spawn] noVNC={handle.novnc_url}")
+        log(f"[spawn] CDP={handle.cdp_url or '-'}")
+        if args.open:
+            maybe_open(handle.novnc_url)
 
-    if not handle.cdp_url:
-        raise SystemExit("This browser did not expose a CDP URL; choose chromium/chrome/msedge.")
+        if not handle.cdp_url:
+            raise SystemExit("This browser did not expose a CDP URL; choose chromium/chrome/msedge.")
 
-    shot = os.path.join(out_dir, f"{args.browser}.png")
-    run_llm_planned_mcp_flow(
-        cdp_url=handle.cdp_url,
-        target_url=args.url,
-        screenshot_path=shot,
-        groq_key=groq_key,
-        model=args.model,
-    )
-    log(f"[ok] saved screenshot: {shot}")
-    if args.open:
-        maybe_open(shot)
+        shot = os.path.join(out_dir, f"{args.browser}.png")
+        run_llm_planned_mcp_flow(
+            cdp_url=handle.cdp_url,
+            target_url=args.url,
+            screenshot_path=shot,
+            groq_key=groq_key,
+            model=args.model,
+        )
+        log(f"[ok] saved screenshot: {shot}")
+        if args.open:
+            maybe_open(shot)
 
     return 0
 
