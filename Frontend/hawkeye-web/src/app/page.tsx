@@ -4,7 +4,6 @@ import {
   ArrowRight,
   Bug,
   CheckCircle2,
-  Eye,
   Sparkles,
   Zap,
   Gauge,
@@ -18,6 +17,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
+import { BrandLogo } from "@/components/brand/brand-logo";
 
 export default function Home() {
   return (
@@ -26,7 +26,7 @@ export default function Home() {
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-6 py-4">
           <Link href="/" className="flex items-center gap-2 font-semibold tracking-tight">
             <span className="inline-flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-border/60">
-              <Eye className="size-4" aria-hidden="true" />
+              <BrandLogo className="w-5" alt="Hawkeye" priority />
             </span>
             <span className="text-base">Hawkeye</span>
           </Link>
@@ -362,7 +362,7 @@ export default function Home() {
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-6 md:flex-row">
           <div className="flex items-center gap-2 text-sm font-semibold text-foreground/90">
             <span className="inline-flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-border/60">
-              <Eye className="size-4" aria-hidden="true" />
+              <BrandLogo className="w-4" alt="Hawkeye" />
             </span>
             Hawkeye
           </div>

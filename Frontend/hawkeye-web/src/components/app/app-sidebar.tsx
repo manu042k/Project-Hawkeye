@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
+import { BrandLogo } from "@/components/brand/brand-logo";
 
 import { brandByPath, primaryNav, settingsNav, type AppNavItem } from "./nav-items";
 
@@ -42,7 +43,7 @@ export function AppSidebar({ className }: { className?: string }) {
       <div className="px-6 py-6">
         <div className="flex items-center gap-3">
           <div className="inline-flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-border/60">
-            <BrandIcon className="size-4" aria-hidden="true" />
+            <BrandLogo className="w-6" alt={brand.name} />
           </div>
           <div className="leading-tight">
             <div className="text-base font-semibold tracking-tight text-foreground">{brand.name}</div>

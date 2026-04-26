@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { Eye, Loader2, Mail, ShieldCheck, User } from "lucide-react";
+import { Loader2, Mail, ShieldCheck, User } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { BrandLogo } from "@/components/brand/brand-logo";
 
 const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 
@@ -109,7 +110,7 @@ export default function SignupPage() {
             <div>
               <Link href="/" className="inline-flex items-center gap-2 font-semibold tracking-tight">
                 <span className="inline-flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-border/60">
-                  <Eye className="size-5" aria-hidden="true" />
+                  <BrandLogo className="w-6" alt="Hawkeye" priority />
                 </span>
                 Hawkeye
               </Link>
@@ -144,7 +145,7 @@ export default function SignupPage() {
             <Card className="w-full border-border/60 bg-card/60 shadow-[0_0_20px_rgba(0,0,0,0.15)]">
               <CardHeader className="items-center text-center">
                 <div className="mb-3 inline-flex size-12 items-center justify-center rounded-lg border border-border/60 bg-card text-primary">
-                  <Eye className="size-6" aria-hidden="true" />
+                  <BrandLogo className="w-8" alt="Hawkeye" />
                 </div>
                 <CardTitle className="text-2xl tracking-tight">Create your account</CardTitle>
                 <CardDescription>Start with email, or continue with a provider</CardDescription>
