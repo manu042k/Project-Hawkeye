@@ -229,3 +229,7 @@ artifacts/
 Backend/hawkeye_sandbox/generated.mcp.sandboxes.json
 scripts/
 stitch_global_theme_configuration/
+
+# Allow Next.js app library code (mock data, utils, etc.)
+!Frontend/hawkeye-web/src/lib/
+!Frontend/hawkeye-web/src/lib/**
