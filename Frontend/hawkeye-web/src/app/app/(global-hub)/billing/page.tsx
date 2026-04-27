@@ -44,7 +44,7 @@ export default function BillingPage() {
   return (
     <div className="flex min-h-dvh flex-col">
       <AppTopbar
-        title="Account Settings"
+        title="Billing"
         rightSlot={
           <div className="hidden items-center gap-3 lg:flex">
             <div className="relative w-72">
@@ -59,9 +59,9 @@ export default function BillingPage() {
         <div className="mx-auto w-full max-w-[800px] space-y-6">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <h1 className="text-3xl font-semibold tracking-tight">Account &amp; Billing</h1>
+              <h1 className="text-3xl font-semibold tracking-tight">Billing</h1>
               <p className="mt-2 text-muted-foreground">
-                Manage your personal details, team access, and subscription preferences.
+                Manage your subscription, usage, invoices, and team plan settings.
               </p>
             </div>
 

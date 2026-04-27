@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 import { dashboardMetrics, recentActivity } from "@/lib/mock-data/dashboard";
+import { useProjectStore } from "@/lib/project/store";
 import { cn } from "@/lib/utils";
 
 function StatusPill({ status }: { status: "passed" | "failed" | "running" }) {
@@ -42,10 +43,13 @@ function StatusPill({ status }: { status: "passed" | "failed" | "running" }) {
 }
 
 export default function DashboardPage() {
+  const project = useProjectStore((s) => s.currentProject);
+
   return (
     <div className="flex min-h-dvh flex-col">
       <AppTopbar
-        title="Dashboard"
+        title="Project dashboard"
+        subtitle={project ? `${project.name} · ${project.environment}` : undefined}
         showSearch
         searchPlaceholder="Search test runs..."
         rightSlot={

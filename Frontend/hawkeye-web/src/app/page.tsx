@@ -38,7 +38,7 @@ export default function Home() {
             <a className="text-muted-foreground transition-colors hover:text-foreground" href="#why">
               Why Hawkeye
             </a>
-            <Link className="text-muted-foreground transition-colors hover:text-foreground" href="/app/dashboard">
+            <Link className="text-muted-foreground transition-colors hover:text-foreground" href="/app">
               Demo
             </Link>
             <a className="text-muted-foreground transition-colors hover:text-foreground" href="#faq">
@@ -55,7 +55,7 @@ export default function Home() {
             </Link>
             <ThemeToggle className="hidden md:inline-flex" />
             <Link
-              href="/app/dashboard"
+              href="/app"
               className={cn(
                 buttonVariants({ variant: "default" }),
                 "shadow-[0_0_20px_rgba(173,198,255,0.15)]"
@@ -96,7 +96,7 @@ export default function Home() {
 
               <div className="mt-8 flex flex-col items-stretch justify-center gap-3 sm:flex-row sm:items-center">
                 <Link
-                  href="/app/dashboard"
+                  href="/app"
                   className={cn(
                     buttonVariants({ variant: "default", size: "lg" }),
                     "h-11 px-7 shadow-[0_0_20px_rgba(173,198,255,0.25)]"
@@ -310,7 +310,7 @@ export default function Home() {
                 </p>
 
                 <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-                  <Link href="/app/dashboard" className={cn(buttonVariants({ variant: "default", size: "lg" }), "h-11 px-7")}>
+                  <Link href="/app" className={cn(buttonVariants({ variant: "default", size: "lg" }), "h-11 px-7")}>
                     Open demo
                   </Link>
                   <span className="text-sm text-muted-foreground sm:px-2">or</span>

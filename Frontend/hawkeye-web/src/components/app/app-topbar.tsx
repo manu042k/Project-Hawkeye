@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { Bell, CircleHelp, Menu, Search } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -11,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 
-import { AppSidebar } from "./app-sidebar";
+import { UnifiedSidebar } from "@/components/app/unified-sidebar";
 
 export type AppTopbarProps = {
   title: string;
@@ -34,8 +33,6 @@ export function AppTopbar({
   onSearchChange,
   breadcrumbs,
 }: AppTopbarProps) {
-  const pathname = usePathname();
-
   return (
     <header className="sticky top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/70">
       <div className="flex h-16 items-center gap-4 px-6">
@@ -48,7 +45,7 @@ export function AppTopbar({
             <SheetHeader className="sr-only">
               <SheetTitle>Navigation</SheetTitle>
             </SheetHeader>
-            <AppSidebar className="w-72 border-r-0" />
+            <UnifiedSidebar className="h-full w-72 border-r-0" />
           </SheetContent>
         </Sheet>
 
@@ -113,7 +110,7 @@ export function AppTopbar({
             <CircleHelp className="size-4" aria-hidden="true" />
           </button>
 
-          <Link href={pathname.startsWith("/app/settings") ? "/app/settings/billing" : "/app/settings/integrations"}>
+          <Link href="/app/account">
             <Avatar className="size-8 border border-border/60">
               <AvatarImage
                 alt="User avatar"

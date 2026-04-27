@@ -1,6 +1,7 @@
 export { default } from "next-auth/middleware";
 
 export const config = {
-  matcher: ["/app/:path*"],
+  // Include `/app` (project selector) and all nested routes.
+  matcher: ["/app", "/app/:path*"],
 };
 

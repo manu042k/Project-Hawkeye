@@ -95,7 +95,7 @@ export default function SignupPage() {
     setSubmitting(true);
     await new Promise((r) => setTimeout(r, 700));
     setSubmitting(false);
-    window.location.href = "/app/dashboard";
+    window.location.href = "/app";
   }
 
   return (
@@ -158,7 +158,7 @@ export default function SignupPage() {
                     type="button"
                     variant="outline"
                     className="h-11 justify-center gap-2"
-                    onClick={() => signIn("github", { callbackUrl: "/app/dashboard" })}
+                    onClick={() => signIn("github", { callbackUrl: "/app" })}
                   >
                     <GitHubIcon className="size-4 text-foreground" />
                     Continue with GitHub
@@ -167,7 +167,7 @@ export default function SignupPage() {
                     type="button"
                     variant="outline"
                     className="h-11 justify-center gap-2"
-                    onClick={() => signIn("google", { callbackUrl: "/app/dashboard" })}
+                    onClick={() => signIn("google", { callbackUrl: "/app" })}
                   >
                     <GoogleIcon className="size-4" />
                     Continue with Google
