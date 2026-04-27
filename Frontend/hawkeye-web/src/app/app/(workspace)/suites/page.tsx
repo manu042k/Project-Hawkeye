@@ -25,7 +25,7 @@ export default function SuitesPage() {
   }, [q]);
 
   return (
-    <div className="flex min-h-dvh flex-col">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <AppTopbar
         title="Test Suites"
         showSearch
@@ -39,7 +39,7 @@ export default function SuitesPage() {
         }
       />
 
-      <main className="flex-1 px-6 py-8">
+      <main className="flex-1 min-h-0 overflow-y-auto px-6 py-8">
         <div className="mx-auto max-w-7xl space-y-6">
           <div className="md:hidden">
             <div className="relative">

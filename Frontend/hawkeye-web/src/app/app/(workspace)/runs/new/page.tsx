@@ -27,7 +27,7 @@ export default function NewRunPage() {
   const toleranceLabel = useMemo(() => `${tolerance.toFixed(1)}%`, [tolerance]);
 
   return (
-    <div className="flex min-h-dvh flex-col">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <AppTopbar
         title="Configure Test"
         breadcrumbs={[{ label: "Test Runs", href: "/app/runs/live" }, { label: "New Configuration" }]}
@@ -38,7 +38,7 @@ export default function NewRunPage() {
         }
       />
 
-      <main className="flex-1 px-6 py-8">
+      <main className="flex-1 min-h-0 overflow-y-auto px-6 py-8">
         <div className="mx-auto w-full max-w-[1024px] space-y-8">
           <header>
             <h2 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">Configure Test</h2>

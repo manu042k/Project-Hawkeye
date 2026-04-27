@@ -46,7 +46,7 @@ export default function DashboardPage() {
   const project = useProjectStore((s) => s.currentProject);
 
   return (
-    <div className="flex min-h-dvh flex-col">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <AppTopbar
         title="Project dashboard"
         subtitle={project ? `${project.name} · ${project.environment}` : undefined}
@@ -60,7 +60,7 @@ export default function DashboardPage() {
         }
       />
 
-      <main className="flex-1 px-6 py-8">
+      <main className="flex-1 min-h-0 overflow-y-auto px-6 py-8">
         <div className="mx-auto max-w-[1600px] space-y-8">
           <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
             {dashboardMetrics.map((m) => {

@@ -34,7 +34,7 @@ export function AppTopbar({
   breadcrumbs,
 }: AppTopbarProps) {
   return (
-    <header className="sticky top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/70">
+    <header className="shrink-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/70">
       <div className="flex h-16 items-center gap-4 px-6">
         <Sheet>
           <SheetTrigger className={cn(buttonVariants({ variant: "outline", size: "icon" }), "md:hidden")}>

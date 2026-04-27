@@ -46,7 +46,7 @@ export default function VisualBaselinesPage() {
   }, [tab, q, project, device]);
 
   return (
-    <div className="flex min-h-dvh flex-col">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <AppTopbar
         title="Visual Baselines"
         rightSlot={
@@ -61,7 +61,7 @@ export default function VisualBaselinesPage() {
         }
       />
 
-      <main className="flex-1 px-6 py-8">
+      <main className="flex-1 min-h-0 overflow-y-auto px-6 py-8">
         <div className="mx-auto max-w-7xl space-y-6">
           <div className="sm:hidden">
             <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>

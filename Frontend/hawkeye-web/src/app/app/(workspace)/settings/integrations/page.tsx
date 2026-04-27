@@ -26,10 +26,10 @@ export default function IntegrationsPage() {
   const connected = useMemo(() => endpoint.startsWith("wss://"), [endpoint]);
 
   return (
-    <div className="flex min-h-dvh flex-col">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <AppTopbar title="Settings" subtitle="Manage your workspace configurations, API keys, and external integrations." />
 
-      <main className="flex-1 px-6 py-8">
+      <main className="flex-1 min-h-0 overflow-y-auto px-6 py-8">
         <div className="mx-auto w-full max-w-[800px] space-y-6">
           <Card className="border-border/60 bg-card/60">
             <CardHeader>

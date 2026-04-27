@@ -26,3 +26,50 @@ export const subscription = {
   nextBillingDate: "Oct 1, 2023",
 };
 
+/** Per-dimension meters for the billing Usage section (static demo). */
+export type UsageMeter = {
+  id: string;
+  label: string;
+  description: string;
+  used: number;
+  limit: number;
+  unit: string;
+};
+
+export const usagePeriodLabel = "Current billing period · Sep 1 – Sep 30, 2025";
+
+export const usageMeters: UsageMeter[] = [
+  {
+    id: "runs",
+    label: "Test runs",
+    description: "Executed runs across all projects in your org.",
+    used: 8420,
+    limit: 10000,
+    unit: "runs",
+  },
+  {
+    id: "vault",
+    label: "Vault reads",
+    description: "Secret and credential lookups from The Vault.",
+    used: 12400,
+    limit: 50000,
+    unit: "reads",
+  },
+  {
+    id: "api",
+    label: "API requests",
+    description: "Authenticated Hawkeye API calls (runs, webhooks, CI).",
+    used: 890000,
+    limit: 1000000,
+    unit: "req",
+  },
+  {
+    id: "storage",
+    label: "Artifact storage",
+    description: "Screenshots, traces, and reports retained this period.",
+    used: 38.2,
+    limit: 100,
+    unit: "GB",
+  },
+];
+

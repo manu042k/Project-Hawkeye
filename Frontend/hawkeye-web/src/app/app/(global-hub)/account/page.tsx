@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { CircleCheck, Link2, LogOut, Mail, Pencil, ShieldCheck, User, XCircle } from "lucide-react";
+import { CircleCheck, Link2, LogOut, Mail, MoreVertical, Pencil, ShieldCheck, User, UserPlus, XCircle } from "lucide-react";
 import { signOut, useSession } from "next-auth/react";
 
 import { AppTopbar } from "@/components/app/app-topbar";
@@ -10,12 +10,28 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 
+import { teamMembers } from "@/lib/mock-data/billing";
 import { cn } from "@/lib/utils";
 
 type ConnectedProvider = {
@@ -35,6 +51,8 @@ export default function AccountPage() {
   const [email, setEmail] = useState(initialEmail);
   const [mfaEnabled, setMfaEnabled] = useState(true);
   const [securityAlerts, setSecurityAlerts] = useState(true);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
 
   const providers = useMemo<ConnectedProvider[]>(
     () => [
@@ -56,10 +74,10 @@ export default function AccountPage() {
   }
 
   return (
-    <div className="flex min-h-dvh flex-col">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <AppTopbar
         title="Account"
-        subtitle="Profile, security, and connected providers"
+        subtitle="Profile, team, security, and connected providers"
         rightSlot={
           <div className="hidden items-center gap-2 lg:flex">
             <Button
@@ -77,7 +95,7 @@ export default function AccountPage() {
         }
       />
 
-      <main className="flex-1 px-6 py-8">
+      <main className="flex-1 min-h-0 overflow-y-auto px-6 py-8">
         <div className="mx-auto w-full max-w-[900px] space-y-6">
           <Card id="overview" className="scroll-mt-28 border-border/60 bg-card/40">
             <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -226,6 +244,96 @@ export default function AccountPage() {
               <div className="text-xs text-muted-foreground">
                 Note: when SSO is configured, signing in with Google/GitHub establishes a session and unlocks the `/app/*` routes.
               </div>
+            </CardContent>
+          </Card>
+
+          <Card id="team" className="scroll-mt-28 border-border/60 bg-card/40 overflow-hidden">
+            <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <UserPlus className="size-4 text-primary" aria-hidden="true" />
+                  Team management
+                </CardTitle>
+                <CardDescription className="mt-1.5">People in your organization and their roles.</CardDescription>
+              </div>
+
+              <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
+                <DialogTrigger className={cn(buttonVariants({ variant: "outline" }), "shrink-0")}>
+                  <UserPlus className="size-4" aria-hidden="true" />
+                  Invite
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Invite a teammate</DialogTitle>
+                    <DialogDescription>Static UI demo. Invites are not actually sent.</DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-2">
+                    <Label>Email</Label>
+                    <Input value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="name@company.com" />
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setInviteOpen(false)}>
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        toast.success("Invite queued", { description: inviteEmail || "Invite created." });
+                        setInviteEmail("");
+                        setInviteOpen(false);
+                      }}
+                    >
+                      Send invite
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </CardHeader>
+            <CardContent className="p-0">
+              <ul className="divide-y divide-border/60">
+                {teamMembers.map((m) => (
+                  <li key={m.id} className="flex items-center justify-between gap-4 px-6 py-4 transition-colors hover:bg-muted/20">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <Avatar className="size-8 border border-border/60">
+                        {m.avatarUrl ? <AvatarImage alt={m.name} src={m.avatarUrl} /> : null}
+                        <AvatarFallback className="bg-primary/15 font-semibold text-primary">
+                          {m.initials ?? m.name
+                            .split(" ")
+                            .map((p) => p[0])
+                            .slice(0, 2)
+                            .join("")}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium">{m.name}</div>
+                        <div className="truncate text-xs text-muted-foreground">{m.email}</div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <span className="rounded-md bg-muted px-2 py-1 font-mono text-xs text-muted-foreground">{m.role}</span>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger
+                          aria-label="Member actions"
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                        >
+                          <MoreVertical className="size-4" aria-hidden="true" />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => toast.message("Action", { description: "Role editing disabled in demo." })}>
+                            Change role
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="text-destructive"
+                            onClick={() => toast.message("Action", { description: "Removal disabled in demo." })}
+                          >
+                            Remove
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  </li>
+                ))}
+              </ul>
             </CardContent>
           </Card>
         </div>
