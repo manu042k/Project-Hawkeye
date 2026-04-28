@@ -3,7 +3,6 @@ import {
   CreditCard,
   FileText,
   FolderKanban,
-  Gauge,
   Home,
   KeyRound,
   LayoutDashboard,
@@ -43,13 +42,4 @@ export const primaryNav: AppNavItem[] = [
 /** Account / billing live in `globalFooterNav`; workspace middle nav is execution + integrations only. */
 export const workspaceSettingsNav: AppNavItem[] = [
   { href: "/app/settings/integrations", label: "Integrations", icon: Settings },
-];
-
-export const brandByPath: Array<{ prefix: string; name: string; subtitle?: string; icon: AppNavItem["icon"] }> = [
-  { prefix: "/app/vault", name: "VaultAdmin", subtitle: "Enterprise Tier", icon: KeyRound },
-  { prefix: "/app/settings", name: "TechOps SaaS", subtitle: "Enterprise Console", icon: Settings },
-  { prefix: "/app/visual-baselines", name: "VisualBaseline", subtitle: "Precision QA Tool", icon: Sparkles },
-  { prefix: "/app/suites", name: "QA Engine", subtitle: "Technical v2.4", icon: FolderKanban },
-  { prefix: "/app/runs", name: "TestOps Pro", subtitle: "Production Environment", icon: Gauge },
-  { prefix: "/app", name: "Hawkeye", subtitle: "Technical Operations", icon: LayoutDashboard },
 ];

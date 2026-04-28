@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import {
   Activity,
+  Bell,
   CreditCard,
   FolderKanban,
   Home,
@@ -103,6 +104,8 @@ const billingAnchors: Array<{ href: string; label: string; icon: ComponentType<{
   { href: "/app/billing#usage", label: "Usage", icon: Activity },
   { href: "/app/billing#subscription", label: "Subscription", icon: CreditCard },
   { href: "/app/billing#profile", label: "Billing profile", icon: User },
+  { href: "/app/billing#billing-security", label: "Billing security", icon: Shield },
+  { href: "/app/billing#billing-notifications", label: "Alerts", icon: Bell },
 ];
 
 /** Single rail: contextual block at top · scoped nav · organization globals at bottom. */

@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useMemo, useState } from "react";
-import { Search } from "lucide-react";
+import { Monitor, Search, Smartphone, Tablet as TabletIcon } from "lucide-react";
 
 import { AppTopbar } from "@/components/app/app-topbar";
 import { Button } from "@/components/ui/button";
@@ -16,13 +16,14 @@ import { baselineDevices, baselineProjects, visualBaselines, type VisualBaseline
 import { cn } from "@/lib/utils";
 
 function DeviceIcon({ cls }: { cls: VisualBaseline["deviceClass"] }) {
+  const common = "size-3.5 shrink-0 text-muted-foreground";
   switch (cls) {
     case "desktop":
-      return <span className="text-[13px]" aria-hidden="true">🖥</span>;
+      return <Monitor className={common} aria-hidden />;
     case "mobile":
-      return <span className="text-[13px]" aria-hidden="true">📱</span>;
+      return <Smartphone className={common} aria-hidden />;
     case "tablet":
-      return <span className="text-[13px]" aria-hidden="true">💠</span>;
+      return <TabletIcon className={common} aria-hidden />;
   }
 }
 

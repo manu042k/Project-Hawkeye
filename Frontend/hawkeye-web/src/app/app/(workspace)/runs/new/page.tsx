@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { CloudUpload, Link as LinkIcon, Play, Settings2 } from "lucide-react";
 
@@ -22,9 +22,8 @@ export default function NewRunPage() {
   const [environment, setEnvironment] = useState("Staging");
   const [device, setDevice] = useState("Desktop Chrome (1920x1080)");
   const [bypassLogin, setBypassLogin] = useState(true);
-  const [tolerance, setTolerance] = useState(2.5);
-
-  const toleranceLabel = useMemo(() => `${tolerance.toFixed(1)}%`, [tolerance]);
+  /** 1–100 per UI-flow: higher = stricter visual matching (maps to backend tolerance policy). */
+  const [visualStrictness, setVisualStrictness] = useState(75);
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
@@ -141,24 +140,22 @@ export default function NewRunPage() {
 
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <Label>Visual Assertion Tolerance</Label>
-                      <span className="font-mono text-sm font-semibold text-primary">{toleranceLabel}</span>
+                      <Label>Visual strictness</Label>
+                      <span className="font-mono text-sm font-semibold text-primary">{visualStrictness}/100</span>
                     </div>
-                    <p className="text-xs text-muted-foreground font-mono">
-                      Maximum acceptable pixel difference before failing.
+                    <p className="text-xs text-muted-foreground">
+                      Higher values require closer visual matches (stricter diffs). Aligns with UI-flow 1–100 scale; backend maps to pixel or SSIM policy.
                     </p>
                     <Slider
-                      value={[tolerance]}
-                      onValueChange={(v) =>
-                        setTolerance(Array.isArray(v) ? (v[0] ?? 0) : v ?? 0)
-                      }
-                      min={0}
-                      max={10}
-                      step={0.5}
+                      value={[visualStrictness]}
+                      onValueChange={(v) => setVisualStrictness(Array.isArray(v) ? (v[0] ?? 1) : v ?? 1)}
+                      min={1}
+                      max={100}
+                      step={1}
                     />
-                    <div className="flex justify-between text-xs text-muted-foreground font-mono">
-                      <span>0% (Strict)</span>
-                      <span>10% (Loose)</span>
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>1 — permissive</span>
+                      <span>100 — strict</span>
                     </div>
                   </div>
                 </CardContent>

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { Bell, CircleHelp, Menu, Search } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -33,6 +34,8 @@ export function AppTopbar({
   onSearchChange,
   breadcrumbs,
 }: AppTopbarProps) {
+  const { data: session } = useSession();
+
   return (
     <header className="shrink-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/70">
       <div className="flex h-16 items-center gap-4 px-6">
@@ -110,13 +113,20 @@ export function AppTopbar({
             <CircleHelp className="size-4" aria-hidden="true" />
           </button>
 
-          <Link href="/app/account">
+          <Link href="/app/account" aria-label="Account">
             <Avatar className="size-8 border border-border/60">
               <AvatarImage
-                alt="User avatar"
-                src="https://lh3.googleusercontent.com/aida-public/AB6AXuDl_AGE7ZijSsRNhLmOGNF1NOGNGE-U9iS_cCZjwLUoAe--FDu0IkeZMdziyeM_dD2-bBfH4Y7he95mO9t8yKtcmK20yhRdSC1Iagi0rslwpiuf5TPHkZjgoBM-Y45xpDon7GEo3u-DduZ8keugkxCWTmivO39GO9IyM5LvX0sHkaOLD9MGdVFiAeY7DsLWmBGqeGDRI9r6loEE_tLaPvkSCu9KJbF-zpI-JK1HWRhebw4kD2aUt3HtobJJZ3_YXGzQDF4puaq1KT4"
+                alt={session?.user?.name ? `${session.user.name} avatar` : "Account avatar"}
+                src={session?.user?.image ?? ""}
               />
-              <AvatarFallback>U</AvatarFallback>
+              <AvatarFallback className="text-xs font-medium">
+                {(session?.user?.name ?? session?.user?.email ?? "U")
+                  .split(/\s+/)
+                  .map((p) => p[0])
+                  .join("")
+                  .slice(0, 2)
+                  .toUpperCase() || "U"}
+              </AvatarFallback>
             </Avatar>
           </Link>
         </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { MoreVertical, Plus, Search } from "lucide-react";
 
@@ -44,6 +44,18 @@ function StatusPill({ status }: { status: "passed" | "failed" | "running" }) {
 
 export default function DashboardPage() {
   const project = useProjectStore((s) => s.currentProject);
+  const [activityFilter, setActivityFilter] = useState("");
+
+  const filteredActivity = useMemo(() => {
+    const q = activityFilter.trim().toLowerCase();
+    if (!q) return recentActivity;
+    return recentActivity.filter(
+      (row) =>
+        row.testName.toLowerCase().includes(q) ||
+        row.targetUrl.toLowerCase().includes(q) ||
+        row.dateLabel.toLowerCase().includes(q)
+    );
+  }, [activityFilter]);
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
@@ -96,7 +108,13 @@ export default function DashboardPage() {
               <div className="flex items-center gap-3">
                 <div className="relative w-full max-w-sm">
                   <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-                  <Input placeholder="Filter by test name..." className="pl-9" />
+                  <Input
+                    placeholder="Filter by test name..."
+                    className="pl-9"
+                    value={activityFilter}
+                    onChange={(e) => setActivityFilter(e.target.value)}
+                    aria-label="Filter recent activity"
+                  />
                 </div>
                 <Badge variant="secondary" className="hidden sm:inline-flex">
                   Demo data
@@ -116,39 +134,47 @@ export default function DashboardPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {recentActivity.map((row) => (
-                      <TableRow key={row.id}>
-                        <TableCell>
-                          <StatusPill status={row.status} />
-                        </TableCell>
-                        <TableCell className="font-medium">{row.testName}</TableCell>
-                        <TableCell className="font-mono text-sm text-primary">
-                          <span className="cursor-pointer hover:underline">{row.targetUrl}</span>
-                        </TableCell>
-                        <TableCell className="font-mono text-sm text-muted-foreground">{row.duration}</TableCell>
-                        <TableCell className="text-muted-foreground">{row.dateLabel}</TableCell>
-                        <TableCell className="text-right">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger
-                              aria-label="Row actions"
-                              className={cn(buttonVariants({ variant: "ghost", size: "icon" }))}
-                            >
-                              <MoreVertical className="size-4" aria-hidden="true" />
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem>
-                                <Link className="w-full" href="/app/runs/live">
-                                  Open run
-                                </Link>
-                              </DropdownMenuItem>
-                              <DropdownMenuItem>Re-run</DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                    {filteredActivity.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="h-24 text-center text-sm text-muted-foreground">
+                          No runs match your filter.
                         </TableCell>
                       </TableRow>
-                    ))}
+                    ) : (
+                      filteredActivity.map((row) => (
+                        <TableRow key={row.id}>
+                          <TableCell>
+                            <StatusPill status={row.status} />
+                          </TableCell>
+                          <TableCell className="font-medium">{row.testName}</TableCell>
+                          <TableCell className="font-mono text-sm text-primary">
+                            <span className="cursor-pointer hover:underline">{row.targetUrl}</span>
+                          </TableCell>
+                          <TableCell className="font-mono text-sm text-muted-foreground">{row.duration}</TableCell>
+                          <TableCell className="text-muted-foreground">{row.dateLabel}</TableCell>
+                          <TableCell className="text-right">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger
+                                aria-label="Row actions"
+                                className={cn(buttonVariants({ variant: "ghost", size: "icon" }))}
+                              >
+                                <MoreVertical className="size-4" aria-hidden="true" />
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem>
+                                  <Link className="w-full" href="/app/runs/live">
+                                    Open run
+                                  </Link>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem>Re-run</DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
                   </TableBody>
                 </Table>
               </div>
