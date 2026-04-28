@@ -47,45 +47,39 @@ export default function VisualBaselinesPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <AppTopbar
-        title="Visual Baselines"
-        rightSlot={
-          <div className="hidden sm:block">
-            <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
-              <TabsList>
-                <TabsTrigger value="needs-review">Needs Review</TabsTrigger>
-                <TabsTrigger value="approved">Approved</TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </div>
-        }
-      />
+      <AppTopbar title="Visual baselines" subtitle="Screenshot diffs, review, and approval." />
 
       <main className="flex-1 min-h-0 overflow-y-auto px-6 py-8">
         <div className="mx-auto max-w-7xl space-y-6">
-          <div className="sm:hidden">
-            <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
-              <TabsList className="w-full">
-                <TabsTrigger className="flex-1" value="needs-review">
-                  Needs Review
-                </TabsTrigger>
-                <TabsTrigger className="flex-1" value="approved">
-                  Approved
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-12 md:items-center">
-            <div className="relative md:col-span-6">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-              <Input className="pl-9" placeholder="Search baselines..." value={q} onChange={(e) => setQ(e.target.value)} />
+          <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-card/30 p-3 supports-[backdrop-filter]:bg-card/20 md:flex-row md:items-center md:gap-4 md:py-2.5">
+            <div className="shrink-0 md:pr-1">
+              <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
+                <TabsList className="h-9 w-full sm:w-auto">
+                  <TabsTrigger className="px-3" value="needs-review">
+                    Needs review
+                  </TabsTrigger>
+                  <TabsTrigger className="px-3" value="approved">
+                    Approved
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
             </div>
 
-            <div className="md:col-span-3">
+            <div className="hidden h-8 w-px shrink-0 bg-border/60 md:block" aria-hidden />
+
+            <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
+              <div className="relative min-w-0 flex-1 sm:min-w-[200px] sm:max-w-md">
+                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+                <Input
+                  className="h-9 pl-9"
+                  placeholder="Search baselines…"
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                />
+              </div>
               <Select value={project} onValueChange={(v) => v && setProject(v as typeof project)}>
-                <SelectTrigger>
-                  <SelectValue />
+                <SelectTrigger className="h-9 w-full sm:w-[min(100%,11rem)]">
+                  <SelectValue placeholder="Project" />
                 </SelectTrigger>
                 <SelectContent>
                   {baselineProjects.map((p) => (
@@ -95,12 +89,9 @@ export default function VisualBaselinesPage() {
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-
-            <div className="md:col-span-3">
               <Select value={device} onValueChange={(v) => v && setDevice(v as typeof device)}>
-                <SelectTrigger>
-                  <SelectValue />
+                <SelectTrigger className="h-9 w-full sm:w-[min(100%,11rem)]">
+                  <SelectValue placeholder="Device" />
                 </SelectTrigger>
                 <SelectContent>
                   {baselineDevices.map((d) => (

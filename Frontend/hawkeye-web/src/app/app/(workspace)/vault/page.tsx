@@ -68,59 +68,60 @@ export default function VaultPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <AppTopbar
-        title="The Vault"
-        subtitle="Securely manage environment variables and test credentials."
-        rightSlot={
-          <Button onClick={() => toast.message("Static UI demo", { description: "Secrets are not persisted in this build." })}>
-            <Plus className="size-4" aria-hidden="true" />
-            Add Secret
-          </Button>
-        }
-      />
+      <AppTopbar title="The Vault" subtitle="Secrets and credentials for this workspace." />
 
       <main className="flex-1 min-h-0 overflow-y-auto px-6 py-8">
         <div className="mx-auto max-w-7xl space-y-6">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-12 md:items-center">
-            <div className="relative md:col-span-6">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-              <Input
-                className="pl-9"
-                placeholder="Search secrets by name or key..."
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-              />
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="grid flex-1 grid-cols-1 gap-4 md:grid-cols-12 md:items-center">
+              <div className="relative md:col-span-6">
+                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+                <Input
+                  className="pl-9"
+                  placeholder="Search secrets by name or key..."
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                />
+              </div>
+
+              <div className="md:col-span-3">
+                <Select value={env} onValueChange={(v) => v && setEnv(v as typeof env)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {envOptions.map((o) => (
+                      <SelectItem key={o} value={o}>
+                        {o}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="md:col-span-3">
+                <Select value={typ} onValueChange={(v) => v && setTyp(v as typeof typ)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {typeOptions.map((o) => (
+                      <SelectItem key={o} value={o}>
+                        {o}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
-            <div className="md:col-span-3">
-              <Select value={env} onValueChange={(v) => v && setEnv(v as typeof env)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {envOptions.map((o) => (
-                    <SelectItem key={o} value={o}>
-                      {o}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="md:col-span-3">
-              <Select value={typ} onValueChange={(v) => v && setTyp(v as typeof typ)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {typeOptions.map((o) => (
-                    <SelectItem key={o} value={o}>
-                      {o}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <Button
+              className="shrink-0 lg:self-center"
+              onClick={() => toast.message("Static UI demo", { description: "Secrets are not persisted in this build." })}
+            >
+              <Plus className="size-4" aria-hidden="true" />
+              Add secret
+            </Button>
           </div>
 
           <Card className="border-border/60 bg-card/60">

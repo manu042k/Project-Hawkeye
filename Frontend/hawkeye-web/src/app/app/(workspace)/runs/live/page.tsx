@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CircleDot, Monitor, MoreVertical, Terminal as TerminalIcon, XCircle } from "lucide-react";
 
 import { AppTopbar } from "@/components/app/app-topbar";
@@ -51,31 +51,24 @@ export default function LiveExecutionPage() {
     scrollRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
   }, [lines.length]);
 
-  const breadcrumbs = useMemo(
-    () => [
-      { label: "Test Runs", href: "/app/runs/live" },
-      { label: "Run #4052" },
-    ],
-    []
-  );
-
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <AppTopbar
-        title="Checkout Flow - Guest User"
-        breadcrumbs={breadcrumbs}
-        rightSlot={
-          <div className="hidden items-center gap-2 sm:flex">
+      <AppTopbar title="Live execution" subtitle="Checkout flow · Guest · Run #4052" />
+
+      <main className="flex-1 min-h-0 overflow-y-auto px-6 py-8">
+        <div className="mx-auto max-w-[1600px] space-y-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-muted-foreground">
+              <span className="text-foreground/90">Test runs</span>
+              <span className="mx-2 text-border">/</span>
+              Run #4052
+            </p>
             <span className="inline-flex items-center gap-2 rounded-full border border-amber-500/25 bg-amber-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-amber-400">
               <span className="size-1.5 rounded-full bg-amber-400" />
               In progress
             </span>
           </div>
-        }
-      />
 
-      <main className="flex-1 min-h-0 overflow-y-auto px-6 py-8">
-        <div className="mx-auto max-w-[1600px] space-y-6">
           <Card className="border-border/60 bg-card/60">
             <CardContent className="py-6">
               <div className="relative max-w-3xl">

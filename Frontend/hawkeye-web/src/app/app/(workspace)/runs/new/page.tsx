@@ -28,23 +28,20 @@ export default function NewRunPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <AppTopbar
-        title="Configure Test"
-        breadcrumbs={[{ label: "Test Runs", href: "/app/runs/live" }, { label: "New Configuration" }]}
-        rightSlot={
-          <Link href="/app/runs/live" className={cn(buttonVariants({ variant: "secondary" }))}>
-            Save Changes
-          </Link>
-        }
-      />
+      <AppTopbar title="Configure test" subtitle="Target, environment, and run parameters" />
 
       <main className="flex-1 min-h-0 overflow-y-auto px-6 py-8">
         <div className="mx-auto w-full max-w-[1024px] space-y-8">
-          <header>
-            <h2 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">Configure Test</h2>
-            <p className="mt-2 text-muted-foreground">
-              Define parameters and assertions for your visual baseline test.
-            </p>
+          <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">Configure test</h2>
+              <p className="mt-2 text-muted-foreground">
+                Define parameters and assertions for your visual baseline test.
+              </p>
+            </div>
+            <Link href="/app/runs/live" className={cn(buttonVariants({ variant: "secondary" }), "shrink-0")}>
+              Save changes
+            </Link>
           </header>
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">

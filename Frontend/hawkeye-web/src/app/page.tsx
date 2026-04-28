@@ -19,6 +19,11 @@ import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { BrandLogo } from "@/components/brand/brand-logo";
 
+/** Unauthenticated users must not open `/app` from marketing; they go to sign-in first. */
+function loginUrl(pathAfterAuth: string) {
+  return `/auth/login?${new URLSearchParams({ callbackUrl: pathAfterAuth }).toString()}`;
+}
+
 export default function Home() {
   return (
     <div className="min-h-full bg-background text-foreground">
@@ -38,7 +43,7 @@ export default function Home() {
             <a className="text-muted-foreground transition-colors hover:text-foreground" href="#why">
               Why Hawkeye
             </a>
-            <Link className="text-muted-foreground transition-colors hover:text-foreground" href="/app">
+            <Link className="text-muted-foreground transition-colors hover:text-foreground" href={loginUrl("/app")}>
               Demo
             </Link>
             <a className="text-muted-foreground transition-colors hover:text-foreground" href="#faq">
@@ -55,7 +60,7 @@ export default function Home() {
             </Link>
             <ThemeToggle className="hidden md:inline-flex" />
             <Link
-              href="/app"
+              href={loginUrl("/app")}
               className={cn(
                 buttonVariants({ variant: "default" }),
                 "shadow-[0_0_20px_rgba(173,198,255,0.15)]"
@@ -96,7 +101,7 @@ export default function Home() {
 
               <div className="mt-8 flex flex-col items-stretch justify-center gap-3 sm:flex-row sm:items-center">
                 <Link
-                  href="/app"
+                  href={loginUrl("/app")}
                   className={cn(
                     buttonVariants({ variant: "default", size: "lg" }),
                     "h-11 px-7 shadow-[0_0_20px_rgba(173,198,255,0.25)]"
@@ -144,11 +149,11 @@ export default function Home() {
                   </div>
 
                   <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-                    <Link href="/app/runs/live" className={cn(buttonVariants({ variant: "default" }), "justify-center")}>
+                    <Link href={loginUrl("/app/runs/live")} className={cn(buttonVariants({ variant: "default" }), "justify-center")}>
                       <Zap className="size-4" aria-hidden="true" />
                       Watch it live
                     </Link>
-                    <Link href="/app/runs/new" className={cn(buttonVariants({ variant: "outline" }), "justify-center")}>
+                    <Link href={loginUrl("/app/runs/new")} className={cn(buttonVariants({ variant: "outline" }), "justify-center")}>
                       Configure a run
                     </Link>
                   </div>
@@ -166,7 +171,7 @@ export default function Home() {
                       <div className="font-semibold text-foreground">Authentication Core</div>
                       <div className="font-mono text-xs">14 tests • 85% pass</div>
                     </div>
-                    <Link href="/app/suites" className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
+                    <Link href={loginUrl("/app/suites")} className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
                       Open
                     </Link>
                   </CardContent>
@@ -182,7 +187,7 @@ export default function Home() {
                       <div className="font-semibold text-foreground">Needs review</div>
                       <div className="font-mono text-xs">12 pending • 3 projects</div>
                     </div>
-                    <Link href="/app/visual-baselines" className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
+                    <Link href={loginUrl("/app/visual-baselines")} className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
                       Review
                     </Link>
                   </CardContent>
@@ -198,7 +203,7 @@ export default function Home() {
                       <div className="font-semibold text-foreground">PROD_STRIPE_SECRET_KEY</div>
                       <div className="font-mono text-xs">••••••••••••••••••••</div>
                     </div>
-                    <Link href="/app/vault" className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
+                    <Link href={loginUrl("/app/vault")} className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
                       Manage
                     </Link>
                   </CardContent>
@@ -310,7 +315,7 @@ export default function Home() {
                 </p>
 
                 <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-                  <Link href="/app" className={cn(buttonVariants({ variant: "default", size: "lg" }), "h-11 px-7")}>
+                  <Link href={loginUrl("/app")} className={cn(buttonVariants({ variant: "default", size: "lg" }), "h-11 px-7")}>
                     Open demo
                   </Link>
                   <span className="text-sm text-muted-foreground sm:px-2">or</span>

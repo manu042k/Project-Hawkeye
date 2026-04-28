@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { CircleCheck, Link2, LogOut, Mail, MoreVertical, Pencil, ShieldCheck, User, UserPlus, XCircle } from "lucide-react";
-import { signOut, useSession } from "next-auth/react";
+import { CircleCheck, Link2, Mail, MoreVertical, Pencil, ShieldCheck, User, UserPlus, XCircle } from "lucide-react";
+import { useSession } from "next-auth/react";
 
 import { AppTopbar } from "@/components/app/app-topbar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -75,25 +75,7 @@ export default function AccountPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <AppTopbar
-        title="Account"
-        subtitle="Profile, team, security, and connected providers"
-        rightSlot={
-          <div className="hidden items-center gap-2 lg:flex">
-            <Button
-              variant="outline"
-              className="h-9"
-              onClick={() => {
-                if (status === "authenticated") signOut({ callbackUrl: "/" });
-                else window.location.href = "/auth/login";
-              }}
-            >
-              <LogOut className="mr-2 size-4" aria-hidden="true" />
-              {status === "authenticated" ? "Sign out" : "Go to sign in"}
-            </Button>
-          </div>
-        }
-      />
+      <AppTopbar title="Account" subtitle="Profile, team, security, and connected providers" />
 
       <main className="flex-1 min-h-0 overflow-y-auto px-6 py-8">
         <div className="mx-auto w-full max-w-[900px] space-y-6">

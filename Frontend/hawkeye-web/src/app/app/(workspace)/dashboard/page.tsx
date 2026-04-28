@@ -49,19 +49,18 @@ export default function DashboardPage() {
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <AppTopbar
         title="Project dashboard"
-        subtitle={project ? `${project.name} · ${project.environment}` : undefined}
-        showSearch
-        searchPlaceholder="Search test runs..."
-        rightSlot={
-          <Link href="/app/runs/new" className={cn(buttonVariants({ variant: "default" }), "hidden sm:inline-flex")}>
-            <Plus className="size-4" aria-hidden="true" />
-            New Test Run
-          </Link>
-        }
+        subtitle={project ? `${project.name} · ${project.environment}` : "Runs, activity, and shortcuts"}
       />
 
       <main className="flex-1 min-h-0 overflow-y-auto px-6 py-8">
         <div className="mx-auto max-w-[1600px] space-y-8">
+          <div className="flex justify-end">
+            <Link href="/app/runs/new" className={cn(buttonVariants({ variant: "default" }), "inline-flex")}>
+              <Plus className="size-4" aria-hidden="true" />
+              New test run
+            </Link>
+          </div>
+
           <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
             {dashboardMetrics.map((m) => {
               const tone =

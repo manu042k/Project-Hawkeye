@@ -4,6 +4,7 @@ import type { ComponentType } from "react";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { signOut, useSession } from "next-auth/react";
 import {
   Activity,
   CreditCard,
@@ -12,6 +13,8 @@ import {
   Layers,
   Link2,
   LayoutDashboard,
+  LogIn,
+  LogOut,
   Shield,
   User,
   Users,
@@ -106,6 +109,7 @@ const billingAnchors: Array<{ href: string; label: string; icon: ComponentType<{
 export function UnifiedSidebar({ className }: { className?: string }) {
   const pathname = usePathname();
   const hash = useHash();
+  const { status } = useSession();
   const currentProject = useProjectStore((s) => s.currentProject);
   const hub = isGlobalHubPath(pathname);
 
@@ -265,6 +269,33 @@ export function UnifiedSidebar({ className }: { className?: string }) {
           {globalFooterNav.map((item) => (
             <FooterRow key={item.href} item={item} pathname={pathname} />
           ))}
+        </div>
+
+        <div className="mt-3 border-t border-border/60 pt-3">
+          {status === "authenticated" ? (
+            <button
+              type="button"
+              onClick={() => signOut({ callbackUrl: "/" })}
+              className={cn(
+                "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium tracking-tight transition-colors",
+                "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+              )}
+            >
+              <LogOut className="size-4 shrink-0" aria-hidden />
+              <span className="truncate">Sign out</span>
+            </button>
+          ) : (
+            <Link
+              href="/auth/login"
+              className={cn(
+                "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium tracking-tight transition-colors",
+                "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+              )}
+            >
+              <LogIn className="size-4 shrink-0" aria-hidden />
+              <span className="truncate">Sign in</span>
+            </Link>
+          )}
         </div>
       </div>
     </aside>

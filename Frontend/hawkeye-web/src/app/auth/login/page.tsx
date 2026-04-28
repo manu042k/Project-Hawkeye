@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import { Loader2, Mail, ShieldCheck } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -13,6 +14,20 @@ import { Separator } from "@/components/ui/separator";
 import { BrandLogo } from "@/components/brand/brand-logo";
 
 const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+
+/** Same-origin `/app/*` paths only — blocks open redirects from crafted `callbackUrl`. */
+function safePostLoginRedirect(raw: string | null): string {
+  if (!raw) return "/app";
+  let path = raw.trim();
+  try {
+    path = decodeURIComponent(path);
+  } catch {
+    return "/app";
+  }
+  if (!path.startsWith("/") || path.startsWith("//")) return "/app";
+  if (!path.startsWith("/app")) return "/app";
+  return path;
+}
 
 function GoogleIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
@@ -51,7 +66,10 @@ function GitHubIcon(props: React.SVGProps<SVGSVGElement>) {
   );
 }
 
-export default function LoginPage() {
+function LoginPageInner() {
+  const searchParams = useSearchParams();
+  const redirectAfter = useMemo(() => safePostLoginRedirect(searchParams.get("callbackUrl")), [searchParams]);
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -74,8 +92,7 @@ export default function LoginPage() {
     setSubmitting(true);
     await new Promise((r) => setTimeout(r, 700));
     setSubmitting(false);
-    // Static build: route to app dashboard
-    window.location.href = "/app";
+    window.location.href = redirectAfter;
   }
 
   return (
@@ -140,7 +157,7 @@ export default function LoginPage() {
                     type="button"
                     variant="outline"
                     className="h-11 justify-center gap-2"
-                    onClick={() => signIn("github", { callbackUrl: "/app" })}
+                    onClick={() => signIn("github", { callbackUrl: redirectAfter })}
                   >
                     <GitHubIcon className="size-4 text-foreground" />
                     Continue with GitHub
@@ -149,7 +166,7 @@ export default function LoginPage() {
                     type="button"
                     variant="outline"
                     className="h-11 justify-center gap-2"
-                    onClick={() => signIn("google", { callbackUrl: "/app" })}
+                    onClick={() => signIn("google", { callbackUrl: redirectAfter })}
                   >
                     <GoogleIcon className="size-4" />
                     Continue with Google
@@ -231,3 +248,18 @@ export default function LoginPage() {
   );
 }
 
+function LoginFallback() {
+  return (
+    <div className="flex min-h-dvh items-center justify-center bg-background text-foreground">
+      <Loader2 className="size-8 animate-spin text-muted-foreground" aria-label="Loading" />
+    </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<LoginFallback />}>
+      <LoginPageInner />
+    </Suspense>
+  );
+}

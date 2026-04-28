@@ -25,10 +25,7 @@ const mcpSample = {
 export default function RunReportPage() {
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <AppTopbar
-        title="Run report"
-        subtitle="Post-mortem timeline, visual diffs, and MCP output (UI-flow Phase 2)"
-      />
+      <AppTopbar title="Run report" subtitle="Timeline, diffs, and MCP output for the latest run." />
 
       <main className="flex-1 min-h-0 space-y-6 overflow-y-auto px-6 py-8">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
