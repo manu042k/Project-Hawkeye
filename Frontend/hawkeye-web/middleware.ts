@@ -8,6 +8,16 @@ import { getToken } from "next-auth/jwt";
  * `new URL("")` throw on the Edge runtime and yields MIDDLEWARE_INVOCATION_FAILED
  * on Vercel. JWT `getToken` does not rely on NEXTAUTH_URL for path parsing.
  */
+function signInRedirect(request: NextRequest) {
+  const signIn = request.nextUrl.clone();
+  signIn.pathname = "/auth/login";
+  signIn.searchParams.set(
+    "callbackUrl",
+    `${request.nextUrl.pathname}${request.nextUrl.search}`,
+  );
+  return NextResponse.redirect(signIn);
+}
+
 export async function middleware(request: NextRequest) {
   const secret =
     process.env.NEXTAUTH_SECRET ?? process.env.AUTH_SECRET ?? "";
@@ -19,19 +29,22 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  const token = await getToken({ req: request, secret });
+  const secureCookie =
+    request.nextUrl.protocol === "https:" || process.env.VERCEL === "1";
 
-  if (!token) {
-    const signIn = request.nextUrl.clone();
-    signIn.pathname = "/auth/login";
-    signIn.searchParams.set(
-      "callbackUrl",
-      `${request.nextUrl.pathname}${request.nextUrl.search}`,
-    );
-    return NextResponse.redirect(signIn);
+  try {
+    const token = await getToken({
+      req: request,
+      secret,
+      secureCookie,
+    });
+
+    if (!token) return signInRedirect(request);
+    return NextResponse.next();
+  } catch (err) {
+    console.error("[middleware] session check failed", err);
+    return signInRedirect(request);
   }
-
-  return NextResponse.next();
 }
 
 export const config = {
