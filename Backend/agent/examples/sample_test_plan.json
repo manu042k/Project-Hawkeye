@@ -1,5 +1,5 @@
 {
-  "url_to_test": "https://www.wikipedia.org/",
+  "url_to_test": "https://www.amazon.com/",
   "browser": "chromium",
   "viewport": {
     "width": 1366,
@@ -7,77 +7,77 @@
   },
   "test_cases": [
     {
-      "test_id": "tc-001",
-      "test_name": "Open Wikipedia and search for Avengers Doomsday",
+      "test_id": "tc-amazon-iphone-cart",
+      "test_name": "Open Amazon, search iPhone, add first in-grid result to cart, open cart and verify iPhone in cart",
       "assertions": [
         {
           "type": "url_contains",
-          "value": "wikipedia.org"
+          "value": "amazon"
+        },
+        {
+          "type": "url_contains",
+          "value": "cart"
         },
         {
           "type": "text_present",
-          "value": "Avengers"
+          "value": "iPhone"
         }
       ],
       "actions": [
         {
           "type": "navigate",
-          "url": "https://www.wikipedia.org/",
-          "reason": "open wikipedia home"
+          "url": "https://www.amazon.com/",
+          "reason": "open Amazon home"
+        },
+        {
+          "type": "wait",
+          "seconds": 2.0,
+          "reason": "allow homepage and search chrome to settle"
         },
         {
           "type": "type",
-          "selector": "#searchInput",
-          "text": "avengers doomsday",
-          "reason": "enter search query"
+          "selector": "#twotabsearchtextbox",
+          "text": "iphone",
+          "reason": "enter search query for iPhone"
         },
         {
           "type": "click",
-          "selector": "button[type='submit']",
+          "selector": "#nav-search-submit-button",
           "reason": "submit search"
         },
         {
           "type": "wait",
-          "seconds": 2.0
-        }
-      ],
-      "additional_context": {
-        "user_id": "demo-user",
-        "password": "super-secret-password"
-      }
-    },
-    {
-      "test_id": "tc-002",
-      "test_name": "Inspect results page and perform extra interactions",
-      "assertions": [
-        {
-          "type": "title_contains",
-          "value": "Avengers"
+          "seconds": 3.0,
+          "reason": "wait for search results"
         },
         {
-          "type": "url_contains",
-          "value": "wikipedia.org"
-        }
-      ],
-      "actions": [
-        {
           "type": "scroll",
-          "pixels": 900,
-          "reason": "scroll through results/content"
+          "pixels": 400,
+          "reason": "bring first product row into view for add-to-cart"
+        },
+        {
+          "type": "click",
+          "selector": "div.s-main-slot div[data-component-type=\"s-search-result\"] input[name=\"submit.addToCart\"]",
+          "reason": "add first search-result card that exposes add-to-cart on the results page"
         },
         {
           "type": "wait",
-          "seconds": 1.5
+          "seconds": 2.0,
+          "reason": "allow add-to-cart confirmation or mini-cart to update"
         },
         {
-          "type": "scroll",
-          "pixels": -450,
-          "reason": "scroll back up for visibility"
+          "type": "navigate",
+          "url": "https://www.amazon.com/gp/cart/view.html",
+          "reason": "open shopping cart to verify line items"
+        },
+        {
+          "type": "wait",
+          "seconds": 2.0,
+          "reason": "allow cart page to render"
         }
       ],
       "additional_context": {
-        "token": "abc123",
-        "notes": "wikipedia avengers doomsday search scenario"
+        "notes": "Amazon markup and regional cookie banners vary; adjust selectors if a step fails on your locale."
       }
     }
   ]
