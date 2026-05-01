@@ -224,6 +224,7 @@ __marimo__/
 
 # Cursor IDE local config (keep repo-agnostic)
 .cursor/
+.claude/
 artifacts/
 # Generated MCP configs (runtime)
 Backend/hawkeye_sandbox/generated.mcp.sandboxes.json
