@@ -101,17 +101,41 @@ Project-Hawkeye/
 - [x] **CLI** — `hawkeye-sandbox spawn --url <URL> --browser chromium [--record]`
 - [x] **PoC LLM integration** — Groq API + Playwright MCP stdio in `test_spawn_all_browsers_groq_mcp.py`
 
+#### Phase 1 Orchestrator — Built (branch: `feat/phase1-orchestrator`)
+- [x] **Data models** — `orchestrator/models/` — `TestCase`, `AgentState`, `RunResult`, `StepTrace`, `ErrorInfo` (Pydantic + dataclasses)
+- [x] **YAML loader** — `orchestrator/loader/yaml_loader.py` — full validation with `TestCaseValidationError`
+- [x] **System prompt builder** — `orchestrator/agent/prompt_builder.py` — guided/unguided modes, checkpoints, tool conventions
+- [x] **LLM provider** — `orchestrator/llm/provider.py` — `get_llm()` supports `ollama:*`, `groq:*`, `openrouter:*`
+- [x] **Playwright MCP client** — `orchestrator/mcp/client.py` — stdio transport, stderr drain, JSON-RPC, 90s init timeout
+- [x] **MCP tool adapter** — `orchestrator/mcp/tool_adapter.py` — wraps MCP schemas as LangChain `StructuredTool`
+- [x] **CDP session** — `orchestrator/cdp/session.py` — websockets-based, Network + Console domains
+- [x] **Custom tools** — `wait_for_stable`, `assert_text_present`, `get_console_errors`, `report_step_result`, `tool_registry`
+- [x] **Agent nodes** — `observe`, `reason`, `act`, `goal_check`, `error_handler`, `finalize`
+- [x] **Edge functions** — `route_after_reason`, `route_after_act`, `route_after_goal_check`, `route_after_error`
+- [x] **StateGraph** — `orchestrator/agent/graph.py` — compiled LangGraph with full observe→reason→act loop
+- [x] **Trace collector** — `orchestrator/trace/collector.py` — per-step accumulator + stdout renderer
+- [x] **Assertion engine** — `orchestrator/assertions/engine.py` — `content` + `console` types; others → `skipped`
+- [x] **Run manager** — `orchestrator/runner/run_manager.py` — resource lifecycle, try/finally teardown
+- [x] **CLI** — `orchestrator/cli/main.py` — `run`, `validate`, `list-tools` commands with Click
+- [x] **Test case YAMLs** — `wikipedia_search.yaml` (TC-001) + `amazon_add_to_cart.yaml` (TC-002)
+- [x] **OpenRouter provider** — `openrouter:<provider/model>` format via `ChatOpenAI` + custom headers; `OPENROUTER_API_KEY` env var
+- [x] **Retry logic** — standard 429/500 backoff `[2s, 4s, 8s]`; soft rate-limit (OpenRouter free tier) `[15s, 30s, 60s]`
+- [x] **Tool arg sanitization** — strips `null` values and `ref=` prefixes from LLM tool calls in `act.py`
+- [x] **MCP stderr drain** — background drainer prevents pipe-buffer deadlock on npx startup
+
+### Known Issues (Phase 1 — fixes pending)
+- [ ] **`browser_scroll` not in current MCP tool set** — `@playwright/mcp@latest` only matches 8 of the 14 allowlisted tools; `browser_scroll` is missing (possibly renamed). Need `list-tools` output to find correct name.
+- [ ] **URL not updating in `observe.py`** — `_parse_url_title()` reads first 10 snapshot lines for `"navigated to"` / `"url:"` patterns; current MCP snapshot format emits URL differently so URL stays as initial value throughout run. Checkpoint progression is blocked because `current_url` never updates.
+- [ ] **TC-001 Wikipedia not passing end-to-end** — agent reaches the article page but never emits `[S1 complete]` or `<GOAL_COMPLETE>` due to the URL/checkpoint tracking bug above.
+- [ ] **TC-002 Amazon not yet tested** after last round of fixes.
+
 ### Not Built Yet
-- [ ] **Agent loop engine** — LangGraph StateGraph (observe→reason→act→check)
 - [ ] **Orchestrator API** — FastAPI service
-- [ ] **Test case format** — YAML schema with goal, steps, assertions, constraints
-- [ ] **CLI runner** — `hawkeye run --test <file.yaml>`
-- [ ] **Custom tools** — wait_for_stable, assertions, network/console capture
 - [ ] **Database** — PostgreSQL schema (test_cases, test_runs, agent_traces, etc.)
 - [ ] **Docker bridge network** — hawkeye-net with container DNS
 - [ ] **Reverse proxy** — Nginx routing noVNC by run ID
-- [ ] **Tracing/observability** — Per-step token/latency/cost tracking
-- [ ] **Assertion engine** — Visual, content, state, network, a11y, performance types
+- [ ] **Tracing/observability** — Full per-step token/latency/cost tracking (Phase 2)
+- [ ] **Assertion engine (advanced)** — Visual, state, network, a11y, performance types (Phase 2)
 - [ ] **Container pool** — Pre-warmed containers
 - [ ] **Frontend ↔ backend wiring** — All pages use mock data; no real API calls
 - [ ] **CI/CD integration** — GitHub Actions webhook
@@ -127,47 +151,16 @@ Project-Hawkeye/
 1. **Wikipedia** — search a term, scroll through results
 2. **Amazon** — find a product, add to cart, navigate to cart, verify item present
 
-**Work items:**
-1. Set up Python orchestrator package (`Backend/orchestrator/`)
-   - Dependencies: `langgraph`, `langchain-community`, `langchain-ollama`, `pyyaml`
-   - Reuse existing `hawkeye_sandbox` for container management
-2. Implement LangGraph agent loop as StateGraph:
-   - `OBSERVE` node — call `wait_for_stable` + `browser_snapshot` via Playwright MCP
-   - `REASON` node — send goal + page state + history to Ollama LLM
-   - `ACT` node — execute tool call returned by LLM (route to Playwright MCP)
-   - `CHECK` node — detect goal completion (`<GOAL_COMPLETE>` / `<GOAL_BLOCKED>`)
-3. Connect to Playwright MCP inside container
-   - Use Streamable HTTP transport on container port `:3100`
-   - Or fall back to stdio transport via `npx @playwright/mcp` with `--cdp-endpoint`
-4. Implement minimal custom tools:
-   - `wait_for_stable` — basic page readiness (network idle + DOM settle)
-   - `report_step_result` — log step outcomes
-5. Define test case YAML format (simplified for Phase 1):
-   ```yaml
-   id: "TC-001"
-   name: "Wikipedia search"
-   target:
-     url: "https://www.wikipedia.org"
-     browser: "chromium"
-   goal: "Search for 'artificial intelligence' and scroll through the article"
-   steps:
-     mode: "guided"
-     checkpoints:
-       - id: "S1"
-         description: "Search for 'artificial intelligence'"
-         success_signal: "Article page is displayed"
-       - id: "S2"
-         description: "Scroll through the article content"
-         success_signal: "Multiple sections of the article are visible"
-   constraints:
-     max_steps: 20
-     timeout_seconds: 120
-   ```
-6. Build CLI entry point: `python -m orchestrator run --test tests/wikipedia_search.yaml`
-7. Console output: step-by-step trace with reasoning, tool calls, pass/fail verdict
-8. Validate both scenarios work reliably with Ollama
+**Status:** Orchestrator fully built; two bugs block E2E pass:
+1. `browser_scroll` missing from current `@playwright/mcp@latest` tool list → fix `DEFAULT_ALLOWLIST` in `tool_adapter.py`
+2. `_parse_url_title()` in `observe.py` doesn't extract URL from current MCP snapshot format → agent never updates `current_url`, so checkpoint tracking stalls
 
-**Exit criteria:** Both test cases pass from CLI with console trace output.
+**LLM providers available:**
+- `ollama:qwen3.5:2b` — local, free, primary target (requires Ollama running)
+- `groq:openai/gpt-oss-120b` — 200K token/day limit (exhausts quickly); requires `GROQ_API_KEY`
+- `openrouter:<provider/model>` — tested with `openai/gpt-oss-120b:free`; requires `OPENROUTER_API_KEY`
+
+**Exit criteria:** Both TC-001 (Wikipedia) and TC-002 (Amazon) pass from CLI with console trace output.
 
 ### Phase 2 — Observability & Tracing
 
@@ -222,9 +215,35 @@ python -m hawkeye_sandbox --url https://example.com --all   # All browsers
 set GROQ_API_KEY=<key>
 python scripts/test_spawn_all_browsers_groq_mcp.py --url https://example.com
 
-# Orchestrator (Phase 1 — once built)
-python -m orchestrator run --test tests/wikipedia_search.yaml
-python -m orchestrator run --test tests/amazon_add_to_cart.yaml
+# Orchestrator (Phase 1 — BUILT, run from Backend/ directory)
+cd Backend
+
+# Install/sync dependencies
+uv sync --extra dev
+
+# Validate a test case YAML
+python -m orchestrator validate --test orchestrator/test_cases/wikipedia_search.yaml
+
+# List available Playwright MCP tools (useful for debugging tool name changes)
+python -m orchestrator list-tools
+
+# Run with Ollama (primary — requires `ollama serve` + `ollama pull qwen3.5:2b`)
+python -m orchestrator run --test orchestrator/test_cases/wikipedia_search.yaml --verbose
+python -m orchestrator run --test orchestrator/test_cases/amazon_add_to_cart.yaml --verbose
+
+# Run with Groq fallback (requires GROQ_API_KEY env var)
+set GROQ_API_KEY=<key>
+python -m orchestrator run --test orchestrator/test_cases/wikipedia_search.yaml --model groq:openai/gpt-oss-120b --verbose
+
+# Run with OpenRouter (requires OPENROUTER_API_KEY env var)
+set OPENROUTER_API_KEY=<key>
+python -m orchestrator run --test orchestrator/test_cases/wikipedia_search.yaml --model openrouter:openai/gpt-oss-120b:free --verbose
+
+# Run unit tests (no external deps)
+pytest tests/unit/ -v
+
+# Run integration tests (requires running Docker)
+pytest tests/integration/ -v -m integration
 ```
 
 ---
