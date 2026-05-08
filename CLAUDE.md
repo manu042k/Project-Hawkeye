@@ -2,7 +2,7 @@
 
 AI-powered pre-deployment testing platform where autonomous agents execute verification tests against web applications inside observable Docker sandbox containers. Agents reason about what to do next based on a natural-language test goal and the current page state — no brittle recorded scripts.
 
-Spec document: `C:\Users\vjayr\Downloads\spec.md` (AgentQA Implementation Specification v1.0)
+Spec document: `C:\Users\vjayr\Downloads\spec.md` (Hawkeye Implementation Specification v1.0)
 
 ---
 
@@ -37,7 +37,7 @@ Sandbox Containers (Docker, one per test run)
 | API (Phase 3) | FastAPI, WebSocket |
 | Database (Phase 2) | PostgreSQL + JSONB |
 | Sandbox | Docker, Playwright, Xvfb, x11vnc, websockify, noVNC, @playwright/mcp |
-| Container networking | Docker bridge (`agentqa-net`) with container DNS (Phase 3) |
+| Container networking | Docker bridge (`hawkeye-net`) with container DNS (Phase 3) |
 
 ---
 
@@ -108,7 +108,7 @@ Project-Hawkeye/
 - [ ] **CLI runner** — `hawkeye run --test <file.yaml>`
 - [ ] **Custom tools** — wait_for_stable, assertions, network/console capture
 - [ ] **Database** — PostgreSQL schema (test_cases, test_runs, agent_traces, etc.)
-- [ ] **Docker bridge network** — agentqa-net with container DNS
+- [ ] **Docker bridge network** — hawkeye-net with container DNS
 - [ ] **Reverse proxy** — Nginx routing noVNC by run ID
 - [ ] **Tracing/observability** — Per-step token/latency/cost tracking
 - [ ] **Assertion engine** — Visual, content, state, network, a11y, performance types
@@ -181,7 +181,7 @@ Project-Hawkeye/
 
 ### Phase 3 — Multi-Browser & API
 
-- Docker bridge network (`agentqa-net`) with container DNS — no host port mapping (spec §4.4)
+- Docker bridge network (`hawkeye-net`) with container DNS — no host port mapping (spec §4.4)
 - WebKit + Firefox browser support
 - FastAPI REST API: test CRUD, run triggers, results (spec §9.1)
 - WebSocket live trace streaming (spec §9.2)
@@ -231,7 +231,7 @@ python -m orchestrator run --test tests/amazon_add_to_cart.yaml
 
 ## Spec Reference Map
 
-The full spec lives at `C:\Users\vjayr\Downloads\spec.md`. Key sections:
+The full Hawkeye spec lives at `C:\Users\vjayr\Downloads\spec.md`. Key sections:
 
 | Feature | Spec Section |
 |---|---|
