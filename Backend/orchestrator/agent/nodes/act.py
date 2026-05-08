@@ -17,7 +17,23 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_REPETITION_WINDOW = 5    # number of recent steps to check for identical tool calls
+_REPETITION_WINDOW = 5
+
+
+def _sanitize_tool_args(args: dict) -> dict:
+    """Normalize tool arguments to be compatible with Playwright MCP.
+
+    Different LLMs format optional parameters differently:
+    - Some pass ``null`` / ``None`` for unset optional fields — MCP rejects these.
+    - Some include the ``ref=`` prefix in target refs (e.g. ``'ref=e52'`` instead
+      of ``'e52'``) — strip it so Playwright can find the element.
+    """
+    cleaned = {k: v for k, v in args.items() if v is not None}
+    if "target" in cleaned and isinstance(cleaned["target"], str):
+        t = cleaned["target"]
+        if t.startswith("ref="):
+            cleaned["target"] = t[len("ref="):]
+    return cleaned    # number of recent steps to check for identical tool calls
 _REPETITION_META_LIMIT = 3  # after this many injected meta-prompts → GOAL_BLOCKED
 
 
@@ -51,7 +67,7 @@ async def act_node(
 
     tool_call = last_ai.tool_calls[0]  # Process one tool call per step
     tool_name = tool_call["name"]
-    tool_args = tool_call.get("args", {}) or {}
+    tool_args = _sanitize_tool_args(tool_call.get("args", {}) or {})
     tool_call_id = tool_call.get("id", "call-0")
 
     # --- Repetition detection ---

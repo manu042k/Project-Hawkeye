@@ -29,10 +29,15 @@ _TOOL_CONVENTIONS = """\
 ## Tool-use conventions
 - Call `browser_snapshot` to read the current accessibility tree before clicking.
   Each interactive element has a `[ref=...]` label — use that exact ref value.
-- After EVERY action, call `browser_snapshot` to verify the result before deciding the next step.
-- Do NOT call `browser_snapshot` twice in a row without an action in between.
+- Take ONE snapshot per step to decide your next action. Do NOT take multiple
+  snapshots in a row — each snapshot uses budget. If you cannot see what you
+  need, SCROLL DOWN with browser_scroll and then act on what appears.
+- The snapshot may be truncated on large pages — this is normal. Scroll down
+  to reveal more content rather than retrying the snapshot with different params.
 - After typing in a search box, press Enter via `browser_press_key` (key: 'Enter').
 - Dismiss any cookie banners, popups, or login prompts before proceeding.
+- When a search results page loads: scroll down once, then click the first
+  product title or link you can see. Do not take multiple snapshots first.
 - Use `wait_for_stable` when the page may still be loading after navigation.
 - Call `report_step_result` to log intermediate assertion outcomes.
 

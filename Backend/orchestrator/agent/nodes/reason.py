@@ -16,7 +16,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_BACKOFF_DELAYS = [2.0, 4.0, 8.0]  # seconds for rate-limit retries
+_BACKOFF_DELAYS = [2.0, 4.0, 8.0]         # standard 429/500/503 retries (Groq)
+_SOFT_RATE_LIMIT_DELAYS = [15.0, 30.0, 60.0]  # upstream congestion (OpenRouter free tier)
 # Context limits tuned for 8K-token models on Groq free tier.
 # Increase CONTEXT_CHAR_LIMIT for models with larger context windows (e.g. llama 128K).
 _CONTEXT_CHAR_LIMIT = 24_000   # ~6K tokens; trim history above this
@@ -65,7 +66,10 @@ async def reason_node(
     ai_message: AIMessage | None = None
     last_error: ErrorInfo | None = None
 
-    for attempt, delay in enumerate([0.0] + _BACKOFF_DELAYS):
+    _delays: list[float] = [0.0] + _BACKOFF_DELAYS
+    attempt = 0
+    while attempt < len(_delays):
+        delay = _delays[attempt]
         if delay > 0:
             logger.info("REASON: rate-limit backoff %.1fs (attempt %d)", delay, attempt)
             await asyncio.sleep(delay)
@@ -76,6 +80,7 @@ async def reason_node(
             break
         except Exception as exc:
             exc_str = str(exc)
+            attempt += 1
             logger.warning("REASON: LLM call attempt %d failed: %s", attempt + 1, exc_str[:200])
 
             # Connection failures are fatal — no point retrying if Ollama/Groq is unreachable.
@@ -140,7 +145,32 @@ async def reason_node(
                 )
                 break
 
-            # Rate limit or server errors: retry with backoff.
+            # Upstream congestion on free-tier models (OpenRouter).
+            # Switch to longer delays and keep retrying.
+            if "temporarily rate-limited" in exc_str.lower() or "please retry shortly" in exc_str.lower():
+                if _delays == [0.0] + _BACKOFF_DELAYS:
+                    _delays = [0.0] + _SOFT_RATE_LIMIT_DELAYS
+                    attempt = 1  # restart with new delay schedule
+                last_error = ErrorInfo(
+                    error_type="llm_rate_limit",
+                    message=exc_str[:200],
+                    step_number=state["step_number"],
+                    recoverable=True,
+                )
+                if attempt < len(_delays):
+                    continue
+
+            # Daily/account hard rate limit: no point retrying.
+            if "tokens per day" in exc_str.lower() or ("tpd" in exc_str.lower() and "429" in exc_str):
+                last_error = ErrorInfo(
+                    error_type="llm_rate_limit",
+                    message=exc_str[:200],
+                    step_number=state["step_number"],
+                    recoverable=False,
+                )
+                break
+
+            # Standard rate limit or server errors: retry with short backoff.
             if any(k in exc_str for k in ("429", "500", "503", "rate", "overloaded")):
                 last_error = ErrorInfo(
                     error_type="llm_rate_limit",
@@ -148,7 +178,7 @@ async def reason_node(
                     step_number=state["step_number"],
                     recoverable=True,
                 )
-                if attempt < len(_BACKOFF_DELAYS):
+                if attempt < len(_delays):
                     continue
 
             # Other errors — treat as recoverable for one retry, then give up.
@@ -156,7 +186,7 @@ async def reason_node(
                 error_type="llm_rate_limit",
                 message=exc_str[:200],
                 step_number=state["step_number"],
-                recoverable=attempt < len(_BACKOFF_DELAYS),
+                recoverable=attempt < len(_delays),
             )
             break
 

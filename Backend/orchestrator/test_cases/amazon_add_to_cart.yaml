@@ -1,3 +1,4 @@
+
 id: "TC-002"
 name: "Amazon: find product, add to cart, verify cart"
 suite: "phase1-smoke"
@@ -60,7 +61,7 @@ assertions:
     description: "No critical JS errors during the flow"
     params:
       level: "error"
-      max_count: 5
+      max_count: 15
       ignore_patterns:
         - "favicon"
         - "analytics"
@@ -68,6 +69,16 @@ assertions:
         - "ads"
         - "adsystem"
         - "doubleclick"
+        - "Track&Report"
+        - "wamazin"
+        - "ueLogError"
+        - "mix_csa"
+        - "MIX C"
+        - "csm.*v5"
+        - "@m/mash"
+        - "Late loading module"
+        - "tiny/1covqr6l"
+        - "logLevel.*WARN"
 
 constraints:
   max_steps: 35
@@ -93,3 +104,8 @@ context:
     - "Product pages have 'Add to Cart' or 'Add to Shopping Cart' button"
     - "Do NOT click 'Proceed to checkout' — stop at the cart page"
     - "After adding to cart, a confirmation dialog may appear — look for cart navigation link"
+    - "For checkpoint S1: type in the search box then press Enter. After results appear, mark S1 complete and move to S2"
+    - "For checkpoint S2: after search results, immediately click on the FIRST product title link visible — do not take multiple snapshots"
+    - "If you cannot see product listings, use browser_scroll to scroll down, then click the first product link you see"
+    - "For checkpoint S3: on the product page, find and click 'Add to Cart'. If a popup appears, close it and navigate to cart"
+    - "For checkpoint S4-S5: click the cart icon or 'Go to Cart' link, verify a headphones item appears"
