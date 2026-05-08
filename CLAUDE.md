@@ -65,7 +65,20 @@ Project-Hawkeye/
 │   │   │   ├── launch_browser.py
 │   │   │   └── supervisord.conf
 │   │   └── examples/              # Example scripts
-│   └── pyproject.toml             # Poetry config
+│   ├── orchestrator/              # Phase 1 agent harness (CLI-only, no API yet)
+│   │   ├── agent/                 # LangGraph StateGraph (nodes, edges, graph, prompt_builder)
+│   │   ├── models/                # TestCase, AgentState, StepTrace, RunResult dataclasses
+│   │   ├── runner/                # RunManager — full test lifecycle orchestration
+│   │   ├── tools/                 # Custom tools: wait_for_stable, assert_text_present, etc.
+│   │   ├── mcp/                   # PlaywrightMcpClient (stdio transport)
+│   │   ├── cdp/                   # Chrome DevTools Protocol session
+│   │   ├── trace/                 # Per-step trace collector (tokens, latency, cost)
+│   │   ├── assertions/            # AssertionEngine (content + console types)
+│   │   ├── llm/                   # LLM provider factory (Ollama / Groq)
+│   │   ├── loader/                # YAML test case loader
+│   │   ├── cli/                   # Click CLI entry point
+│   │   └── test_cases/            # wikipedia_search.yaml (TC-001), amazon_add_to_cart.yaml (TC-002)
+│   └── pyproject.toml             # uv / pyproject config
 │
 ├── Docs/                          # Architecture & design docs
 │   ├── SystemArchitecture.md
@@ -92,6 +105,7 @@ Project-Hawkeye/
   - Test suites, visual baselines, vault, settings/integrations
   - Middleware route protection, JWT validation, OAuth (Google/GitHub)
   - Zustand stores for project context and theme
+  - Phase 1 mock data (dashboard, runs, suites) shaped to match backend API types exactly
 - [x] **Sandbox container image** — Dockerfile with Xvfb, x11vnc, websockify, noVNC, Playwright, supervisord
 - [x] **SandboxManager** — Spawn/stop Docker containers, random host port mapping, health checks
 - [x] **VNC streaming** — Xvfb → x11vnc (view-only) → websockify → noVNC HTML client
@@ -100,72 +114,53 @@ Project-Hawkeye/
 - [x] **MCP config generation** — Dynamic server entries for chrome-devtools-mcp + @playwright/mcp
 - [x] **CLI** — `hawkeye-sandbox spawn --url <URL> --browser chromium [--record]`
 - [x] **PoC LLM integration** — Groq API + Playwright MCP stdio in `test_spawn_all_browsers_groq_mcp.py`
+- [x] **Agent loop engine** — LangGraph StateGraph (observe→reason→act→goal_check→error_handler→finalize) in `Backend/orchestrator/agent/`
+- [x] **Test case YAML format** — Pydantic schema in `Backend/orchestrator/models/test_case.py`; TC-001 + TC-002 YAML files ready
+- [x] **CLI runner** — `python -m orchestrator run --test <file.yaml>` via `Backend/orchestrator/cli/main.py`
+- [x] **Custom tools** — `wait_for_stable`, `assert_text_present`, `get_console_errors`, `report_step_result` in `Backend/orchestrator/tools/`
+- [x] **MCP client** — `PlaywrightMcpClient` (stdio transport) in `Backend/orchestrator/mcp/`
+- [x] **CDP session** — Chrome DevTools Protocol session manager in `Backend/orchestrator/cdp/`
+- [x] **Trace collector** — Per-step token/latency/cost tracking in `Backend/orchestrator/trace/`
+- [x] **Assertion engine** — Content + console assertion types in `Backend/orchestrator/assertions/`
+- [x] **Phase 1 smoke test cases** — `wikipedia_search.yaml` (TC-001) and `amazon_add_to_cart.yaml` (TC-002)
+
+> **Phase 1 exit criteria status:** Backend ready. Pending real Ollama/Groq run against live Docker sandbox to confirm both test cases pass end-to-end from CLI.
 
 ### Not Built Yet
-- [ ] **Agent loop engine** — LangGraph StateGraph (observe→reason→act→check)
-- [ ] **Orchestrator API** — FastAPI service
-- [ ] **Test case format** — YAML schema with goal, steps, assertions, constraints
-- [ ] **CLI runner** — `hawkeye run --test <file.yaml>`
-- [ ] **Custom tools** — wait_for_stable, assertions, network/console capture
-- [ ] **Database** — PostgreSQL schema (test_cases, test_runs, agent_traces, etc.)
-- [ ] **Docker bridge network** — hawkeye-net with container DNS
+- [ ] **Orchestrator HTTP API** — FastAPI service (Phase 3)
+- [ ] **Database** — PostgreSQL schema; RunResult currently in-memory only, not persisted
+- [ ] **Docker bridge network** — hawkeye-net with container DNS (Phase 3)
 - [ ] **Reverse proxy** — Nginx routing noVNC by run ID
-- [ ] **Tracing/observability** — Per-step token/latency/cost tracking
-- [ ] **Assertion engine** — Visual, content, state, network, a11y, performance types
 - [ ] **Container pool** — Pre-warmed containers
-- [ ] **Frontend ↔ backend wiring** — All pages use mock data; no real API calls
-- [ ] **CI/CD integration** — GitHub Actions webhook
-- [ ] **Billing** — Stripe integration
+- [ ] **Frontend ↔ backend wiring** — All pages use mock data; no real API calls (Phase 4)
+- [ ] **WebSocket live trace streaming** — real-time agent trace in Live Execution page (Phase 3)
+- [ ] **CI/CD integration** — GitHub Actions webhook (Phase 4)
+- [ ] **Billing** — Stripe integration (Phase 4)
+- [ ] **Extended assertion types** — visual (pixelmatch), network, a11y, performance (Phase 2)
 
 ---
 
 ## Phased Roadmap
 
-### Phase 1 — CLI Agent Harness ★ CURRENT PRIORITY
+### Phase 1 — CLI Agent Harness ✓ BACKEND COMPLETE
 
 **Goal:** Run end-to-end agentic tests from CLI that reliably pass on:
-1. **Wikipedia** — search a term, scroll through results
-2. **Amazon** — find a product, add to cart, navigate to cart, verify item present
+1. **Wikipedia** — search a term, open article, scroll through content (TC-001)
+2. **Amazon** — find a product, add to cart, navigate to cart, verify item present (TC-002)
 
-**Work items:**
-1. Set up Python orchestrator package (`Backend/orchestrator/`)
-   - Dependencies: `langgraph`, `langchain-community`, `langchain-ollama`, `pyyaml`
-   - Reuse existing `hawkeye_sandbox` for container management
-2. Implement LangGraph agent loop as StateGraph:
-   - `OBSERVE` node — call `wait_for_stable` + `browser_snapshot` via Playwright MCP
-   - `REASON` node — send goal + page state + history to Ollama LLM
-   - `ACT` node — execute tool call returned by LLM (route to Playwright MCP)
-   - `CHECK` node — detect goal completion (`<GOAL_COMPLETE>` / `<GOAL_BLOCKED>`)
-3. Connect to Playwright MCP inside container
-   - Use Streamable HTTP transport on container port `:3100`
-   - Or fall back to stdio transport via `npx @playwright/mcp` with `--cdp-endpoint`
-4. Implement minimal custom tools:
-   - `wait_for_stable` — basic page readiness (network idle + DOM settle)
-   - `report_step_result` — log step outcomes
-5. Define test case YAML format (simplified for Phase 1):
-   ```yaml
-   id: "TC-001"
-   name: "Wikipedia search"
-   target:
-     url: "https://www.wikipedia.org"
-     browser: "chromium"
-   goal: "Search for 'artificial intelligence' and scroll through the article"
-   steps:
-     mode: "guided"
-     checkpoints:
-       - id: "S1"
-         description: "Search for 'artificial intelligence'"
-         success_signal: "Article page is displayed"
-       - id: "S2"
-         description: "Scroll through the article content"
-         success_signal: "Multiple sections of the article are visible"
-   constraints:
-     max_steps: 20
-     timeout_seconds: 120
-   ```
-6. Build CLI entry point: `python -m orchestrator run --test tests/wikipedia_search.yaml`
-7. Console output: step-by-step trace with reasoning, tool calls, pass/fail verdict
-8. Validate both scenarios work reliably with Ollama
+**What was built:**
+- `Backend/orchestrator/` — full Python package with LangGraph agent loop
+- StateGraph nodes: `OBSERVE → REASON → ACT → GOAL_CHECK → ERROR_HANDLER → FINALIZE`
+- Playwright MCP client (stdio transport) + 4 custom tools
+- YAML test case loader + Pydantic schema
+- Per-step trace collector (tokens, latency, cost, page context)
+- Assertion engine (content + console types)
+- Click CLI: `python -m orchestrator run --test <file.yaml>`
+- Unit tests in `Backend/tests/unit/`, e2e stubs in `Backend/tests/e2e/`
+
+**Remaining to validate:**
+- Run `python -m orchestrator run --test Backend/orchestrator/test_cases/wikipedia_search.yaml` against a live Docker sandbox with Ollama or Groq configured
+- Confirm both TC-001 and TC-002 pass with console trace output
 
 **Exit criteria:** Both test cases pass from CLI with console trace output.
 
@@ -222,9 +217,10 @@ python -m hawkeye_sandbox --url https://example.com --all   # All browsers
 set GROQ_API_KEY=<key>
 python scripts/test_spawn_all_browsers_groq_mcp.py --url https://example.com
 
-# Orchestrator (Phase 1 — once built)
-python -m orchestrator run --test tests/wikipedia_search.yaml
-python -m orchestrator run --test tests/amazon_add_to_cart.yaml
+# Orchestrator CLI (Phase 1 — built, pending live sandbox validation)
+python -m orchestrator run --test Backend/orchestrator/test_cases/wikipedia_search.yaml
+python -m orchestrator run --test Backend/orchestrator/test_cases/amazon_add_to_cart.yaml
+python -m orchestrator validate --test Backend/orchestrator/test_cases/wikipedia_search.yaml
 ```
 
 ---

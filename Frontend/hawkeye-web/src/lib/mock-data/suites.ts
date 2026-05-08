@@ -8,6 +8,13 @@ export type TestSuite = {
 
 export const suites: TestSuite[] = [
   {
+    id: "phase1-smoke",
+    name: "Phase 1 Smoke",
+    testCount: 2,
+    description: "Smoke tests for orchestrator Phase 1: Wikipedia search flow and Amazon add-to-cart.",
+    passRate: 0.5,
+  },
+  {
     id: "auth-core",
     name: "Authentication Core",
     testCount: 14,
