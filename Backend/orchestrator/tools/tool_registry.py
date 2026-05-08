@@ -1,0 +1,132 @@
+"""Registry that dispatches custom tool calls at runtime."""
+from __future__ import annotations
+
+import logging
+from typing import TYPE_CHECKING, Any, Callable
+
+if TYPE_CHECKING:
+    from orchestrator.cdp.session import CdpSession
+    from orchestrator.models.run_state import AgentState
+
+logger = logging.getLogger(__name__)
+
+
+class ToolNotFoundError(KeyError):
+    """Raised when a tool name is not registered."""
+
+
+class ToolExecutionError(RuntimeError):
+    """Wraps any exception raised by a custom tool function."""
+
+
+class ToolRegistry:
+    """Maps custom tool names to async callables and dispatches calls.
+
+    Each registered function receives ``(tool_input, cdp_session, state)``
+    keyword arguments. Callers always get a plain value back — never a
+    raw exception (wrapped in ToolExecutionError or ToolNotFoundError).
+    """
+
+    def __init__(self) -> None:
+        self._handlers: dict[str, Callable] = {}
+
+    def register(self, name: str, fn: Callable) -> None:
+        self._handlers[name] = fn
+
+    async def dispatch(
+        self,
+        name: str,
+        tool_input: dict,
+        *,
+        cdp_session: CdpSession,
+        state: AgentState,
+    ) -> Any:
+        """Execute a custom tool by name.
+
+        Raises:
+            ToolNotFoundError: if ``name`` is not registered.
+            ToolExecutionError: if the handler raises any exception.
+        """
+        handler = self._handlers.get(name)
+        if handler is None:
+            raise ToolNotFoundError(
+                f"Custom tool {name!r} is not registered. "
+                f"Available: {sorted(self._handlers)}"
+            )
+        try:
+            return await handler(
+                tool_input=tool_input,
+                cdp_session=cdp_session,
+                state=state,
+            )
+        except (ToolNotFoundError, ToolExecutionError):
+            raise
+        except Exception as exc:
+            raise ToolExecutionError(
+                f"Custom tool {name!r} raised {type(exc).__name__}: {exc}"
+            ) from exc
+
+    @property
+    def registered_names(self) -> list[str]:
+        return sorted(self._handlers)
+
+
+def build_default_registry(
+    cdp_session_provider: Callable[[], CdpSession | None],
+) -> ToolRegistry:
+    """Build and return a ToolRegistry pre-populated with all Phase 1 custom tools."""
+    from orchestrator.tools.wait_for_stable import wait_for_stable
+    from orchestrator.tools.assert_text_present import assert_text_present
+    from orchestrator.tools.get_console_errors import get_console_errors
+    from orchestrator.tools.report_step_result import report_step_result
+
+    registry = ToolRegistry()
+
+    async def _wait_for_stable(tool_input: dict, cdp_session: CdpSession, state: AgentState) -> str:
+        page_type = state["test_case"].context.page_type if state.get("test_case") else "spa"
+        timeout_ms = tool_input.get("timeout_ms", 8000)
+        result = await wait_for_stable(
+            cdp_session=cdp_session,
+            page_type=page_type,
+            timeout_ms=timeout_ms,
+        )
+        return (
+            f"Page stable: {result.stable} "
+            f"(waited {result.wait_duration_ms}ms, signals={result.signals})"
+        )
+
+    async def _assert_text(tool_input: dict, cdp_session: CdpSession, state: AgentState) -> str:
+        result = assert_text_present(
+            page_snapshot=state.get("page_snapshot", ""),
+            text=tool_input.get("text"),
+            pattern=tool_input.get("pattern"),
+            case_sensitive=tool_input.get("case_sensitive", True),
+        )
+        return f"Assertion {result.status.upper()}: {result.description}" + (
+            f" | {result.details}" if result.details else ""
+        )
+
+    async def _get_console_errors(tool_input: dict, cdp_session: CdpSession, state: AgentState) -> str:
+        result = await get_console_errors(
+            cdp_session=cdp_session,
+            level=tool_input.get("level", "error"),
+            ignore_patterns=tool_input.get("ignore_patterns"),
+        )
+        if result.count == 0:
+            return "No console errors found."
+        msgs = "\n".join(f"  - {m}" for m in result.messages[:10])
+        return f"{result.count} console error(s):\n{msgs}"
+
+    async def _report_step(tool_input: dict, cdp_session: CdpSession, state: AgentState) -> str:
+        return report_step_result(
+            step_id=tool_input.get("step_id", "?"),
+            status=tool_input.get("status", "passed"),
+            summary=tool_input.get("summary", ""),
+            evidence=tool_input.get("evidence"),
+        )
+
+    registry.register("wait_for_stable", _wait_for_stable)
+    registry.register("assert_text_present", _assert_text)
+    registry.register("get_console_errors", _get_console_errors)
+    registry.register("report_step_result", _report_step)
+    return registry

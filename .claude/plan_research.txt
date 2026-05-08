@@ -1,0 +1,1624 @@
+Now I have a thorough understanding of the codebase. Let me compose the complete implementation plan:
+
+---
+
+# Project Hawkeye — Phase 1 Orchestrator: Detailed Implementation Plan
+
+## Overview and Framing
+
+The existing codebase has:
+- `Backend/hawkeye_sandbox/` — fully functional: `SandboxManager`, `SandboxConfig`, `SandboxHandle`, MCP config generation
+- `Backend/agent/` — source files deleted (only `__pycache__` remain from a prior iteration), subdirs: `core/`, `models/`, `execution/`, `entrypoints/`, `storage/`, `utils/`
+- `scripts/test_mcp_wiring.py` — working PoC using `McpStdioClient`, `mcp_tools_to_langchain`, `create_react_agent` with Ollama
+
+The prior `agent/core/` had: `mcp_client`, `mcp_tool_adapter`, `ollama_runtime`, `mcp_runtime`, `service`, `evidence_verifier`. This was a flat React agent — no LangGraph StateGraph, no custom tools, no YAML test cases.
+
+Phase 1 must build: a proper `Backend/orchestrator/` package with LangGraph StateGraph, custom tools (including `wait_for_stable`), YAML test case parsing, and a CLI runner — all fully functional, tested, with graceful failure handling.
+
+---
+
+## 1. Directory and File Structure
+
+```
+Backend/
+├── orchestrator/
+│   ├── __init__.py
+│   ├── __main__.py                    # `python -m orchestrator run --test ...`
+│   │
+│   ├── models/
+│   │   ├── __init__.py
+│   │   ├── test_case.py               # TestCase, Steps, Checkpoint, Assertion, Constraints, Context
+│   │   ├── run_state.py               # AgentState TypedDict, StepTrace dataclass
+│   │   └── results.py                 # RunResult, AssertionResult, RunStatus enum
+│   │
+│   ├── agent/
+│   │   ├── __init__.py
+│   │   ├── graph.py                   # StateGraph construction and compilation
+│   │   ├── nodes/
+│   │   │   ├── __init__.py
+│   │   │   ├── observe.py             # OBSERVE node
+│   │   │   ├── reason.py              # REASON node (Anthropic API call)
+│   │   │   ├── act.py                 # ACT node (tool dispatch)
+│   │   │   ├── goal_check.py          # GOAL_CHECK node
+│   │   │   ├── error_handler.py       # ERROR_HANDLER node
+│   │   │   └── finalize.py            # FINALIZE node
+│   │   ├── edges/
+│   │   │   ├── __init__.py
+│   │   │   ├── route_after_reason.py
+│   │   │   ├── route_after_act.py
+│   │   │   ├── route_after_goal_check.py
+│   │   │   └── route_after_error.py
+│   │   └── prompt_builder.py          # System prompt construction from TestCase
+│   │
+│   ├── tools/
+│   │   ├── __init__.py
+│   │   ├── wait_for_stable.py         # Multi-signal page readiness (Phase 1: network+DOM)
+│   │   ├── assert_text_present.py     # Text/regex content assertion
+│   │   ├── report_step_result.py      # Logs step outcome into state
+│   │   ├── get_console_errors.py      # Console error capture via CDP
+│   │   ├── tool_registry.py           # Maps tool names to handler functions
+│   │   └── schemas.py                 # LangChain tool schema definitions (input_schema dicts)
+│   │
+│   ├── mcp/
+│   │   ├── __init__.py
+│   │   ├── client.py                  # HTTP Streamable MCP client (connects to :3100)
+│   │   └── tool_adapter.py            # Converts MCP tool list to LangChain StructuredTool list
+│   │
+│   ├── cdp/
+│   │   ├── __init__.py
+│   │   └── session.py                 # CDP WebSocket session (for wait_for_stable, console capture)
+│   │
+│   ├── trace/
+│   │   ├── __init__.py
+│   │   └── collector.py               # StepTrace accumulator, run summary computation, stdout renderer
+│   │
+│   ├── assertions/
+│   │   ├── __init__.py
+│   │   └── engine.py                  # Post-loop assertion evaluator
+│   │
+│   ├── loader/
+│   │   ├── __init__.py
+│   │   └── yaml_loader.py             # YAML/JSON test case parser with validation
+│   │
+│   ├── runner/
+│   │   ├── __init__.py
+│   │   └── run_manager.py             # Orchestrates sandbox + agent loop for one test run
+│   │
+│   ├── cli/
+│   │   ├── __init__.py
+│   │   └── main.py                    # Click CLI: `run`, `validate`, `list` subcommands
+│   │
+│   └── test_cases/
+│       ├── wikipedia_search.yaml
+│       └── amazon_add_to_cart.yaml
+│
+└── tests/
+    ├── unit/
+    │   ├── test_yaml_loader.py
+    │   ├── test_prompt_builder.py
+    │   ├── test_tool_registry.py
+    │   ├── test_trace_collector.py
+    │   ├── test_wait_for_stable.py
+    │   ├── test_assert_text_present.py
+    │   ├── test_edges.py              # Route function unit tests
+    │   └── test_models.py
+    ├── integration/
+    │   ├── test_mcp_client.py         # Tests against live MCP server in sandbox
+    │   ├── test_agent_graph.py        # Full agent loop against real Wikipedia
+    │   └── test_cdp_session.py
+    └── e2e/
+        ├── test_wikipedia.py          # End-to-end: wikipedia_search.yaml passes
+        └── test_amazon.py             # End-to-end: amazon_add_to_cart.yaml passes
+```
+
+---
+
+## 2. LangGraph StateGraph Design
+
+### 2.1 State Schema
+
+The spec (§7.3) defines a TypeScript `Annotation.Root(...)`. The Python equivalent uses `TypedDict` with LangGraph's `add_messages` reducer for the messages field.
+
+```python
+# orchestrator/models/run_state.py
+
+from __future__ import annotations
+import time
+from dataclasses import dataclass, field
+from typing import Annotated, Any, Literal, Optional
+from langchain_core.messages import BaseMessage
+from langgraph.graph.message import add_messages
+
+
+RunStatus = Literal[
+    "running", "passed", "failed", "errored", "timed_out", "blocked"
+]
+
+
+@dataclass
+class ErrorInfo:
+    error_type: str          # llm_timeout | llm_rate_limit | tool_error | browser_crash | mcp_disconnect
+    message: str
+    step_number: int
+    tool_name: Optional[str] = None
+    recoverable: bool = True
+    timestamp: float = field(default_factory=time.time)
+
+
+@dataclass
+class StepTrace:
+    step_number: int
+    timestamp: float
+    completed_at: Optional[float] = None
+    checkpoint_id: Optional[str] = None
+    checkpoint_completed: bool = False
+    # LLM fields
+    llm_request_id: Optional[str] = None
+    model: str = ""
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_creation_tokens: int = 0
+    llm_latency_ms: int = 0
+    tool_execution_latency_ms: int = 0
+    wait_for_stable_ms: int = 0
+    total_step_latency_ms: int = 0
+    # Tool fields
+    tool_name: Optional[str] = None
+    tool_source: Optional[str] = None   # "mcp" | "custom"
+    tool_input: Optional[dict] = None
+    tool_output: Optional[Any] = None
+    tool_success: bool = True
+    tool_error: Optional[str] = None
+    tool_retries: int = 0
+    # Agent text
+    reasoning: Optional[str] = None
+    agent_output_text: Optional[str] = None
+    stop_reason: Optional[str] = None
+    # Page context
+    page_url: str = ""
+    page_title: str = ""
+    # Cost
+    estimated_cost_usd: float = 0.0
+
+
+class AgentState(TypedDict):
+    # Test case context (set once at start)
+    test_case: TestCase
+    run_id: str
+    container_host: str
+    mcp_url: str
+    cdp_url: Optional[str]
+
+    # Conversation history (accumulates via add_messages reducer)
+    messages: Annotated[list[BaseMessage], add_messages]
+
+    # Step tracking
+    step_number: int
+    current_checkpoint: Optional[str]
+    completed_checkpoints: list[str]
+
+    # Page state
+    current_url: str
+    page_title: str
+    page_snapshot: str
+
+    # Tool execution
+    last_tool_name: Optional[str]
+    last_tool_result: Any
+    last_tool_success: bool
+
+    # Error tracking
+    consecutive_errors: int
+    last_error: Optional[ErrorInfo]
+    error_history: list[ErrorInfo]
+
+    # Per-step trace accumulator
+    traces: list[StepTrace]
+    current_trace: Optional[StepTrace]
+
+    # Termination
+    status: RunStatus
+    goal_complete: bool
+    termination_reason: Optional[str]
+
+    # Runtime clock
+    run_start_time: float
+```
+
+### 2.2 Graph Construction
+
+```python
+# orchestrator/agent/graph.py
+
+from langgraph.graph import StateGraph, START, END
+from orchestrator.models.run_state import AgentState
+from orchestrator.agent.nodes import (
+    observe_node, reason_node, act_node,
+    goal_check_node, error_handler_node, finalize_node,
+)
+from orchestrator.agent.edges import (
+    route_after_reason, route_after_act,
+    route_after_goal_check, route_after_error,
+)
+
+
+def build_graph() -> StateGraph:
+    builder = StateGraph(AgentState)
+
+    builder.add_node("observe",        observe_node)
+    builder.add_node("reason",         reason_node)
+    builder.add_node("act",            act_node)
+    builder.add_node("goal_check",     goal_check_node)
+    builder.add_node("error_handler",  error_handler_node)
+    builder.add_node("finalize",       finalize_node)
+
+    builder.add_edge(START, "observe")
+    builder.add_edge("observe", "reason")
+
+    builder.add_conditional_edges(
+        "reason",
+        route_after_reason,
+        {"act": "act", "goal_check": "goal_check", "error": "error_handler"},
+    )
+
+    builder.add_conditional_edges(
+        "act",
+        route_after_act,
+        {"observe": "observe", "error": "error_handler"},
+    )
+
+    builder.add_conditional_edges(
+        "goal_check",
+        route_after_goal_check,
+        {"finalize": "finalize", "observe": "observe"},
+    )
+
+    builder.add_conditional_edges(
+        "error_handler",
+        route_after_error,
+        {"observe": "observe", "finalize": "finalize"},
+    )
+
+    builder.add_edge("finalize", END)
+
+    return builder.compile()
+```
+
+Note: Phase 1 omits the `guard_rails` node (spec §7.4 navigation policy enforcement is a Phase 2 concern per CLAUDE.md). The spec's full graph includes it, but CLAUDE.md Phase 1 work items do not mention guard rails.
+
+### 2.3 Node Specifications
+
+**OBSERVE node** (`observe.py`):
+
+```python
+async def observe_node(state: AgentState) -> dict:
+    """
+    Inputs consumed:  mcp_url, cdp_url, test_case.constraints, run_start_time, step_number, traces
+    Outputs produced: step_number, current_url, page_title, page_snapshot,
+                      current_trace (partial), status (if timeout exceeded)
+
+    Raises: Never — catches all exceptions and sets status=errored if unrecoverable.
+    """
+```
+
+Behavior:
+1. Check wall-clock timeout: if `time.time() - state["run_start_time"] > test_case.constraints.timeout_seconds`, return `{"status": "timed_out", "termination_reason": "wall_clock_timeout"}`.
+2. Check step count: if `state["step_number"] >= test_case.constraints.max_steps`, return `{"status": "timed_out", "termination_reason": "max_steps_exceeded"}`.
+3. Increment `step_number`.
+4. Create a new `StepTrace(step_number=..., timestamp=time.time())`.
+5. Call `wait_for_stable` custom tool with a timeout of 8 seconds. Record `wait_for_stable_ms`.
+6. Call `browser_snapshot` via MCP client. Parse the result to extract `current_url`, `page_title`, `page_snapshot` (the accessibility tree text). On MCP failure, retry up to 5 times with 1s delay (per spec §7.3 `retry: { maxAttempts: 5 }`). After 5 failures, set `status: errored`.
+7. Return updated state fields plus partial `current_trace`.
+
+**REASON node** (`reason.py`):
+
+```python
+async def reason_node(state: AgentState) -> dict:
+    """
+    Inputs consumed:  test_case, messages, page_snapshot, current_url, page_title,
+                      completed_checkpoints, current_checkpoint, step_number
+    Outputs produced: messages (appended with AIMessage), current_trace (with LLM fields)
+
+    Retry policy: 3 attempts with exponential backoff (2s, 4s, 8s) for rate limit / server error.
+    Fatal: 401, model not found — returns status=errored immediately.
+    """
+```
+
+Behavior:
+1. Build the merged tool list: `mcp_tools + custom_tool_schemas`.
+2. Construct the user turn message: inject current page snapshot, current URL/title, and active checkpoint hint.
+3. Call `anthropic.messages.create(...)` with streaming enabled. Record `time_to_first_token_ms`.
+4. Extract `usage.input_tokens`, `usage.output_tokens`, `usage.cache_read_input_tokens`, `usage.cache_creation_input_tokens`. Extract `x-request-id` header.
+5. Extract `thinking` blocks (reasoning) and `text` blocks (agent_output_text).
+6. Compute `estimated_cost_usd` using the model pricing table.
+7. Append the LLM response as `AIMessage` to `messages`.
+8. Update `current_trace` with all LLM fields.
+9. For rate limit (429): wait with exponential backoff (2s → 4s → 8s), retry up to 3 times. After 3 failures, set `last_error` with `error_type="llm_rate_limit"` and route to error_handler.
+10. For auth error (401) or unknown model: immediately set `status: errored`, `termination_reason: "llm_auth_error"`.
+
+**ACT node** (`act.py`):
+
+```python
+async def act_node(state: AgentState) -> dict:
+    """
+    Inputs consumed:  messages (last AIMessage with tool_use content), mcp_url, test_case
+    Outputs produced: messages (appended with ToolMessage), last_tool_name, last_tool_result,
+                      last_tool_success, current_trace (with tool fields), consecutive_errors
+
+    Retry policy: 2 attempts with 500ms delay for tool execution failures.
+    """
+```
+
+Behavior:
+1. Extract the `tool_use` block from the last `AIMessage`.
+2. Route based on tool name:
+   - `browser_*` tools: call MCP client `call_tool(name, input)`. `tool_source = "mcp"`.
+   - All other tools: call the function from `tool_registry`. `tool_source = "custom"`.
+3. Measure `tool_execution_latency_ms`.
+4. On success: reset `consecutive_errors` to 0, append `ToolMessage` to `messages`, update `current_trace`.
+5. On failure: increment `consecutive_errors`, record `tool_error`, append an error `ToolMessage` (so agent sees the error), update `current_trace` with `tool_success=False`.
+6. On `consecutive_errors >= 3`: set `last_error` with `error_type="tool_error"`, `recoverable=False`.
+7. Detect repetitive actions: if the last 5 `tool_name` values in traces are identical, inject a meta-prompt into messages: "You've attempted this action 5 times without progress. Try a different approach."
+8. Append completed trace to `state["traces"]`.
+
+**GOAL_CHECK node** (`goal_check.py`):
+
+```python
+def goal_check_node(state: AgentState) -> dict:
+    """
+    Inputs consumed:  messages (last AIMessage), completed_checkpoints, test_case
+    Outputs produced: goal_complete, status, termination_reason, completed_checkpoints
+    Pure function — no I/O. Routes based on text signals in LLM output.
+    """
+```
+
+Behavior:
+1. Scan `agent_output_text` in `current_trace` for `<GOAL_COMPLETE>` or `<GOAL_BLOCKED>`.
+2. Also scan for `[S1 complete]`, `[S2 complete]`, etc. — update `completed_checkpoints`.
+3. If `<GOAL_COMPLETE>`: set `goal_complete=True`, `status="passed"`.
+4. If `<GOAL_BLOCKED>`: set `goal_complete=True`, `status="blocked"`, `termination_reason=<agent explanation>`.
+5. If `status` is already `timed_out` or `errored`: set `goal_complete=True` to force finalize.
+6. In `strict` mode: if a checkpoint is marked failed, set `status="failed"`.
+
+**ERROR_HANDLER node** (`error_handler.py`):
+
+```python
+def error_handler_node(state: AgentState) -> dict:
+    """
+    Inputs consumed:  last_error, consecutive_errors, error_history
+    Outputs produced: error_history (appended), status (if fatal), messages (injected recovery prompt)
+    Classifies errors and decides recoverable vs fatal per spec §7.5 table.
+    """
+```
+
+Behavior per spec §7.5 failure taxonomy:
+- `llm_rate_limit`: already handled with backoff in `reason` node. If it reaches error_handler, it's been retried — route to observe (the wait was already done).
+- `tool_error` with `consecutive_errors < 3`: inject error context into messages ("The last tool call failed: {error}. Adapt your approach."). Append to `error_history`. Route to `observe`.
+- `tool_error` with `consecutive_errors >= 3`: set `status="errored"`, `termination_reason="max_consecutive_tool_errors"`.
+- `mcp_disconnect`: attempt MCP client reconnection (up to 3 times). If reconnects: inject "MCP reconnected" message, route to `observe`. If not: `status="errored"`.
+- `llm_auth_error` or any `recoverable=False` error: `status="errored"`.
+
+**FINALIZE node** (`finalize.py`):
+
+```python
+async def finalize_node(state: AgentState) -> dict:
+    """
+    Inputs consumed:  traces, status, test_case, messages, page_snapshot
+    Outputs produced: status (final), termination_reason
+    Side effects:     Runs assertion engine, prints trace summary to stdout.
+    """
+```
+
+Behavior:
+1. Run the assertion engine against `state["traces"]` and current page snapshot.
+2. If any assertion fails: upgrade `status` from `"passed"` to `"failed"` (if it was `passed`).
+3. Compute and print run trace summary (tokens, latency, cost per step).
+4. Return final `status`.
+
+### 2.4 Edge Functions
+
+```python
+# route_after_reason.py
+def route_after_reason(state: AgentState) -> Literal["act", "goal_check", "error"]:
+    """
+    - If last_error is set and its origin is from the reason node: return "error"
+    - If last AIMessage stop_reason == "tool_use": return "act"
+    - If stop_reason == "end_turn" or "stop_sequence": return "goal_check"
+    - If stop_reason == "max_tokens": inject warning, return "goal_check"
+    - If status in ("timed_out", "errored", "blocked"): return "goal_check" (forces finalize path)
+    """
+
+# route_after_act.py
+def route_after_act(state: AgentState) -> Literal["observe", "error"]:
+    """
+    - If status in ("timed_out", "errored"): return "error"
+    - If consecutive_errors >= 3: return "error"
+    - Otherwise: return "observe"
+    """
+
+# route_after_goal_check.py
+def route_after_goal_check(state: AgentState) -> Literal["finalize", "observe"]:
+    """
+    - If goal_complete or status != "running": return "finalize"
+    - Otherwise: return "observe"
+    """
+
+# route_after_error.py
+def route_after_error(state: AgentState) -> Literal["observe", "finalize"]:
+    """
+    - If status in ("errored", "timed_out", "blocked"): return "finalize"
+    - Otherwise: return "observe"  (recoverable error, retry)
+    """
+```
+
+---
+
+## 3. Tool Architecture
+
+### 3.1 MCP Client (`orchestrator/mcp/client.py`)
+
+The existing `scripts/test_mcp_wiring.py` uses `McpStdioClient` via subprocess spawning of `npx @playwright/mcp`. For Phase 1, the sandbox exposes Playwright MCP on an HTTP port (`:3100`). The spec (§5.1) says "Connect to Playwright MCP (container) via http://run-{id}:3100/mcp". The current sandbox uses host-mapped ports.
+
+```python
+class PlaywrightMcpClient:
+    """
+    HTTP Streamable MCP client connecting to @playwright/mcp over HTTP.
+
+    Supports two transport modes:
+    - http: connects to http://{host}:{port}/mcp  (preferred for containerized sandbox)
+    - stdio: spawns npx @playwright/mcp --cdp-endpoint {cdp_url} as a subprocess
+             (fallback for local dev where container's MCP port isn't HTTP-exposed)
+
+    Phase 1 uses stdio transport to connect via the existing SandboxHandle.cdp_url,
+    mirroring the proven pattern from test_mcp_wiring.py.
+    """
+
+    def __init__(self, transport: Literal["http", "stdio"], *, url: str | None = None, cdp_url: str | None = None) -> None: ...
+
+    async def initialize(self) -> None:
+        """Perform MCP handshake, populate self._tools."""
+
+    async def list_tools(self) -> list[McpToolSchema]: ...
+
+    async def call_tool(self, name: str, arguments: dict) -> McpToolResult:
+        """
+        Returns McpToolResult(content: str, is_error: bool).
+        Raises McpToolError on timeout or connection failure.
+        Retries up to 2 times with 500ms delay on connection errors.
+        """
+
+    async def close(self) -> None: ...
+```
+
+Design decision: Phase 1 uses `stdio` transport (spawning `npx @playwright/mcp --cdp-endpoint {cdp_url}`) because the existing sandbox doesn't expose port 3100 over HTTP. This matches the proven pattern in `test_mcp_wiring.py`. Phase 3 switches to HTTP transport when the Docker bridge network is implemented.
+
+### 3.2 Tool Adapter (`orchestrator/mcp/tool_adapter.py`)
+
+```python
+from langchain_core.tools import StructuredTool
+
+def mcp_tools_to_langchain(
+    client: PlaywrightMcpClient,
+    mcp_schemas: list[McpToolSchema],
+    *,
+    allowlist: set[str] | None = None,
+) -> list[StructuredTool]:
+    """
+    Converts MCP tool schemas to LangChain StructuredTool objects.
+
+    For Phase 1, the tool function is an async wrapper that calls client.call_tool().
+    The tool's input schema is built from the MCP tool's inputSchema (JSON Schema dict).
+
+    allowlist: if provided, only include tools whose names are in the set.
+    This is important for keeping the LLM context lean (spec §5.1: "Build merged tool list").
+    """
+```
+
+### 3.3 Custom Tools
+
+Each custom tool is a Python async function with a type-annotated signature. They are registered in `tool_registry.py` and exposed to the LLM via JSON Schema definitions in `schemas.py`.
+
+#### `wait_for_stable` (`tools/wait_for_stable.py`)
+
+The spec (§6.2) defines four signals. Phase 1 implements two (network quiescence + DOM settle via CDP), with visual stability deferred to Phase 2.
+
+```python
+async def wait_for_stable(
+    *,
+    cdp_session: CdpSession,
+    page_type: str = "spa",
+    timeout_ms: int = 8000,
+    network_idle_ms: int = 300,
+    dom_settle_ms: int = 500,
+) -> WaitForStableResult:
+    """
+    Phase 1 implementation — two signals:
+    1. Network quiescence: 0 pending XHR/fetch for network_idle_ms.
+       Tracks via CDP Network domain events buffered in CdpSession.
+    2. DOM mutation rate: < 3 mutations/sec over dom_settle_ms window.
+       Injects MutationObserver JS snippet via CDP Runtime.evaluate.
+
+    page_type overrides:
+    - "static": returns after 200ms with stable=True
+    - "ssr":    network quiescence only, DOM settle skipped
+    - "spa":    both signals
+    - "streaming": DOM tolerance raised to <10/sec, network signal skipped
+
+    Returns:
+        WaitForStableResult(stable, wait_duration_ms, signals)
+        Always returns (never raises) — on timeout returns stable=False with warning.
+    """
+```
+
+#### `assert_text_present` (`tools/assert_text_present.py`)
+
+```python
+def assert_text_present(
+    *,
+    page_snapshot: str,
+    text: str | None = None,
+    pattern: str | None = None,
+    case_sensitive: bool = True,
+) -> AssertionResult:
+    """
+    Checks the current page_snapshot (accessibility tree text) for text or regex pattern.
+    Pure function — no I/O. Called with the snapshot already in state.
+
+    Returns AssertionResult(passed, details) — never raises.
+    """
+```
+
+#### `get_console_errors` (`tools/get_console_errors.py`)
+
+```python
+async def get_console_errors(
+    *,
+    cdp_session: CdpSession,
+    level: Literal["error", "warning", "all"] = "error",
+    ignore_patterns: list[str] | None = None,
+) -> ConsoleErrorResult:
+    """
+    Returns buffered console messages captured by CdpSession since test start.
+    Filters by level and applies ignore_patterns (substring match).
+
+    Returns ConsoleErrorResult(count, messages) — never raises.
+    """
+```
+
+#### `report_step_result` (`tools/report_step_result.py`)
+
+```python
+def report_step_result(
+    *,
+    step_id: str,
+    status: Literal["passed", "failed", "blocked"],
+    summary: str,
+    evidence: dict | None = None,
+) -> str:
+    """
+    Pure function: formats and returns a structured step result string.
+    The agent calls this to log intermediate assertions.
+    Returns a human-readable confirmation string.
+    """
+```
+
+### 3.4 Tool Registry (`tools/tool_registry.py`)
+
+```python
+class ToolRegistry:
+    """
+    Maps custom tool names to async callables.
+    Each callable receives (tool_input: dict, *, cdp_session: CdpSession, state: AgentState) -> Any.
+    The ACT node calls registry.dispatch(tool_name, tool_input, ...) to execute custom tools.
+    """
+
+    def register(self, name: str, fn: Callable) -> None: ...
+
+    async def dispatch(
+        self,
+        name: str,
+        tool_input: dict,
+        *,
+        cdp_session: CdpSession,
+        state: AgentState,
+    ) -> Any:
+        """
+        Raises ToolNotFoundError if name not registered.
+        Raises ToolExecutionError wrapping the underlying exception if fn raises.
+        Never lets exceptions propagate raw — always wraps.
+        """
+```
+
+### 3.5 CDP Session (`cdp/session.py`)
+
+```python
+class CdpSession:
+    """
+    Manages a persistent Chrome DevTools Protocol WebSocket session.
+
+    Responsibilities (per spec §7.7):
+    - Network domain: buffer all requests/responses via event listeners
+    - Runtime domain: execute JS snippets (MutationObserver, axe-core)
+    - Console domain: buffer console.error and console.warn messages
+
+    Connection:
+    - Connects to ws://{cdp_host}:{cdp_port} (the sandbox's exposed CDP port)
+    - Uses websockets library (pure Python, no Node.js dependency)
+
+    Error handling:
+    - On connection drop: auto-reconnects up to 3 times with 1s delay
+    - On timeout: raises CdpTimeoutError (caller decides what to do)
+    - Buffers are preserved across reconnections
+
+    Phase 1: implements Network + Console domains.
+    Phase 2: adds Runtime domain for DOM mutation observation.
+    """
+
+    def __init__(self, cdp_url: str) -> None: ...
+
+    async def connect(self) -> None: ...
+    async def close(self) -> None: ...
+
+    async def enable_network_capture(self) -> None:
+        """Enable CDP Network domain, start buffering requests."""
+
+    async def enable_console_capture(self) -> None:
+        """Enable CDP Log/Console domain, start buffering messages."""
+
+    @property
+    def pending_request_count(self) -> int:
+        """Number of in-flight XHR/fetch requests. Used by wait_for_stable."""
+
+    @property
+    def console_messages(self) -> list[ConsoleMessage]:
+        """All captured console messages since session start."""
+
+    async def evaluate_js(self, expression: str, *, timeout_ms: int = 5000) -> Any:
+        """Execute JS in the page context. Returns the result or raises CdpTimeoutError."""
+```
+
+---
+
+## 4. Test Case YAML Format (Phase 1)
+
+The Phase 1 format is a simplified subset of the full spec §3.2 schema, aligned for forward compatibility.
+
+```yaml
+# orchestrator/test_cases/wikipedia_search.yaml
+
+id: "TC-001"
+name: "Wikipedia: search and scroll through AI article"
+suite: "phase1-smoke"
+priority: "P1"
+tags: ["wikipedia", "search", "scroll"]
+
+target:
+  url: "https://www.wikipedia.org"
+  browser: "chromium"
+  viewport:
+    width: 1280
+    height: 720
+
+goal: |
+  Starting from the Wikipedia homepage, search for the term
+  "artificial intelligence", open the article, and scroll
+  through the article content to read multiple sections.
+
+steps:
+  mode: "guided"
+  checkpoints:
+    - id: "S1"
+      description: "Navigate to the Wikipedia homepage and locate the search box"
+      success_signal: "Wikipedia homepage is visible with a search input"
+
+    - id: "S2"
+      description: "Type 'artificial intelligence' into the search box and submit"
+      success_signal: "Search results page or the AI article is displayed"
+
+    - id: "S3"
+      description: "Open the 'Artificial intelligence' article if not already there"
+      success_signal: "The full article page is displayed with a title and sections"
+
+    - id: "S4"
+      description: "Scroll down through the article to read multiple sections"
+      success_signal: "Multiple sections (e.g., History, Applications) are visible after scrolling"
+
+assertions:
+  - id: "A1"
+    type: "content"
+    description: "Article title contains 'Artificial intelligence'"
+    params:
+      check: "text_present"
+      text: "Artificial intelligence"
+
+  - id: "A2"
+    type: "content"
+    description: "Article has multiple sections"
+    params:
+      check: "text_matches"
+      pattern: "==(\\s+)?\\w+"
+
+  - id: "A3"
+    type: "console"
+    description: "No critical JS errors during navigation"
+    params:
+      level: "error"
+      max_count: 3
+      ignore_patterns:
+        - "favicon"
+        - "analytics"
+
+constraints:
+  max_steps: 20
+  timeout_seconds: 120
+  navigation_policy: "explicit_urls_allowed"
+  forbidden_actions:
+    - "navigate to any domain other than wikipedia.org"
+  required_behaviors:
+    - "use the search box to find the article, do not type the URL directly"
+
+context:
+  app_description: "Wikipedia — a free, multilingual online encyclopedia."
+  page_type: "ssr"
+  hints:
+    - "The search box has id='searchInput' or similar on the homepage"
+    - "After searching, click the article link in results if not redirected directly"
+```
+
+```yaml
+# orchestrator/test_cases/amazon_add_to_cart.yaml
+
+id: "TC-002"
+name: "Amazon: search product, add to cart, verify cart"
+suite: "phase1-smoke"
+priority: "P1"
+tags: ["amazon", "cart", "e-commerce"]
+
+target:
+  url: "https://www.amazon.com"
+  browser: "chromium"
+  viewport:
+    width: 1280
+    height: 720
+
+goal: |
+  Starting from the Amazon homepage, search for "wireless bluetooth
+  headphones", open any product listing from the results, add the
+  product to the cart, navigate to the cart, and verify the item
+  is present in the cart.
+
+steps:
+  mode: "guided"
+  checkpoints:
+    - id: "S1"
+      description: "Locate and use the Amazon search bar to search for wireless bluetooth headphones"
+      success_signal: "Search results page is displayed with product listings"
+
+    - id: "S2"
+      description: "Open any product from the search results"
+      success_signal: "Product detail page is displayed with an 'Add to Cart' button"
+
+    - id: "S3"
+      description: "Click the 'Add to Cart' button"
+      success_signal: "Cart confirmation is shown, or cart counter increments"
+
+    - id: "S4"
+      description: "Navigate to the shopping cart"
+      success_signal: "Cart page is displayed"
+
+    - id: "S5"
+      description: "Verify the added product is in the cart"
+      success_signal: "Cart shows at least one item matching the product added"
+
+assertions:
+  - id: "A1"
+    type: "content"
+    description: "Cart page contains at least one item"
+    params:
+      check: "text_present"
+      text: "headphones"
+
+  - id: "A2"
+    type: "content"
+    description: "Cart shows a subtotal amount"
+    params:
+      check: "text_matches"
+      pattern: "\\$[0-9]+\\.[0-9]{2}"
+
+  - id: "A3"
+    type: "console"
+    description: "No critical errors during the flow"
+    params:
+      level: "error"
+      max_count: 5
+      ignore_patterns:
+        - "favicon"
+        - "analytics"
+        - "beacon"
+        - "ads"
+
+constraints:
+  max_steps: 35
+  timeout_seconds: 240
+  navigation_policy: "interact_only"
+  forbidden_actions:
+    - "proceed to checkout"
+    - "enter payment information"
+    - "place an order"
+  required_behaviors:
+    - "verify cart contents by navigating to the cart page"
+
+context:
+  app_description: |
+    Amazon.com — major e-commerce platform. Product listings, cart, and
+    checkout flows. Heavy use of JavaScript for dynamic content.
+    Amazon may show popup overlays or cookie consent banners — dismiss them.
+  page_type: "spa"
+  hints:
+    - "Dismiss any 'Sign in' prompts by closing them or proceeding as guest"
+    - "If Amazon shows a CAPTCHA, report the test as GOAL_BLOCKED"
+    - "The cart icon is in the top-right navigation bar"
+    - "Product pages often have 'Add to Cart' or 'Add to Shopping Cart' buttons"
+    - "After adding to cart, look for 'Proceed to checkout' area — do NOT click it"
+```
+
+### YAML Loader (`loader/yaml_loader.py`)
+
+```python
+def load_test_case(path: str | Path) -> TestCase:
+    """
+    Loads and validates a YAML or JSON test case file.
+
+    Validation rules:
+    - Required fields: id, name, target.url, goal
+    - target.browser defaults to "chromium"
+    - constraints.max_steps defaults to 30
+    - constraints.timeout_seconds defaults to 180
+    - constraints.navigation_policy defaults to "interact_only"
+    - assertions default to empty list
+    - steps default to None (agent plans its own path)
+
+    Raises:
+        TestCaseValidationError: if required fields missing or types wrong
+        FileNotFoundError: if path doesn't exist
+        yaml.YAMLError: if YAML is malformed
+    """
+```
+
+---
+
+## 5. CLI Design
+
+### Invocation
+
+Per CLAUDE.md: `python -m orchestrator run --test tests/wikipedia_search.yaml`
+
+```
+Usage:
+  python -m orchestrator run   --test PATH [--model MODEL] [--browser BROWSER]
+                                [--max-steps N] [--timeout N]
+                                [--sandbox-image IMAGE] [--no-sandbox]
+                                [--output-dir DIR] [--verbose]
+
+  python -m orchestrator validate  --test PATH        # Validates YAML without running
+  python -m orchestrator list-tools                   # Prints all available tools
+```
+
+### `cli/main.py` Signatures
+
+```python
+import click
+
+@click.group()
+def cli() -> None:
+    """Hawkeye orchestrator — agentic test runner."""
+
+@cli.command()
+@click.option("--test", "test_path", required=True, type=click.Path(exists=True), help="Path to YAML test case")
+@click.option("--model", default="claude-sonnet-4-20250514", help="Anthropic model ID or 'ollama:<model>'")
+@click.option("--browser", default=None, help="Override browser from test case (chromium|firefox|webkit)")
+@click.option("--max-steps", default=None, type=int, help="Override max_steps from test case")
+@click.option("--timeout", default=None, type=int, help="Override timeout_seconds from test case")
+@click.option("--sandbox-image", default="project-hawkeye-hawkeye-sandbox:latest")
+@click.option("--no-sandbox", is_flag=True, default=False, help="Skip container spawning; connect to running CDP at HAWKEYE_CDP_URL env var")
+@click.option("--output-dir", default="artifacts", help="Directory for trace output and evidence")
+@click.option("--verbose", "-v", is_flag=True, default=False)
+def run(test_path, model, browser, max_steps, timeout, sandbox_image, no_sandbox, output_dir, verbose) -> None:
+    """Run a single test case."""
+
+@cli.command()
+@click.option("--test", "test_path", required=True, type=click.Path(exists=True))
+def validate(test_path) -> None:
+    """Validate a test case YAML without running it."""
+
+@cli.command("list-tools")
+def list_tools() -> None:
+    """Print all available tools (MCP + custom) and their descriptions."""
+```
+
+### Console Output Format
+
+The CLI must produce readable, structured output. The trace collector renders this to stdout:
+
+```
+=================================================================
+  HAWKEYE TEST RUN
+  Test:    TC-001 — Wikipedia: search and scroll through AI article
+  Model:   claude-sonnet-4-20250514
+  Browser: chromium
+  Run ID:  run-a1b2c3d4
+=================================================================
+
+[sandbox] Spawning container run-a1b2c3d4...
+[sandbox] noVNC: http://127.0.0.1:49154/
+[sandbox] CDP:   http://127.0.0.1:49155
+[mcp]     Playwright MCP: 28 tools available
+[mcp]     Custom tools:   4 tools (wait_for_stable, assert_text_present, get_console_errors, report_step_result)
+
+--- Step 1 ---
+[observe] wait_for_stable: 220ms (network idle, dom settled)
+[observe] URL: https://www.wikipedia.org | Title: Wikipedia
+[reason]  Input: 1,240 tokens | Output: 85 tokens | Latency: 1,340ms | Cost: $0.0023
+[reason]  Reasoning: "I can see the Wikipedia homepage with a search input box..."
+[act]     browser_type(ref="...searchInput...", text="artificial intelligence") → OK (340ms)
+[check]   [S1 complete] detected. Completed: [S1]
+
+--- Step 2 ---
+[observe] wait_for_stable: 1,820ms (network quiescent after 1.4s)
+[observe] URL: https://en.wikipedia.org/wiki/Artificial_intelligence | Title: Artificial intelligence
+[reason]  Input: 2,410 tokens | Output: 92 tokens | Latency: 1,120ms | Cost: $0.0027
+[act]     browser_scroll_down(coordinate=[640, 400]) → OK (45ms)
+[check]   [S2 complete] [S3 complete] detected. Completed: [S1, S2, S3]
+
+...
+
+--- Step 6 ---
+[reason]  Agent says: <GOAL_COMPLETE>
+[check]   Goal complete signal received.
+
+=================================================================
+  ASSERTIONS
+  A1 [content]  text_present("Artificial intelligence")  → PASSED
+  A2 [content]  text_matches("==(\\s+)?\\w+")            → PASSED
+  A3 [console]  error count (0) <= max (3)               → PASSED
+
+=================================================================
+  RUN SUMMARY
+  Status:       PASSED
+  Steps:        6 / 20 max
+  Duration:     34.2s
+  LLM calls:    6
+  Total tokens: 12,840 (input: 10,210, output: 580, cache_read: 2,050)
+  Tool calls:   5 (mcp: 5, custom: 1)
+  Est. cost:    $0.0142
+  Steps done:   S1, S2, S3, S4 (4/4)
+=================================================================
+  RESULT: PASSED
+=================================================================
+```
+
+On failure, the output includes the reason, last page snapshot excerpt, and error chain:
+
+```
+=================================================================
+  RESULT: FAILED
+  Reason: Assertion A1 failed — text "Artificial intelligence" not found in page snapshot
+  Last URL: https://en.wikipedia.org/w/index.php?search=...
+  Last tool error: None
+  Steps completed: S1, S2 (2/4)
+  Evidence: artifacts/run-a1b2c3d4/
+=================================================================
+```
+
+---
+
+## 6. `runner/run_manager.py`
+
+```python
+class RunManager:
+    """
+    Orchestrates a full test run:
+    1. Loads test case
+    2. Spawns (or connects to) sandbox container
+    3. Initializes MCP client and CDP session
+    4. Builds the agent graph and initial state
+    5. Invokes graph.invoke(initial_state)
+    6. Tears down sandbox
+    7. Returns RunResult
+
+    This is the integration seam — it owns the resource lifecycle.
+    Guarantees: even if the graph raises, sandbox is stopped and resources closed.
+    """
+
+    def __init__(
+        self,
+        *,
+        sandbox_manager: SandboxManager,
+        sandbox_image: str = "project-hawkeye-hawkeye-sandbox:latest",
+        model: str = "claude-sonnet-4-20250514",
+    ) -> None: ...
+
+    async def run(
+        self,
+        test_case: TestCase,
+        *,
+        browser_override: str | None = None,
+        max_steps_override: int | None = None,
+        timeout_override: int | None = None,
+        output_dir: Path | None = None,
+    ) -> RunResult:
+        """
+        Full end-to-end run. Handles all setup and teardown.
+
+        On any unhandled exception: logs the error, stops the sandbox,
+        and returns RunResult(status="errored", ...) — never propagates.
+        """
+```
+
+Initial state construction in `RunManager.run()`:
+
+```python
+initial_state: AgentState = {
+    "test_case": test_case,
+    "run_id": run_id,
+    "container_host": sandbox_handle.container_name,
+    "mcp_url": mcp_url,
+    "cdp_url": sandbox_handle.cdp_url,
+    "messages": [SystemMessage(content=build_system_prompt(test_case))],
+    "step_number": 0,
+    "current_checkpoint": test_case.steps.checkpoints[0].id if test_case.steps else None,
+    "completed_checkpoints": [],
+    "current_url": test_case.target.url,
+    "page_title": "",
+    "page_snapshot": "",
+    "last_tool_name": None,
+    "last_tool_result": None,
+    "last_tool_success": True,
+    "consecutive_errors": 0,
+    "last_error": None,
+    "error_history": [],
+    "traces": [],
+    "current_trace": None,
+    "status": "running",
+    "goal_complete": False,
+    "termination_reason": None,
+    "run_start_time": time.time(),
+}
+```
+
+---
+
+## 7. Model Pricing and Cost Computation
+
+```python
+# orchestrator/models/run_state.py (or a separate pricing.py)
+
+MODEL_PRICING: dict[str, dict[str, float]] = {
+    "claude-sonnet-4-20250514": {
+        "input_per_mtok": 3.00,
+        "output_per_mtok": 15.00,
+        "cache_read_per_mtok": 0.30,
+        "cache_write_per_mtok": 3.75,
+    },
+    "claude-opus-4-20250514": {
+        "input_per_mtok": 15.00,
+        "output_per_mtok": 75.00,
+        "cache_read_per_mtok": 1.50,
+        "cache_write_per_mtok": 18.75,
+    },
+    "claude-haiku-4-5-20251001": {
+        "input_per_mtok": 0.80,
+        "output_per_mtok": 4.00,
+        "cache_read_per_mtok": 0.08,
+        "cache_write_per_mtok": 1.00,
+    },
+}
+
+
+def compute_step_cost(model: str, usage: dict) -> float:
+    """
+    Per spec §10.3.
+    Falls back to most expensive known model pricing if model not in table,
+    and logs a WARNING.
+    """
+    pricing = MODEL_PRICING.get(model)
+    if pricing is None:
+        import warnings
+        warnings.warn(f"Unknown model {model!r} — using Opus pricing as conservative estimate")
+        pricing = MODEL_PRICING["claude-opus-4-20250514"]
+    return (
+        usage.get("input_tokens", 0) * pricing["input_per_mtok"] / 1_000_000
+        + usage.get("output_tokens", 0) * pricing["output_per_mtok"] / 1_000_000
+        + usage.get("cache_read_input_tokens", 0) * pricing["cache_read_per_mtok"] / 1_000_000
+        + usage.get("cache_creation_input_tokens", 0) * pricing["cache_write_per_mtok"] / 1_000_000
+    )
+```
+
+---
+
+## 8. Trace Collector (`trace/collector.py`)
+
+```python
+class TraceCollector:
+    """
+    Accumulates StepTrace entries and renders them to stdout.
+    Also writes a JSON trace file to output_dir on run completion.
+
+    Methods:
+        on_step_start(step_number, checkpoint_id) -> None
+        on_observe(url, title, snapshot, wait_ms) -> None
+        on_reason(usage, latency_ms, stop_reason, agent_text, cost) -> None
+        on_act(tool_name, tool_source, tool_input, tool_output, latency_ms, success, error, retries) -> None
+        on_goal_check(completed_checkpoints, goal_complete) -> None
+        on_error(error_info) -> None
+        on_finalize(assertion_results) -> None
+        get_summary() -> RunTracesSummary
+        write_json(output_dir) -> Path
+        print_summary() -> None
+    """
+```
+
+---
+
+## 9. Assertion Engine (`assertions/engine.py`)
+
+Phase 1 implements `content` and `console` assertion types. `visual`, `state`, `network`, `accessibility`, and `performance` are Phase 2.
+
+```python
+class AssertionEngine:
+    """
+    Evaluates test case assertions after the agent loop completes.
+
+    Phase 1 supported types:
+    - content: text_present, text_matches (against page_snapshot)
+    - console: error count check (against CdpSession.console_messages)
+
+    Phase 2:
+    - visual: pixelmatch comparison
+    - state: CDP element state queries
+    - network: network log matching
+    - accessibility: axe-core audit
+    - performance: Core Web Vitals via CDP
+
+    For unsupported types in Phase 1: logs a WARNING and marks as "skipped" (not failed).
+    """
+
+    async def evaluate(
+        self,
+        assertions: list[Assertion],
+        *,
+        page_snapshot: str,
+        cdp_session: CdpSession | None,
+    ) -> list[AssertionResult]:
+        """
+        Evaluates all assertions. Never raises — exceptions per assertion
+        are caught and reported as failed with error details.
+        """
+```
+
+---
+
+## 10. Dependencies to Add to `pyproject.toml`
+
+The current `pyproject.toml` has no dependencies. Here is the complete Phase 1 dependency list:
+
+```toml
+[project]
+name = "project-hawkeye"
+version = "0.1.0"
+description = "AI-powered pre-deployment agentic testing platform"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    # LangGraph agent loop engine
+    "langgraph>=0.2.0",
+    "langchain-core>=0.3.0",
+    "langchain-anthropic>=0.3.0",
+
+    # Anthropic SDK (direct usage for streaming + usage extraction)
+    "anthropic>=0.40.0",
+
+    # YAML parsing for test cases
+    "pyyaml>=6.0",
+
+    # CLI
+    "click>=8.1.0",
+
+    # CDP WebSocket client (for wait_for_stable and console capture)
+    "websockets>=13.0",
+
+    # Async utilities
+    "anyio>=4.0.0",
+
+    # Type validation for test case models
+    "pydantic>=2.0.0",
+
+    # HTTP client (for MCP HTTP transport in Phase 3)
+    "httpx>=0.27.0",
+
+    # Rich terminal output for trace rendering
+    "rich>=13.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-mock>=3.12.0",
+    "pytest-timeout>=2.3.0",
+    "freezegun>=1.4.0",
+]
+
+[project.scripts]
+hawkeye = "orchestrator.cli.main:cli"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+timeout = 300
+```
+
+Note: `langchain-ollama` is NOT listed here. The spec (§5.3) and CLAUDE.md both target Claude Sonnet as the default model. The existing `test_mcp_wiring.py` used Ollama as a PoC, but Phase 1 transitions to Anthropic models. If Ollama fallback is needed (local dev without API key), it can be added to `dev` extras as `langchain-ollama>=0.2.0`.
+
+Also note: `hawkeye_sandbox` is not in PyPI; it's a local package. The `RunManager` imports it directly via the Python path (`sys.path` insertion or `uv` workspace dependency), matching the pattern in `test_mcp_wiring.py` which does `sys.path.insert(0, os.path.join(REPO_ROOT, "Backend"))`.
+
+---
+
+## 11. System Prompt Builder (`agent/prompt_builder.py`)
+
+```python
+def build_system_prompt(test_case: TestCase) -> str:
+    """
+    Constructs the system prompt per spec §5.2.
+
+    The prompt template is verbatim from spec §5.2 with these fields substituted:
+    - {test_case.goal}
+    - {test_case.steps.mode} if steps present
+    - {checkpoint.id}, {checkpoint.description}, {checkpoint.success_signal} for each checkpoint
+    - {test_case.context.app_description}
+    - {test_case.context.hints} joined as bullet list
+    - {test_case.constraints.navigation_policy}
+    - {test_case.constraints.forbidden_actions} joined as bullet list
+    - {test_case.constraints.required_behaviors} joined as bullet list
+    - {test_case.constraints.max_steps}
+    - {test_case.context.page_type}
+
+    Returns a single string. Deterministic — same test case produces identical prompt.
+    """
+```
+
+---
+
+## 12. Testing Strategy
+
+### 12.1 Unit Tests (`tests/unit/`)
+
+**`test_yaml_loader.py`**
+
+Tests the full validation matrix:
+- Valid minimal test case (only required fields) parses correctly with all defaults applied
+- Valid full test case (all fields) round-trips correctly
+- Missing `id` field raises `TestCaseValidationError` with field name in message
+- Missing `target.url` raises `TestCaseValidationError`
+- Missing `goal` raises `TestCaseValidationError`
+- Invalid priority value (`"P5"`) raises `TestCaseValidationError`
+- Invalid navigation_policy value raises `TestCaseValidationError`
+- Malformed YAML (syntax error) raises `yaml.YAMLError`
+- Non-existent file raises `FileNotFoundError`
+- JSON file (not YAML) parses correctly
+- Test case with no `steps` sets `steps=None` and agent can still run
+- Test case with empty `assertions` list runs without assertion evaluation
+- Constraints defaults: `max_steps=30`, `timeout_seconds=180` when absent
+
+**`test_prompt_builder.py`**
+
+- Full test case produces prompt containing all checkpoints
+- No-steps test case produces prompt without the guided steps section
+- Navigation policy "interact_only" produces the correct rule text (verbatim from spec §5.2)
+- Hints are rendered as bullet points
+- Forbidden actions are rendered as a bullet list
+- Prompt is deterministic (same input → same output, 100 calls)
+
+**`test_trace_collector.py`**
+
+- Empty trace produces zero-value summary with no errors
+- `compute_step_cost` returns 0.0 for zero tokens
+- `compute_step_cost` with known values matches hand-calculated result
+- Unknown model falls back to Opus pricing and logs a warning
+- `get_summary()` percentiles correct for small datasets (p50, p95, p99)
+- `get_summary()` handles single-trace case (no division by zero)
+- `write_json()` produces valid JSON matching expected schema
+
+**`test_edges.py`**
+
+Tests the four routing functions against constructed `AgentState` dicts:
+
+- `route_after_reason`:
+  - `stop_reason="tool_use"` and no error → `"act"`
+  - `stop_reason="end_turn"` → `"goal_check"`
+  - `stop_reason="max_tokens"` → `"goal_check"`
+  - `last_error` set with reason-origin → `"error"`
+  - `status="timed_out"` → `"goal_check"` (forces finalize path)
+
+- `route_after_act`:
+  - `consecutive_errors=0` → `"observe"`
+  - `consecutive_errors=3` → `"error"`
+  - `status="timed_out"` → `"error"`
+
+- `route_after_goal_check`:
+  - `goal_complete=True` → `"finalize"`
+  - `status="errored"` → `"finalize"`
+  - `goal_complete=False`, `status="running"` → `"observe"`
+
+- `route_after_error`:
+  - `status="errored"` → `"finalize"`
+  - `status="running"`, `consecutive_errors=1` → `"observe"`
+
+**`test_assert_text_present.py`**
+
+- Exact text found → `passed=True`
+- Exact text not found → `passed=False`
+- Regex pattern matches → `passed=True`
+- Regex pattern doesn't match → `passed=False`
+- Case-sensitive match fails with wrong case
+- Case-insensitive match succeeds with wrong case
+- Empty snapshot → `passed=False` (not a crash)
+- Invalid regex pattern → `passed=False` with error message in details (not a crash)
+
+**`test_models.py`**
+
+- `StepTrace` default values are correct
+- `ErrorInfo` `recoverable` defaults to `True`
+- `RunStatus` enum values match expected strings
+- `AgentState` TypedDict can be constructed with all required fields
+
+### 12.2 Integration Tests (`tests/integration/`)
+
+These require a running sandbox container and are marked with `@pytest.mark.integration`.
+
+**`test_mcp_client.py`**
+
+- `PlaywrightMcpClient.initialize()` succeeds when sandbox is running
+- `list_tools()` returns at least the 10 allowlisted Playwright tools
+- `call_tool("browser_navigate", {"url": "https://example.com"})` succeeds
+- `call_tool("browser_snapshot", {})` returns non-empty accessibility tree text
+- `call_tool("browser_click", {"element": "nonexistent_ref"})` returns `is_error=True` (not a crash)
+- Client reconnects after deliberate close of subprocess and retry
+- `PlaywrightMcpClient.close()` is idempotent (can be called twice)
+
+**`test_cdp_session.py`**
+
+- `CdpSession.connect()` succeeds with valid `cdp_url`
+- `enable_network_capture()` enables Network domain without error
+- After navigating to a page, `pending_request_count` starts at 0
+- `enable_console_capture()` captures `console.error` via `evaluate_js("console.error('test')")`
+- `evaluate_js("1 + 1")` returns `2`
+- `evaluate_js("window.location.href")` returns the current page URL
+- `evaluate_js` with timeout 10ms raises `CdpTimeoutError` on slow JS
+- Session auto-reconnects after connection drop (tested by closing and reopening WebSocket)
+
+**`test_agent_graph.py`**
+
+- Single-step graph run with mocked MCP and LLM: state transitions correctly through observe → reason → act → goal_check → finalize
+- LLM returning `<GOAL_COMPLETE>` causes graph to terminate via finalize
+- LLM returning `<GOAL_BLOCKED>` causes graph to terminate with `status="blocked"`
+- Consecutive tool errors (3) cause graph to terminate via error_handler → finalize with `status="errored"`
+- Max steps exceeded terminates with `status="timed_out"` in observe node
+- Wall-clock timeout terminates with `status="timed_out"` in observe node
+- Agent loop repetition detection triggers meta-prompt injection after 5 identical tool calls
+
+### 12.3 End-to-End Tests (`tests/e2e/`)
+
+These require Docker, a running sandbox image, and an `ANTHROPIC_API_KEY` environment variable.
+
+**`test_wikipedia.py`**
+
+```python
+@pytest.mark.e2e
+@pytest.mark.timeout(180)
+async def test_wikipedia_search_passes():
+    """TC-001 must pass end-to-end."""
+    test_case = load_test_case("orchestrator/test_cases/wikipedia_search.yaml")
+    manager = RunManager(sandbox_manager=SandboxManager(), model="claude-sonnet-4-20250514")
+    result = await manager.run(test_case)
+    assert result.status == "passed", f"Expected passed, got {result.status}: {result.termination_reason}"
+    assert "S1" in result.steps_completed
+    assert "S2" in result.steps_completed
+    assert "S3" in result.steps_completed
+    assert all(a.passed for a in result.assertion_results if a.assertion_id in ("A1", "A2"))
+```
+
+**`test_amazon.py`**
+
+```python
+@pytest.mark.e2e
+@pytest.mark.timeout(300)
+async def test_amazon_add_to_cart_passes():
+    """TC-002 must pass end-to-end."""
+    test_case = load_test_case("orchestrator/test_cases/amazon_add_to_cart.yaml")
+    manager = RunManager(sandbox_manager=SandboxManager(), model="claude-sonnet-4-20250514")
+    result = await manager.run(test_case)
+    assert result.status == "passed", f"Expected passed, got {result.status}: {result.termination_reason}"
+    assert "S3" in result.steps_completed  # add to cart step
+    assert "S5" in result.steps_completed  # verify cart step
+    assert result.assertion_results[0].passed  # A1: headphones in cart
+```
+
+### 12.4 Failure Mode Test Cases (Critical Edge Cases)
+
+Each failure mode from spec §7.5 must have at least one test:
+
+| Failure Mode | Test | Location |
+|---|---|---|
+| LLM 429 rate limit | Mock `anthropic.messages.create` to raise `RateLimitError` 3 times, then succeed. Assert backoff delays were applied and run completes. | `unit/test_edges.py` (with mock) |
+| LLM 401 auth error | Mock to raise `AuthenticationError`. Assert `status="errored"`, no retries, immediate termination. | `unit/test_edges.py` |
+| Tool failure < 3 | Mock MCP to return `is_error=True` for 2 calls, then succeed. Assert error injected into messages, agent adapted. | `integration/test_agent_graph.py` |
+| Tool failure >= 3 consecutive | Mock MCP to return `is_error=True` 3 times. Assert `status="errored"`, `consecutive_errors=3`. | `integration/test_agent_graph.py` |
+| Max steps exceeded | Set `max_steps=3`, run a test that needs 5 steps. Assert `status="timed_out"`. | `integration/test_agent_graph.py` |
+| Wall-clock timeout | Set `timeout_seconds=5`, slow LLM mock (6s delay). Assert `status="timed_out"`. | `integration/test_agent_graph.py` |
+| MCP disconnect + reconnect | Kill MCP subprocess mid-run, verify reconnection logic, agent resumes. | `integration/test_mcp_client.py` |
+| Context window overflow | Generate state with 180K input tokens. Assert auto-compaction is triggered (conversation history truncated). | `unit/test_reason_node.py` |
+| Agent repetition loop | LLM mock always returns same tool call. After 5 identical, assert meta-prompt injected. After 3 meta-prompts, assert `status="blocked"`. | `integration/test_agent_graph.py` |
+
+---
+
+## 13. Step-by-Step Task List with Dependencies
+
+The tasks are organized into four implementation layers. Each task lists its dependencies.
+
+### Layer 0: Foundation (no dependencies)
+
+**T0.1** — Create `Backend/orchestrator/` package skeleton with `__init__.py` files in all subdirectories.
+
+**T0.2** — Add Phase 1 dependencies to `Backend/pyproject.toml`. Run `uv sync` (or `pip install -e .`) to verify all packages resolve.
+
+**T0.3** — Write `orchestrator/models/test_case.py`: `TestCase`, `Target`, `Steps`, `Checkpoint`, `Assertion`, `Constraints`, `Context`, `OnFailure` dataclasses and the `TestCaseValidationError` exception.
+
+**T0.4** — Write `orchestrator/models/run_state.py`: `AgentState` TypedDict, `StepTrace` dataclass, `ErrorInfo` dataclass, `RunStatus` literal type.
+
+**T0.5** — Write `orchestrator/models/results.py`: `RunResult`, `AssertionResult` dataclasses.
+
+**T0.6** — Write tests for models: `tests/unit/test_models.py`.
+
+### Layer 1: Parsing and Configuration (depends on Layer 0)
+
+**T1.1** — Write `orchestrator/loader/yaml_loader.py` (depends on T0.3). Implement `load_test_case()` with full validation.
+
+**T1.2** — Write tests: `tests/unit/test_yaml_loader.py` (depends on T1.1). Include all edge cases listed above.
+
+**T1.3** — Write `orchestrator/agent/prompt_builder.py` (depends on T0.3). Implement `build_system_prompt()` per spec §5.2 template verbatim.
+
+**T1.4** — Write tests: `tests/unit/test_prompt_builder.py` (depends on T1.3).
+
+**T1.5** — Write pricing table and `compute_step_cost()` in `orchestrator/models/run_state.py` (depends on T0.4).
+
+### Layer 2: Infrastructure (depends on Layer 1)
+
+**T2.1** — Write `orchestrator/cdp/session.py` (depends on T0.4). Implement `CdpSession` with Network and Console domains.
+
+**T2.2** — Write integration tests: `tests/integration/test_cdp_session.py` (depends on T2.1).
+
+**T2.3** — Write `orchestrator/mcp/client.py` (depends on T0.4). Implement `PlaywrightMcpClient` with `stdio` transport using `subprocess` + JSON-RPC. Reuse the protocol pattern from the existing compiled `mcp_client.cpython-*.pyc` in `agent/core/`.
+
+**T2.4** — Write `orchestrator/mcp/tool_adapter.py` (depends on T2.3). Implement `mcp_tools_to_langchain()` — this is a direct port of the logic in `agent/core/mcp_tool_adapter` (which the compiled bytecode evidences existed).
+
+**T2.5** — Write integration tests: `tests/integration/test_mcp_client.py` (depends on T2.3, T2.4).
+
+**T2.6** — Write `orchestrator/tools/wait_for_stable.py` (depends on T2.1). Phase 1 implementation: network quiescence via `CdpSession.pending_request_count` + DOM settle via `evaluate_js` with MutationObserver.
+
+**T2.7** — Write `orchestrator/tools/assert_text_present.py` (depends on T0.4). Pure function.
+
+**T2.8** — Write `orchestrator/tools/get_console_errors.py` (depends on T2.1).
+
+**T2.9** — Write `orchestrator/tools/report_step_result.py`. Pure function.
+
+**T2.10** — Write `orchestrator/tools/schemas.py`: JSON Schema definitions for all custom tools (for LLM tool-calling).
+
+**T2.11** — Write `orchestrator/tools/tool_registry.py` (depends on T2.6–T2.9). Implement `ToolRegistry.dispatch()`.
+
+**T2.12** — Write unit tests: `tests/unit/test_tool_registry.py`, `tests/unit/test_assert_text_present.py`, `tests/unit/test_wait_for_stable.py` (the wait_for_stable unit test mocks `CdpSession`).
+
+**T2.13** — Write `orchestrator/trace/collector.py` (depends on T0.4, T1.5). Implement all `on_*` callbacks and `get_summary()`.
+
+**T2.14** — Write tests: `tests/unit/test_trace_collector.py` (depends on T2.13).
+
+### Layer 3: Agent Graph (depends on Layer 2)
+
+**T3.1** — Write `orchestrator/agent/nodes/observe.py` (depends on T2.1, T2.3, T2.6, T2.13). Implements timeout/step checks, `wait_for_stable`, `browser_snapshot`.
+
+**T3.2** — Write `orchestrator/agent/nodes/reason.py` (depends on T0.3, T0.4, T1.3, T2.4, T2.10, T2.13). Calls Anthropic API with streaming, extracts usage, handles rate limits.
+
+**T3.3** — Write `orchestrator/agent/nodes/act.py` (depends on T2.3, T2.11, T2.13). Routes tool calls, handles retries, detects repetition.
+
+**T3.4** — Write `orchestrator/agent/nodes/goal_check.py` (depends on T0.4). Pure routing logic.
+
+**T3.5** — Write `orchestrator/agent/nodes/error_handler.py` (depends on T0.4, T2.3). Error classification and recovery routing.
+
+**T3.6** — Write `orchestrator/agent/nodes/finalize.py` (depends on T2.8, T2.13). Runs assertion engine, writes trace JSON.
+
+**T3.7** — Write all four edge functions in `orchestrator/agent/edges/` (depends on T0.4).
+
+**T3.8** — Write unit tests: `tests/unit/test_edges.py` (depends on T3.7).
+
+**T3.9** — Write `orchestrator/assertions/engine.py` (depends on T0.3, T0.5, T2.7, T2.8). Phase 1: `content` and `console` types only.
+
+**T3.10** — Write `orchestrator/agent/graph.py` (depends on T3.1–T3.7). Compile the `StateGraph`.
+
+**T3.11** — Write integration tests: `tests/integration/test_agent_graph.py` (depends on T3.10). All failure mode tests listed in §12.4.
+
+### Layer 4: CLI and Runner (depends on Layer 3)
+
+**T4.1** — Write `orchestrator/runner/run_manager.py` (depends on all of Layer 3, T2.3, T2.1, `hawkeye_sandbox`). Full resource lifecycle management.
+
+**T4.2** — Write `orchestrator/cli/main.py` (depends on T4.1, T1.1). Click CLI with `run`, `validate`, `list-tools` commands.
+
+**T4.3** — Write `orchestrator/__main__.py`: `from orchestrator.cli.main import cli; cli()`.
+
+**T4.4** — Write test cases YAML: `orchestrator/test_cases/wikipedia_search.yaml` and `orchestrator/test_cases/amazon_add_to_cart.yaml` (depends on T1.1 for format validation).
+
+**T4.5** — Write E2E tests: `tests/e2e/test_wikipedia.py` and `tests/e2e/test_amazon.py` (depends on T4.1, T4.4).
+
+**T4.6** — Run E2E tests to validate both test cases pass. Iterate on prompts and tool behavior until consistent.
+
+---
+
+## 14. Critical Architectural Decisions and Rationale
+
+### Decision 1: Python LangGraph (not TypeScript)
+
+The spec §7.1 lists Node.js/TypeScript as the orchestrator runtime. However, CLAUDE.md unambiguously states "Orchestrator: Python 3.11+, LangGraph (Python), LangChain" and lists `langchain-ollama` in Phase 1 dependencies. The existing PoC (`test_mcp_wiring.py`) is Python. The `hawkeye_sandbox` package is Python. All compiled bytecode in `agent/` is CPython. This plan follows CLAUDE.md — Python throughout, TypeScript code in spec §7.3 is treated as pseudocode for the state machine design.
+
+### Decision 2: `stdio` Transport for MCP (Phase 1)
+
+The sandbox currently maps CDP port to a random host port (e.g., `127.0.0.1:49155`). There is no HTTP MCP server exposed on port 3100 at the host level. The entrypoint script in spec §4.3 shows `npx @playwright/mcp@latest --port ${MCP_PORT} --headed` inside the container — this only binds to the container's internal port. Phase 1 uses `stdio` transport (spawning `npx @playwright/mcp --cdp-endpoint {cdp_url}` as a subprocess), exactly as in `test_mcp_wiring.py`. This avoids needing Docker bridge network changes until Phase 3.
+
+### Decision 3: Phase 1 `wait_for_stable` uses CDP via host-mapped port
+
+The sandbox exposes CDP via a socat proxy on port 9223 (not 9222 directly). `SandboxHandle.cdp_url` points to the host-mapped port. `CdpSession` connects directly to this URL. Phase 3 switches to container-internal addresses on the bridge network.
+
+### Decision 4: No PostgreSQL in Phase 1
+
+The spec §8 defines a full PostgreSQL schema. CLAUDE.md Phase 1 does not mention database. Phase 1 persists trace data to JSON files in `output_dir`. Database integration is Phase 2.
+
+### Decision 5: Assertion Engine is non-fatal for unsupported types
+
+Assertions of type `visual`, `state`, `network`, `accessibility`, and `performance` are Phase 2. Rather than failing the test with "not implemented," the assertion engine logs a `WARNING` and marks them as `"skipped"` — the run can still `PASS` or `FAIL` based on the implemented assertion types. This allows the Phase 1 YAML format to include future assertion types without breaking the runner.
+
+### Decision 6: Context window management
+
+The spec §10.5 describes auto-compaction after 10 steps. Phase 1 implements a simpler version: if `input_tokens` in the last step exceeds 150,000 (75% of 200K Sonnet context window), the `reason` node trims `messages` to keep only the system message, the last 10 tool call pairs, and a summary injected as a user turn. Full LangGraph `SqliteSaver` checkpointing (for crash recovery and time-travel debugging) is Phase 2.
+
+---
+
+## 15. Graceful Failure and Recovery Specification
+
+Every component is designed to fail softly rather than crash the process:
+
+1. **`PlaywrightMcpClient.call_tool()`**: Never raises to the caller. Returns `McpToolResult(content="", is_error=True, error_message=...)` on any failure. The `act` node checks `is_error` and increments `consecutive_errors`.
+
+2. **`CdpSession.evaluate_js()`**: Raises `CdpTimeoutError` on timeout (the only exception type it propagates). All callers catch this and fall back to a safe default (e.g., `wait_for_stable` uses `stable=False` with `wait_duration_ms=timeout_ms`).
+
+3. **`AssertionEngine.evaluate()`**: Wraps each assertion in `try/except Exception` — a buggy assertion never fails the whole run.
+
+4. **`RunManager.run()`**: Uses `try/finally` to guarantee `sandbox.stop()` and `mcp_client.close()` are always called, even if the graph raises an unhandled exception.
+
+5. **`observe_node()`**: If `browser_snapshot` fails 5 times consecutively, sets `status="errored"` and returns immediately (routes to error_handler, then finalize). The process does not hang.
+
+6. **`reason_node()`**: Implements its own retry loop for 429/500 errors before delegating to error_handler. The exponential backoff is `[2, 4, 8]` seconds — aggressive enough to survive burst rate limits without hanging indefinitely.
+
+7. **`finalize_node()`**: Always runs, even if `status` is already `errored`. It writes whatever trace data was collected and prints the summary. Evidence is never silently lost.
+
+---
+
+## Critical Files for Implementation
+
+- `C:/Vijay/PyCode/Project-Hawkeye/Backend/orchestrator/agent/graph.py`
+- `C:/Vijay/PyCode/Project-Hawkeye/Backend/orchestrator/runner/run_manager.py`
+- `C:/Vijay/PyCode/Project-Hawkeye/Backend/orchestrator/mcp/client.py`
+- `C:/Vijay/PyCode/Project-Hawkeye/Backend/orchestrator/tools/wait_for_stable.py`
+- `C:/Vijay/PyCode/Project-Hawkeye/Backend/pyproject.toml`

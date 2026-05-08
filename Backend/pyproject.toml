@@ -1,8 +1,48 @@
 [project]
 name = "project-hawkeye"
 version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
+description = "AI-powered pre-deployment agentic testing platform"
 requires-python = ">=3.11"
 dependencies = [
+    "langgraph>=0.2.0",
+    "langchain-core>=0.3.0",
+    "langchain-ollama>=0.2.0",
+    "langchain-openai>=0.2.0",
+    "pydantic>=2.0.0",
+    "pyyaml>=6.0",
+    "click>=8.1.0",
+    "websockets>=13.0",
+    "anyio>=4.0.0",
+    "httpx>=0.27.0",
+    "rich>=13.0.0",
+    "python-dotenv>=1.0.0",
 ]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-mock>=3.12.0",
+    "pytest-timeout>=2.3.0",
+    "freezegun>=1.4.0",
+]
+
+[project.scripts]
+hawkeye = "orchestrator.cli.main:cli"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+timeout = 300
+filterwarnings = ["ignore::pytest.PytestCollectionWarning"]
+markers = [
+    "integration: requires running sandbox container",
+    "e2e: requires Docker and Ollama running",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["orchestrator", "hawkeye_sandbox"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
 
 import { AppTopbar } from "@/components/app/app-topbar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -43,9 +44,10 @@ function formatLimit(m: UsageMeter) {
 }
 
 export default function BillingPage() {
+  const { data: session } = useSession();
   const [tab, setTab] = useState<BillingTab>("Billing");
-  const [fullName, setFullName] = useState("Alex Mitchell");
-  const [email, setEmail] = useState("alex@techflow.pro");
+  const [fullName, setFullName] = useState(session?.user?.name ?? "Alex Mitchell");
+  const [email, setEmail] = useState(session?.user?.email ?? "alex@techflow.pro");
   const [invoiceEmails, setInvoiceEmails] = useState(true);
   const [paymentAlerts, setPaymentAlerts] = useState(true);
   const [usageAlertEmails, setUsageAlertEmails] = useState(false);
@@ -256,27 +258,19 @@ export default function BillingPage() {
                 <CardDescription>Email preferences for invoices and payment events.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                <div className="flex items-start justify-between gap-6 rounded-lg border border-border/60 bg-background/30 p-4">
-                  <div>
-                    <div className="text-sm font-medium text-foreground">Invoice emails</div>
-                    <div className="text-xs text-muted-foreground">PDF receipts and monthly statements.</div>
+                {([
+                  { label: "Invoice emails",   description: "PDF receipts and monthly statements.",                checked: invoiceEmails,    onChange: setInvoiceEmails },
+                  { label: "Payment failures", description: "Alerts when a charge fails or a card expires.",      checked: paymentAlerts,    onChange: setPaymentAlerts },
+                  { label: "Usage thresholds", description: "Notify when usage approaches plan limits.",          checked: usageAlertEmails, onChange: setUsageAlertEmails },
+                ] as const).map(({ label, description, checked, onChange }) => (
+                  <div key={label} className="flex items-start justify-between gap-6 rounded-lg border border-border/60 bg-background/30 p-4">
+                    <div>
+                      <div className="text-sm font-medium text-foreground">{label}</div>
+                      <div className="text-xs text-muted-foreground">{description}</div>
+                    </div>
+                    <Switch checked={checked} onCheckedChange={(v) => onChange(!!v)} />
                   </div>
-                  <Switch checked={invoiceEmails} onCheckedChange={(v) => setInvoiceEmails(!!v)} />
-                </div>
-                <div className="flex items-start justify-between gap-6 rounded-lg border border-border/60 bg-background/30 p-4">
-                  <div>
-                    <div className="text-sm font-medium text-foreground">Payment failures</div>
-                    <div className="text-xs text-muted-foreground">Alerts when a charge fails or a card expires.</div>
-                  </div>
-                  <Switch checked={paymentAlerts} onCheckedChange={(v) => setPaymentAlerts(!!v)} />
-                </div>
-                <div className="flex items-start justify-between gap-6 rounded-lg border border-border/60 bg-background/30 p-4">
-                  <div>
-                    <div className="text-sm font-medium text-foreground">Usage thresholds</div>
-                    <div className="text-xs text-muted-foreground">Notify when usage approaches plan limits.</div>
-                  </div>
-                  <Switch checked={usageAlertEmails} onCheckedChange={(v) => setUsageAlertEmails(!!v)} />
-                </div>
+                ))}
                 <div className="flex justify-end">
                   <Button onClick={() => toast.success("Preferences saved", { description: "Hook to notification API when backend exists." })}>
                     Save preferences
