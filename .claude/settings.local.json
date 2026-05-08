@@ -12,7 +12,8 @@
       "Bash(awk '{print $1, $2, $9}')",
       "Bash(node -e \"import\\('url'\\).then\\(\\({fileURLToPath}\\) => { import\\('path'\\).then\\(path => { console.log\\(path.default.dirname\\(fileURLToPath\\(import.meta.url\\)\\)\\) }\\) }\\)\")",
       "Bash(npx tsc *)",
-      "Bash(git *)"
+      "Bash(git *)",
+      "Bash(gh pr *)"
     ]
   }
 }
