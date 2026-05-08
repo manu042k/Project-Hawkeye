@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "mcp__plugin_woz_code__Edit",
-      "mcp__plugin_woz_code__Search"
+      "mcp__plugin_woz_code__Search",
+      "Bash(dir /b /s \"C:\\\\Vijay\\\\PyCode\\\\Project-Hawkeye\\\\Backend\\\\agent\")",
+      "Bash(findstr /i \"\\\\.py$\")"
     ]
   }
 }

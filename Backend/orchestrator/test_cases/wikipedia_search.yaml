@@ -1,0 +1,67 @@
+id: "TC-001"
+name: "Wikipedia: search and scroll through AI article"
+suite: "phase1-smoke"
+priority: "P1"
+tags: ["wikipedia", "search", "scroll"]
+
+target:
+  url: "https://www.wikipedia.org"
+  browser: "chromium"
+  viewport:
+    width: 1280
+    height: 720
+
+goal: |
+  Starting from the Wikipedia homepage, search for the term
+  "artificial intelligence", open the article, and scroll
+  through the article content to read multiple sections.
+
+steps:
+  mode: "guided"
+  checkpoints:
+    - id: "S1"
+      description: "Locate the search box and type 'artificial intelligence'"
+      success_signal: "Search results page or the AI article is visible"
+
+    - id: "S2"
+      description: "Open the 'Artificial intelligence' article"
+      success_signal: "Full article page with title and sections is displayed"
+
+    - id: "S3"
+      description: "Scroll through the article content"
+      success_signal: "Multiple sections (History, Applications, etc.) are visible after scrolling"
+
+assertions:
+  - id: "A1"
+    type: "content"
+    description: "Article title contains 'Artificial intelligence'"
+    params:
+      check: "text_present"
+      text: "Artificial intelligence"
+
+  - id: "A2"
+    type: "console"
+    description: "No critical JS errors during navigation"
+    params:
+      level: "error"
+      max_count: 3
+      ignore_patterns:
+        - "favicon"
+        - "analytics"
+        - "gtag"
+
+constraints:
+  max_steps: 20
+  timeout_seconds: 600
+  navigation_policy: "explicit_urls_allowed"
+  forbidden_actions:
+    - "navigate to any domain other than wikipedia.org"
+
+context:
+  page_type: "ssr"
+  app_description: "Wikipedia — a free multilingual online encyclopedia."
+  hints:
+    - "The search box is prominent on the homepage with placeholder text"
+    - "After typing, press Enter to search or click the search button"
+    - "If auto-redirected to the article, proceed directly to scrolling"
+    - "After searching, click the article link in results if not auto-redirected"

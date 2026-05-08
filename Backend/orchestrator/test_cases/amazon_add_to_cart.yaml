@@ -1,0 +1,95 @@
+id: "TC-002"
+name: "Amazon: find product, add to cart, verify cart"
+suite: "phase1-smoke"
+priority: "P1"
+tags: ["amazon", "cart", "e-commerce"]
+
+target:
+  url: "https://www.amazon.com"
+  browser: "chromium"
+  viewport:
+    width: 1280
+    height: 720
+
+goal: |
+  Starting from the Amazon homepage, search for 'wireless bluetooth
+  headphones', open any product listing from the results, add the
+  product to the cart, navigate to the cart, and verify the item
+  is present in the cart.
+
+steps:
+  mode: "guided"
+  checkpoints:
+    - id: "S1"
+      description: "Locate and use the Amazon search bar to search for 'wireless bluetooth headphones'"
+      success_signal: "Search results page is displayed with product listings"
+
+    - id: "S2"
+      description: "Open any product from the search results"
+      success_signal: "Product detail page is displayed with an 'Add to Cart' or 'Add to Shopping Cart' button"
+
+    - id: "S3"
+      description: "Click the 'Add to Cart' button"
+      success_signal: "Cart confirmation is shown, or cart counter increments, or success banner appears"
+
+    - id: "S4"
+      description: "Navigate to the shopping cart"
+      success_signal: "Cart page is displayed"
+
+    - id: "S5"
+      description: "Verify the added product is in the cart"
+      success_signal: "Cart shows at least one item matching the product added"
+
+assertions:
+  - id: "A1"
+    type: "content"
+    description: "Cart contains at least one headphones item"
+    params:
+      check: "text_present"
+      text: "headphones"
+
+  - id: "A2"
+    type: "content"
+    description: "Cart shows a price or subtotal"
+    params:
+      check: "text_matches"
+      pattern: "\\$[0-9]+\\.[0-9]{2}"
+
+  - id: "A3"
+    type: "console"
+    description: "No critical JS errors during the flow"
+    params:
+      level: "error"
+      max_count: 5
+      ignore_patterns:
+        - "favicon"
+        - "analytics"
+        - "beacon"
+        - "ads"
+        - "adsystem"
+        - "doubleclick"
+
+constraints:
+  max_steps: 35
+  timeout_seconds: 480
+  navigation_policy: "interact_only"
+  forbidden_actions:
+    - "proceed to checkout"
+    - "enter payment information"
+    - "place an order"
+    - "buy now"
+  required_behaviors:
+    - "verify cart contents by navigating to the cart page"
+
+context:
+  page_type: "spa"
+  app_description: |
+    Amazon.com — major e-commerce platform. Heavy use of JavaScript for
+    dynamic content. Product listings, cart, and checkout flows.
+  hints:
+    - "Dismiss any 'Sign in' prompts, overlays, or cookie banners before proceeding"
+    - "If Amazon shows a CAPTCHA, emit <GOAL_BLOCKED> with explanation"
+    - "The cart icon is in the top-right navigation bar"
+    - "Product pages have 'Add to Cart' or 'Add to Shopping Cart' button"
+    - "Do NOT click 'Proceed to checkout' — stop at the cart page"
+    - "After adding to cart, a confirmation dialog may appear — look for cart navigation link"
