@@ -40,6 +40,8 @@ def cli() -> None:
               help="Directory for trace output and evidence.")
 @click.option("--verbose", "-v", is_flag=True, default=False,
               help="Enable verbose output (show LLM reasoning, full snapshots).")
+@click.option("--record", is_flag=True, default=False,
+              help="Record the browser session to MP4 in the output directory.")
 def run(
     test_path: str,
     model: str,
@@ -51,6 +53,7 @@ def run(
     no_sandbox: bool,
     output_dir: str,
     verbose: bool,
+    record: bool,
 ) -> None:
     """Run a single test case."""
     from orchestrator.loader.yaml_loader import load_test_case
@@ -91,6 +94,7 @@ def run(
         sandbox_image=sandbox_image,
         model_name=model,
         verbose=verbose,
+        record=record,
     )
 
     result = asyncio.run(

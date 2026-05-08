@@ -1,0 +1,72 @@
+id: "TC-002b"
+name: "SauceDemo: add product to cart, verify cart"
+suite: "phase1-smoke"
+priority: "P1"
+tags: ["e-commerce", "cart", "login"]
+
+target:
+  url: "https://www.saucedemo.com"
+  browser: "chromium"
+  viewport:
+    width: 1280
+    height: 720
+
+goal: |
+  Log in to SauceDemo with username 'standard_user' and password 'secret_sauce'.
+  After login, add any product to the cart, navigate to the cart page,
+  and verify the item is present in the cart.
+
+steps: null
+
+assertions:
+  - id: "A1"
+    type: "content"
+    description: "Cart page shows at least one item"
+    params:
+      check: "text_present"
+      text: "Remove"
+
+  - id: "A2"
+    type: "content"
+    description: "Cart shows a price"
+    params:
+      check: "text_matches"
+      pattern: "\\$[0-9]+\\.[0-9]{2}"
+
+  - id: "A3"
+    type: "console"
+    description: "No critical JS errors during the flow"
+    params:
+      level: "error"
+      max_count: 10
+      ignore_patterns:
+        - "favicon"
+        - "401"
+        - "Unauthorized"
+        - "Failed to load resource"
+
+constraints:
+  max_steps: 25
+  timeout_seconds: 240
+  navigation_policy: "interact_only"
+  forbidden_actions:
+    - "proceed to checkout"
+    - "enter payment information"
+    - "place an order"
+  required_behaviors:
+    - "verify cart contents by navigating to the cart page"
+
+context:
+  page_type: "spa"
+  app_description: |
+    SauceDemo — a demo e-commerce site for testing. Has a login page,
+    product inventory, shopping cart, and checkout flow.
+  hints:
+    - "Login credentials: username = 'standard_user', password = 'secret_sauce'"
+    - "After login you will see the product inventory page with items and 'Add to cart' buttons"
+    - "Click 'Add to cart' on exactly ONE product. Once the button changes to 'Remove', STOP adding items."
+    - "After adding one item, IMMEDIATELY click the shopping cart icon in the top-right to navigate to the cart"
+    - "The cart page URL is /cart.html — once there, take a snapshot to verify the item is listed"
+    - "Do NOT add more than one item. Do NOT proceed to checkout."
+    - "Once you see the cart page with the item listed, emit <GOAL_COMPLETE> as plain text without a tool call"
+    - "The cart badge will show '1' after adding one item — that is your signal to navigate to the cart"

@@ -25,15 +25,24 @@ def _sanitize_tool_args(args: dict) -> dict:
 
     Different LLMs format optional parameters differently:
     - Some pass ``null`` / ``None`` for unset optional fields — MCP rejects these.
-    - Some include the ``ref=`` prefix in target refs (e.g. ``'ref=e52'`` instead
-      of ``'e52'``) — strip it so Playwright can find the element.
+    - LLMs copy the exact text from the snapshot, producing targets like
+      ``'[ref=e52]'`` (with brackets) or ``'ref=e52'`` (with prefix only).
+      MCP expects the bare ID: ``'e52'``.
     """
     cleaned = {k: v for k, v in args.items() if v is not None}
     if "target" in cleaned and isinstance(cleaned["target"], str):
         t = cleaned["target"]
+        # Strip surrounding brackets: [ref=e52] → ref=e52
+        if t.startswith("[") and t.endswith("]"):
+            t = t[1:-1]
+        # Strip ref= prefix: ref=e52 → e52
         if t.startswith("ref="):
-            cleaned["target"] = t[len("ref="):]
-    return cleaned    # number of recent steps to check for identical tool calls
+            t = t[len("ref="):]
+        cleaned["target"] = t
+    return cleaned
+
+
+# number of recent steps to check for identical tool calls
 _REPETITION_META_LIMIT = 3  # after this many injected meta-prompts → GOAL_BLOCKED
 
 
@@ -167,12 +176,20 @@ async def act_node(
             recoverable=consecutive_errors < 3,
         )
 
+    # Increment scroll counter when the agent presses a scroll key.
+    scroll_count = state.get("page_scroll_count", 0)
+    if tool_name == "browser_press_key":
+        key = tool_args.get("key", "")
+        if any(k in key for k in ("PageDown", "PageUp", "Space", "ArrowDown", "ArrowUp")):
+            scroll_count += 1
+
     result_dict: dict = {
         "messages": [tool_message],
         "last_tool_name": tool_name,
         "last_tool_result": output,
         "last_tool_success": success,
         "consecutive_errors": consecutive_errors,
+        "page_scroll_count": scroll_count,
     }
     if last_error:
         result_dict["last_error"] = last_error

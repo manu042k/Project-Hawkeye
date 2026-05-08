@@ -149,5 +149,8 @@ class AgentState(TypedDict):
     goal_complete: bool
     termination_reason: Optional[str]
 
+    # Scroll action counter — resets when URL changes, used by observation + prompt
+    page_scroll_count: int
+
     # Wall-clock start time for timeout checks
     run_start_time: float

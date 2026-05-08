@@ -114,41 +114,66 @@ async def observe_node(
         snapshot_chars=len(snapshot_text),
     )
 
+    # Reset scroll counter when the page URL changes.
+    prev_url = state.get("current_url", "")
+    scroll_count = 0 if current_url != prev_url else state.get("page_scroll_count", 0)
+
     return {
         "step_number": step_number,
         "current_url": current_url,
         "page_title": page_title,
         "page_snapshot": snapshot_text,
+        "page_scroll_count": scroll_count,
     }
 
 
 def _parse_url_title(snapshot: str, fallback_url: str, fallback_title: str) -> tuple[str, str]:
-    """Extract URL and title from a Playwright accessibility tree snapshot.
+    """Extract URL and title from a Playwright MCP accessibility tree snapshot.
 
-    The snapshot typically starts with lines like:
-      - page title 'My Page'
-      - navigated to 'https://...'
-    This is a best-effort extraction; falls back to provided values.
+    @playwright/mcp emits unquoted headers like:
+      - Page URL: https://en.wikipedia.org/wiki/Main_Page
+      - Page Title: Wikipedia, the free encyclopedia
+
+    Older / alternative formats use quoted values or 'navigated to' phrasing.
+    Falls back to provided values when nothing matches.
     """
+    import re
+
     url = fallback_url
     title = fallback_title
-    for line in snapshot.splitlines()[:10]:
+    for line in snapshot.splitlines()[:15]:
         line_lower = line.lower()
-        if "navigated to" in line_lower or "url:" in line_lower:
-            # Extract the quoted URL
+        if "url:" in line_lower or "navigated to" in line_lower:
+            # Try quoted first: '...' or "..."
+            matched = False
             for q in ('"', "'"):
-                start = line.find(q)
-                end = line.rfind(q)
-                if 0 <= start < end:
-                    candidate = line[start + 1:end]
+                s = line.find(q)
+                e = line.rfind(q)
+                if 0 <= s < e:
+                    candidate = line[s + 1:e]
                     if candidate.startswith("http"):
                         url = candidate
+                        matched = True
                         break
-        elif "page title" in line_lower or "title:" in line_lower:
+            if not matched:
+                # Unquoted: grab first http(s) token on the line.
+                m = re.search(r'https?://\S+', line)
+                if m:
+                    url = m.group(0).rstrip(')>,')
+        elif "title:" in line_lower or "page title" in line_lower:
+            matched = False
             for q in ('"', "'"):
-                start = line.find(q)
-                end = line.rfind(q)
-                if 0 <= start < end:
-                    title = line[start + 1:end]
+                s = line.find(q)
+                e = line.rfind(q)
+                if 0 <= s < e:
+                    title = line[s + 1:e]
+                    matched = True
                     break
+            if not matched:
+                # Unquoted: take everything after the last colon on the line.
+                idx = line.rfind(":")
+                if idx >= 0:
+                    candidate = line[idx + 1:].strip()
+                    if candidate:
+                        title = candidate
     return url, title

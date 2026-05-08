@@ -281,9 +281,13 @@ def _build_observation(state: AgentState) -> str:
             f"{_MAX_SNAPSHOT_CHARS:,} of {len(snapshot):,} chars]"
         )
 
+    scroll_count = state.get("page_scroll_count", 0)
+
     parts = [f"[Step {step}] Current page: {url}"]
     if title:
         parts.append(f"Title: {title}")
+    if scroll_count > 0:
+        parts.append(f"Scrolls on current page: {scroll_count}")
 
     # Always show progress summary so the agent remembers its state even after
     # context trimming removes earlier messages.

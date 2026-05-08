@@ -31,26 +31,28 @@ _TOOL_CONVENTIONS = """\
   Each interactive element has a `[ref=...]` label — use that exact ref value.
 - Take ONE snapshot per step to decide your next action. Do NOT take multiple
   snapshots in a row — each snapshot uses budget. If you cannot see what you
-  need, SCROLL DOWN with browser_scroll and then act on what appears.
+  need, SCROLL DOWN using browser_press_key (key: 'PageDown') and then take
+  a fresh snapshot to see what appeared.
 - The snapshot may be truncated on large pages — this is normal. Scroll down
   to reveal more content rather than retrying the snapshot with different params.
 - After typing in a search box, press Enter via `browser_press_key` (key: 'Enter').
 - Dismiss any cookie banners, popups, or login prompts before proceeding.
-- When a search results page loads: scroll down once, then click the first
-  product title or link you can see. Do not take multiple snapshots first.
+- When a search results page loads: press PageDown once (browser_press_key, key: 'PageDown'),
+  then take a snapshot and click the first product title or link you can see.
 - Use `wait_for_stable` when the page may still be loading after navigation.
 - Call `report_step_result` to log intermediate assertion outcomes.
 
 ## Completing the goal — CRITICAL
-- As soon as each checkpoint is done, write "[S<id> complete]" in your response
-  (e.g. "[S1 complete]") so progress is tracked. Do this the moment it is done.
-- When ALL checkpoints are complete and the overall goal is achieved, IMMEDIATELY
-  write `<GOAL_COMPLETE>` in your response text. Do not delay or keep browsing.
-- For scroll tasks: after pressing PageDown or browser_scroll 3–4 times and
-  seeing multiple section headings in the snapshot, the scroll goal is met.
-  Write `<GOAL_COMPLETE>` at that point.
+- Emit "[S<id> complete]" in the SAME response where you perform the final
+  action for that checkpoint. Do not wait for the next step.
+- When ALL checkpoints are complete and the overall goal is achieved, emit
+  `<GOAL_COMPLETE>` as PLAIN TEXT with NO tool call. Stop browsing immediately.
+- For scroll tasks: when "Scrolls on current page" reaches 3 or more, the scroll
+  goal is met. Emit `<GOAL_COMPLETE>` as plain text WITHOUT making a tool call.
 - If you are stuck and cannot make progress after trying 2 different approaches,
-  write `<GOAL_BLOCKED>` followed by a brief explanation."""
+  write `<GOAL_BLOCKED>` followed by a brief explanation.
+- If the site forces a login wall that you cannot dismiss or bypass, immediately
+  write `<GOAL_BLOCKED>: Site requires login` — do NOT loop trying to close it."""
 
 _CONSTRAINTS_SECTION = """\
 ## Constraints

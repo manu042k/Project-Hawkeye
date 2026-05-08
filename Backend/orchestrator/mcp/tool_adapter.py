@@ -13,21 +13,18 @@ logger = logging.getLogger(__name__)
 
 # Tools exposed to the LLM. Others are available in the MCP server but
 # hidden to keep the tool list lean and reduce the system prompt size.
+# Confirmed present in @playwright/mcp@latest (verified via list-tools warning log).
+# Removed: browser_scroll, browser_screenshot, browser_go_back,
+#           browser_tab_new, browser_tab_close, browser_tab_list
 DEFAULT_ALLOWLIST: frozenset[str] = frozenset({
     "browser_navigate",
     "browser_click",
     "browser_type",
     "browser_snapshot",
-    "browser_screenshot",
-    "browser_scroll",
     "browser_press_key",
     "browser_wait_for",
     "browser_hover",
     "browser_select_option",
-    "browser_go_back",
-    "browser_tab_new",
-    "browser_tab_close",
-    "browser_tab_list",
 })
 
 
@@ -45,15 +42,29 @@ def mcp_tools_to_langchain(
     """
     effective_allowlist = DEFAULT_ALLOWLIST if allowlist is None else allowlist
 
+    available_names = {schema.name for schema in mcp_schemas}
+    missing_from_mcp = sorted(effective_allowlist - available_names)
+    hidden_from_llm = sorted(available_names - effective_allowlist)
+    if missing_from_mcp:
+        logger.warning(
+            "Allowlisted tools NOT available in MCP server (update DEFAULT_ALLOWLIST): %s",
+            missing_from_mcp,
+        )
+    if hidden_from_llm:
+        logger.debug(
+            "MCP tools hidden from LLM by allowlist: %s",
+            hidden_from_llm,
+        )
+
     tools: list[StructuredTool] = []
     for schema in mcp_schemas:
         if schema.name not in effective_allowlist:
             continue
         tools.append(_make_tool(client, schema))
 
-    logger.debug(
-        "Built %d LangChain tools from %d MCP schemas (allowlist=%d)",
-        len(tools), len(mcp_schemas), len(effective_allowlist),
+    logger.info(
+        "Built %d LangChain tools from %d MCP schemas (allowlist=%d, missing=%d)",
+        len(tools), len(mcp_schemas), len(effective_allowlist), len(missing_from_mcp),
     )
     return tools
 
