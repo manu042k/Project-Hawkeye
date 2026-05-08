@@ -18,19 +18,25 @@ import {
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
-import { dashboardMetrics, recentActivity } from "@/lib/mock-data/dashboard";
+import { dashboardMetrics, recentActivity, type ActivityStatus } from "@/lib/mock-data/dashboard";
 import { useProjectStore } from "@/lib/project/store";
 import { cn } from "@/lib/utils";
 
-function StatusPill({ status }: { status: "passed" | "failed" | "running" }) {
+function StatusPill({ status }: { status: ActivityStatus }) {
   const cfg = useMemo(() => {
     switch (status) {
       case "passed":
-        return { label: "Passed", className: "border-emerald-500/30 bg-emerald-500/15 text-emerald-400" };
+        return { label: "Passed",    className: "border-emerald-500/30 bg-emerald-500/15 text-emerald-400" };
       case "failed":
-        return { label: "Failed", className: "border-rose-500/30 bg-rose-500/15 text-rose-400" };
+        return { label: "Failed",    className: "border-rose-500/30 bg-rose-500/15 text-rose-400" };
       case "running":
-        return { label: "Running", className: "border-amber-500/30 bg-amber-500/15 text-amber-400" };
+        return { label: "Running",   className: "border-amber-500/30 bg-amber-500/15 text-amber-400" };
+      case "errored":
+        return { label: "Errored",   className: "border-rose-500/30 bg-rose-500/15 text-rose-400" };
+      case "timed_out":
+        return { label: "Timed out", className: "border-orange-500/30 bg-orange-500/15 text-orange-400" };
+      case "blocked":
+        return { label: "Blocked",   className: "border-violet-500/30 bg-violet-500/15 text-violet-400" };
     }
   }, [status]);
 
@@ -51,6 +57,7 @@ export default function DashboardPage() {
     if (!q) return recentActivity;
     return recentActivity.filter(
       (row) =>
+        row.runId.toLowerCase().includes(q) ||
         row.testName.toLowerCase().includes(q) ||
         row.targetUrl.toLowerCase().includes(q) ||
         row.dateLabel.toLowerCase().includes(q)
@@ -89,7 +96,7 @@ export default function DashboardPage() {
                   </CardHeader>
                   <CardContent className="flex items-baseline gap-3">
                     <div className={`text-3xl font-semibold tracking-tight ${tone}`}>{m.value}</div>
-                    <div className="text-xs font-medium text-emerald-400">{m.delta}</div>
+                    <div className="text-xs font-medium text-muted-foreground">{m.delta}</div>
                   </CardContent>
                 </Card>
               );
@@ -109,7 +116,7 @@ export default function DashboardPage() {
                 <div className="relative w-full max-w-sm">
                   <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
                   <Input
-                    placeholder="Filter by test name..."
+                    placeholder="Filter by name or run ID..."
                     className="pl-9"
                     value={activityFilter}
                     onChange={(e) => setActivityFilter(e.target.value)}
@@ -126,8 +133,10 @@ export default function DashboardPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Status</TableHead>
+                      <TableHead>Run ID</TableHead>
                       <TableHead>Test Name</TableHead>
                       <TableHead>Target URL</TableHead>
+                      <TableHead>Browser</TableHead>
                       <TableHead>Duration</TableHead>
                       <TableHead>Date</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
@@ -136,7 +145,7 @@ export default function DashboardPage() {
                   <TableBody>
                     {filteredActivity.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={6} className="h-24 text-center text-sm text-muted-foreground">
+                        <TableCell colSpan={8} className="h-24 text-center text-sm text-muted-foreground">
                           No runs match your filter.
                         </TableCell>
                       </TableRow>
@@ -146,10 +155,12 @@ export default function DashboardPage() {
                           <TableCell>
                             <StatusPill status={row.status} />
                           </TableCell>
+                          <TableCell className="font-mono text-xs text-muted-foreground">{row.runId}</TableCell>
                           <TableCell className="font-medium">{row.testName}</TableCell>
                           <TableCell className="font-mono text-sm text-primary">
                             <span className="cursor-pointer hover:underline">{row.targetUrl}</span>
                           </TableCell>
+                          <TableCell className="font-mono text-xs">{row.browser}</TableCell>
                           <TableCell className="font-mono text-sm text-muted-foreground">{row.duration}</TableCell>
                           <TableCell className="text-muted-foreground">{row.dateLabel}</TableCell>
                           <TableCell className="text-right">
@@ -185,4 +196,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-
