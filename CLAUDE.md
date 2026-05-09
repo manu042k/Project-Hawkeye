@@ -374,11 +374,16 @@ Full design spec: `Docs/workflow.md` (layer diagram, PostgreSQL DDL, complete AP
 
 ### Phase 7 — Eval Observability 🔧 PLANNED
 
-- [ ] **MLflow / Arize Phoenix** trace instrumentation in `TraceCollector`
-- [ ] **JSONL eval dataset** — written per run; `GET /api/eval/dataset` streams all records
-- [ ] **`GET /api/eval/summary`** — aggregate pass rate, avg steps, avg cost per model
-- [ ] **Regression gate** — `eval_gate.py` CLI + `eval_gate.yml` GitHub Actions; fail CI if pass rate drops >5% or cost rises >20%
-- [ ] **Eval dashboard** — frontend page showing pass rate trends, cost per model, step distribution
+- [ ] **Arize Phoenix tracing** — OTEL span instrumentation in `TraceCollector`; opt-in via `PHOENIX_COLLECTOR_ENDPOINT` env var; span hierarchy: `hawkeye.run` (root) → `hawkeye.step` → `hawkeye.observe` / `hawkeye.reason` / `hawkeye.act` children; LLM attributes via OpenInference semantic conventions (`llm.token_count.prompt`, `llm.token_count.completion`, `llm.model_name`); `Backend/orchestrator/trace/phoenix.py` emitter class
+- [ ] **Eval CLI module** — `python -m orchestrator eval --test <yaml> [--test <yaml>...] [--model <m>] [--runs N] [--output dir]`; runs N repetitions per test case sequentially, aggregates pass rate / avg steps / avg cost / p50 latency per model, prints Rich summary table, writes `eval.jsonl`; lives in `Backend/orchestrator/eval/` (runner, metrics, dataset, report)
+- [ ] **Eval dataset curation** — extract and curate evaluation datasets from existing run traces (step observations, actions, outcomes, cost); store as structured JSONL in `artifacts/eval_datasets/`; tooling to filter, label, and version datasets
+- [ ] **Benchmark comparison** — survey public web-agent benchmarks (WebArena, Mind2Web, VisualWebArena, WebVoyager) and agents benchmarked on them; identify comparable task subsets; report Hawkeye pass rate and efficiency against published baselines
+- [ ] **CLI benchmark harness** — extend eval CLI with `--benchmark webvoyager|mind2web|custom` flag; per-dataset breakdown in the summary table; downloads task files from benchmark repos automatically
+
+#### Future Plan
+
+- [ ] **User-facing eval component** — frontend page for managing eval datasets, triggering benchmark runs against the live agent, reviewing per-step failure analysis, and adjusting agent configuration per dataset
+- [ ] **Prompt optimizer** — integrate DSPy MIPRO/GEPA or Agent Lightning APO to auto-optimize the system prompt from eval outcomes; offline eval → optimize → re-eval loop with score tracking across prompt versions
 
 Full spec: `Docs/workflow.md` §13.5
 
