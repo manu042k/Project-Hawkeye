@@ -152,16 +152,61 @@ async def _execute(celery_task_id: str, run_id: str, request_dict: dict) -> dict
 
         await _update_record({**result_dict, "completed_at": _utcnow()})
         await _publish("complete", {"status": result.status})
+        _fire_notifications(run_id=run_id, result_dict=result_dict)
         return result_dict
 
     except Exception as exc:
         logger.exception("Task %s failed: %s", run_id, exc)
-        await _update_record({
+        err_dict = {
             "status": "errored",
             "error_message": str(exc),
             "completed_at": _utcnow(),
-        })
+        }
+        await _update_record(err_dict)
         await _publish("error", {"message": str(exc)})
+        _fire_notifications(run_id=run_id, result_dict={**request_dict, **err_dict})
         return {"status": "errored", "error_message": str(exc)}
     finally:
         await r.aclose()
+
+
+def _fire_notifications(*, run_id: str, result_dict: dict) -> None:
+    """Send GitHub Check Run + Slack notification after a run finishes.
+
+    Runs synchronously in the Celery worker process. Both functions are
+    no-ops when the relevant env vars are not set.
+    """
+    from api.slack import notify_run_failed, notify_run_passed
+    from api.github_checks import post_check_run
+    import os
+
+    status = result_dict.get("status", "")
+    test_name = result_dict.get("test_name") or result_dict.get("test_case_path", "unknown")
+    duration_s = result_dict.get("duration_s")
+    steps = result_dict.get("total_steps")
+    error_message = result_dict.get("error_message")
+    app_url = os.environ.get("APP_URL", "http://localhost:3000")
+    report_url = f"{app_url}/app/runs/report?id={run_id}"
+
+    # Slack
+    if status in ("failed", "errored"):
+        notify_run_failed(
+            run_id=run_id, test_name=test_name, status=status,
+            duration_s=duration_s, steps=steps, error_message=error_message,
+        )
+    elif status == "passed":
+        notify_run_passed(run_id=run_id, test_name=test_name, duration_s=duration_s, steps=steps)
+
+    # GitHub Check Run (requires GITHUB_OWNER + GITHUB_REPO env vars)
+    owner = os.environ.get("GITHUB_OWNER", "")
+    repo = os.environ.get("GITHUB_REPO", "")
+    head_sha = os.environ.get("GITHUB_HEAD_SHA", "")  # set by CI before dispatch
+    if owner and repo and head_sha:
+        post_check_run(
+            owner=owner, repo=repo, head_sha=head_sha,
+            run_id=run_id, test_name=test_name,
+            status=status, conclusion=status,
+            details_url=report_url,
+            summary=f"Status: {status}. Steps: {steps}. Duration: {duration_s}s.",
+            completed_at=_utcnow(),
+        )
