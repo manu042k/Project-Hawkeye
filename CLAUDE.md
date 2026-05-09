@@ -243,6 +243,10 @@ step_screenshots: list[bytes]          # all step screenshots (for Pass 2)
 - [ ] **CI/CD integration** — GitHub Actions webhook (Phase 4)
 - [ ] **Billing** — Stripe integration (Phase 4)
 - [ ] **a11y + performance assertion types** — Phase 3
+- [ ] **Eval observability** — MLflow / Arize Phoenix trace instrumentation (Phase 4.5)
+- [ ] **Eval dataset** — Curated traces from past runs with ground-truth labels (Phase 4.5)
+- [ ] **Prompt tuning pipeline** — Versioned system instructions with eval-gated regression checks (Phase 4.5)
+- [ ] **Benchmark suite** — Automated eval loop with goal completion rate, cost, hallucination metrics (Phase 4.5)
 
 ---
 
@@ -328,6 +332,32 @@ step_screenshots: list[bytes]          # all step screenshots (for Pass 2)
 - Billing/usage metering
 - Suite-level orchestration: parallel runs, dependency chains
 - Cross-run analytics dashboard
+
+### Phase 4.5 — Agent Evaluation & Benchmarking (parallel to Phase 4)
+
+**Goal:** Systematically measure and improve agent quality by building an eval pipeline around real test traces.
+
+#### Observability instrumentation
+- Integrate **MLflow** or **Arize Phoenix** for trace logging — instrument `TraceCollector` to emit per-step spans (tool call, LLM latency, token count, screenshot, assertion result) to the chosen backend
+- Log full agent runs as MLflow experiments or Phoenix traces; tag by test case, model, and pass/fail outcome
+- Dashboard: step latency distribution, tool call frequency, goal completion rate per test case
+
+#### Dataset curation
+- Collect agent traces from past runs (PostgreSQL `agent_traces` table + HTML/MD artifacts) into a structured eval dataset
+- Each dataset record: `{ goal, step_observations, actions_taken, final_outcome, assertion_results, screenshots }`
+- Annotate with ground-truth labels: `pass`, `fail`, `blocked`, `hallucinated_action`
+- Target diversity: ≥5 different sites, ≥3 failure modes (bot detection, login wall, element not found), ≥2 models
+
+#### System instruction tuning
+- Systematically vary `prompt_builder.py` system prompt sections (tool conventions, checkpoint rules, goal-check criteria) and measure outcome delta
+- Track prompt version alongside each eval run so changes are attributable
+- Identify failure patterns from trace logs (e.g. agent clicks wrong element, misses `<GOAL_COMPLETE>`) and add targeted prompt rules
+
+#### Evaluation & optimization loop
+- Define eval metrics: **goal completion rate**, **steps-to-completion**, **cost per run**, **hallucination rate** (tool args referencing non-existent refs), **false GOAL_COMPLETE rate**
+- Run evals via MLflow `mlflow.evaluate()` or Arize Phoenix `run_evals()` against the curated dataset
+- Regression gate: block prompt changes that drop completion rate > 5% or increase cost > 20%
+- Publish eval reports to `artifacts/evals/` alongside existing run artifacts
 
 ---
 
