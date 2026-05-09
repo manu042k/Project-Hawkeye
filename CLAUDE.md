@@ -233,13 +233,14 @@ step_screenshots: list[bytes]          # all step screenshots (for Pass 2)
 - **Ollama** — `qwen3:8b` (thinking model) emits reasoning tokens but not tool_call format. Use `openrouter:openai/gpt-oss-120b:free` instead.
 - **`@playwright/mcp@latest`** — only 8 tools confirmed present: `browser_navigate`, `browser_click`, `browser_type`, `browser_snapshot`, `browser_press_key`, `browser_wait_for`, `browser_hover`, `browser_select_option`. Tools `browser_scroll`, `browser_screenshot`, `browser_go_back`, `browser_tab_*` are absent in current version.
 
-### Not Built Yet (Phase 6 scope)
-- [ ] **PostgreSQL persistence** — swap in-memory stores (projects, test_cases, suites, vault, schedules) for real asyncpg-backed tables; Phase 5 used dict-based stores
-- [ ] **Stripe billing** — checkout portal, webhook, plan enforcement on `POST /api/runs`
-- [ ] **Visual baseline approval UI** — side-by-side diff viewer, approve/reject queue
-- [ ] **Celery Beat scheduling** — persist cron schedules to Redis/DB and fire via Celery Beat worker
-- [ ] **GitHub Check Run API** — post pass/fail status back to PR; Slack failure notifications
-- [ ] **Organization management UI** — invite members, assign roles, per-org billing
+### Not Built Yet
+- [ ] **PostgreSQL persistence** — Phase 6A: swap in-memory stores for asyncpg tables
+- [ ] **Stripe billing** — Phase 6B: checkout, portal, plan enforcement
+- [ ] **Celery Beat scheduling** — Phase 6C: cron firing via Beat worker
+- [ ] **GitHub Check Run API** — Phase 6D: pass/fail status on PRs; Slack alerts
+- [ ] **Eval observability** — Phase 7: MLflow/Arize tracing, eval dataset, regression gate
+- [ ] **Visual baseline approval UI** — Phase 6F: diff viewer, approve/reject queue
+- [ ] **Organization management UI** — Phase 6F: invitations, roles, per-org billing
 
 ---
 
@@ -371,7 +372,19 @@ Full design spec: `Docs/workflow.md` (layer diagram, PostgreSQL DDL, complete AP
 - `Backend/api/routes/usage.py` — real usage from run count, vault secrets, artifact disk size
 - Billing page — replaced all mock imports; usage meters + cost fetched from `/api/usage`; loading skeleton while fetching
 
-### Phase 6 — Production Hardening & Eval 🔧 NEXT
+### Phase 7 — Eval Observability 🔧 PLANNED
+
+- [ ] **MLflow / Arize Phoenix** trace instrumentation in `TraceCollector`
+- [ ] **JSONL eval dataset** — written per run; `GET /api/eval/dataset` streams all records
+- [ ] **`GET /api/eval/summary`** — aggregate pass rate, avg steps, avg cost per model
+- [ ] **Regression gate** — `eval_gate.py` CLI + `eval_gate.yml` GitHub Actions; fail CI if pass rate drops >5% or cost rises >20%
+- [ ] **Eval dashboard** — frontend page showing pass rate trends, cost per model, step distribution
+
+Full spec: `Docs/workflow.md` §13.5
+
+---
+
+### Phase 6 — Production Hardening 🔧 NEXT
 
 Full spec: `Docs/workflow.md` §13 (6 tracks, API contracts, SQL DDL, code sketches, 7-week plan)
 
@@ -396,7 +409,6 @@ Full spec: `Docs/workflow.md` §13 (6 tracks, API contracts, SQL DDL, code sketc
 - Extend GitHub push webhook to capture `head_commit.id` and attach to run record
 
 #### Track E — Agent Eval & Benchmarking
-- [ ] **Eval observability** — MLflow / Arize Phoenix trace instrumentation in `TraceCollector`
 - Optional MLflow / Arize Phoenix logging in `TraceCollector`
 - JSONL eval dataset written per run to `artifacts/{run_id}/eval.jsonl`
 - `GET /api/eval/summary` — aggregate pass rate / cost per model
