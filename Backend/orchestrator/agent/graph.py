@@ -117,7 +117,7 @@ def build_graph(
     builder.add_conditional_edges(
         "act",
         route_after_act,
-        {"observe": "observe", "error": "error_handler"},
+        {"goal_check": "goal_check", "error": "error_handler"},
     )
     builder.add_conditional_edges(
         "goal_check",

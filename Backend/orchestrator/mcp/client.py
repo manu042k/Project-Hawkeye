@@ -10,7 +10,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-_INIT_TIMEOUT_S = 30.0
+_INIT_TIMEOUT_S = 90.0
 _TOOL_TIMEOUT_S = 60.0
 _RETRY_DELAY_S = 0.5
 _MAX_TOOL_RETRIES = 2
@@ -47,6 +47,7 @@ class PlaywrightMcpClient:
         self._cmd_id = 0
         self._pending: dict[int, asyncio.Future] = {}
         self._reader_task: asyncio.Task | None = None
+        self._stderr_task: asyncio.Task | None = None
         self._tools: list[McpToolSchema] = []
         self._initialized = False
 
@@ -77,6 +78,11 @@ class PlaywrightMcpClient:
         )
         self._reader_task = asyncio.create_task(
             self._read_loop(), name="mcp-reader"
+        )
+        # Drain stderr continuously so the subprocess never blocks on stderr writes.
+        # On Windows, npx prints npm/package logs to stderr before any JSON output.
+        self._stderr_task = asyncio.create_task(
+            self._drain_stderr(), name="mcp-stderr"
         )
 
         # JSON-RPC initialize
@@ -150,6 +156,12 @@ class PlaywrightMcpClient:
                 await self._reader_task
             except asyncio.CancelledError:
                 pass
+        if self._stderr_task and not self._stderr_task.done():
+            self._stderr_task.cancel()
+            try:
+                await self._stderr_task
+            except asyncio.CancelledError:
+                pass
 
         if self._proc:
             try:
@@ -202,6 +214,25 @@ class PlaywrightMcpClient:
             await self._proc.stdin.drain()
         except Exception:
             pass
+
+    async def _drain_stderr(self) -> None:
+        """Drain subprocess stderr to prevent pipe-buffer deadlock.
+
+        npx on Windows writes package download / startup messages to stderr.
+        Without a reader, the pipe buffer fills (~65 KB on Windows) and the
+        subprocess blocks on its next write, preventing stdout from arriving.
+        """
+        if self._proc is None or self._proc.stderr is None:
+            return
+        try:
+            async for line in self._proc.stderr:
+                line_s = line.decode(errors="replace").strip()
+                if line_s:
+                    logger.debug("MCP stderr: %s", line_s)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.debug("MCP stderr drain ended: %s", exc)
 
     async def _read_loop(self) -> None:
         """Background task: read stdout lines and resolve pending futures."""
