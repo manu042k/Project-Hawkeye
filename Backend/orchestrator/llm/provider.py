@@ -1,6 +1,7 @@
 """LLM provider factory — returns a LangChain BaseChatModel.
 
 Primary:  Ollama      (local, free)  — model string: "ollama:<name>" or bare "<name>:<tag>"
+         vLLM        (local, free)  — model string: "vllm:<name>",       requires VLLM_BASE_URL (default: http://localhost:8001)
 Fallback: Groq        (cloud API)   — model string: "groq:<name>",       requires GROQ_API_KEY
          OpenRouter   (cloud API)   — model string: "openrouter:<name>", requires OPENROUTER_API_KEY
          NVIDIA NIM   (cloud API)   — model string: "nvidia:<name>",     requires NVIDIA_API_KEY
@@ -16,6 +17,7 @@ _DEFAULT_OLLAMA_HOST = "http://localhost:11434"
 _GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 _OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 _NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
+_VLLM_BASE_URL = "http://localhost:8001/v1"
 
 
 _VISION_KEYWORDS = (
@@ -23,7 +25,9 @@ _VISION_KEYWORDS = (
     "claude-3", "claude-sonnet", "claude-opus", "claude-haiku",
     "gemini", "gemma", "llava", "vision",
     "nemotron", "omni", "qianfan-ocr",
+    "qwen2.5-vl", "qwen2-vl", "qwenvl",
 )
+
 
 
 def is_vision_capable(model: str) -> bool:
@@ -67,6 +71,10 @@ def get_llm(
     if model.startswith("nvidia:"):
         model_name = model.removeprefix("nvidia:")
         return _make_nvidia(model_name)
+
+    if model.startswith("vllm:"):
+        model_name = model.removeprefix("vllm:")
+        return _make_vllm(model_name)
 
     # Bare "name:tag" format (e.g. "qwen3.5:2b") — treat as Ollama.
     if ":" in model and "/" not in model:
@@ -130,5 +138,16 @@ def _make_nvidia(model_name: str) -> BaseChatModel:
     return ChatNVIDIA(
         model=model_name,
         api_key=api_key,
+        temperature=0,
+    )
+
+
+def _make_vllm(model_name: str) -> BaseChatModel:
+    from langchain_openai import ChatOpenAI
+    base_url = os.environ.get("VLLM_BASE_URL", _VLLM_BASE_URL)
+    return ChatOpenAI(
+        model=model_name,
+        base_url=base_url,
+        api_key="vllm",  # vLLM doesn't require a real key
         temperature=0,
     )

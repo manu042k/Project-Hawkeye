@@ -22,8 +22,11 @@ if str(_BACKEND) not in sys.path:
 @cli.command()
 @click.option("--test", "test_path", required=True, type=click.Path(exists=True),
               help="Path to YAML or JSON test case file.")
-@click.option("--model", default="openrouter:openai/gpt-4o", show_default=True,
-              help="LLM model: 'openrouter:<name>', 'ollama:<name>', 'groq:<name>', 'nvidia:<name>'.")
+@click.option("--model", default="nvidia:moonshotai/kimi-k2.6", show_default=True,
+              help=("LLM model string: 'nvidia:<name>', 'openrouter:<name>', "
+                    "'ollama:<name>', 'vllm:<name>', 'groq:<name>'. "
+                    "Examples: nvidia:moonshotai/kimi-k2.6, ollama:llama3.2, "
+                    "vllm:Qwen/Qwen2.5-VL-3B-Instruct."))
 @click.option("--ollama-host", default="http://localhost:11434", show_default=True,
               envvar="OLLAMA_HOST", help="Ollama base URL.")
 @click.option("--browser", default=None,

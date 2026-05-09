@@ -1,17 +1,29 @@
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+_MODEL_HELP = (
+    "Inference provider + model in 'provider:model' format. "
+    "Providers: "
+    "'nvidia:<name>' (NVIDIA NIM, requires NVIDIA_API_KEY), "
+    "'openrouter:<name>' (requires OPENROUTER_API_KEY), "
+    "'ollama:<name>' (local Ollama, default host localhost:11434), "
+    "'vllm:<name>' (local vLLM, default host localhost:8001), "
+    "'groq:<name>' (requires GROQ_API_KEY). "
+    "Examples: 'nvidia:moonshotai/kimi-k2.6', 'ollama:llama3.2', "
+    "'openrouter:google/gemma-4-31b-it:free', 'vllm:Qwen/Qwen2.5-VL-3B-Instruct'."
+)
 
 
 class RunRequest(BaseModel):
-    test_case_path: str
-    model: str = "openrouter:openai/gpt-4o"
-    browser: str | None = None
-    record: bool = False
-    figma_url: str | None = None
-    figma_token: str | None = None
-    max_steps: int | None = None
-    timeout: int | None = None
+    test_case_path: str = Field(description="Filename under orchestrator/test_cases/ or absolute path.")
+    model: str = Field(default="nvidia:moonshotai/kimi-k2.6", description=_MODEL_HELP)
+    browser: str | None = Field(default=None, description="Override browser: chromium | firefox | webkit.")
+    record: bool = Field(default=False, description="Record MP4 of the browser session.")
+    figma_url: str | None = Field(default=None, description="Figma file URL for visual diff (Pass 2).")
+    figma_token: str | None = Field(default=None, description="Figma personal access token.")
+    max_steps: int | None = Field(default=None, description="Override max steps from test case.")
+    timeout: int | None = Field(default=None, description="Override timeout seconds from test case.")
 
 
 class RunResponse(BaseModel):

@@ -107,6 +107,18 @@ async def observe_node(
             "termination_reason": "browser_snapshot unavailable after 5 retries",
         }
 
+    # --- Get authoritative URL/title from CDP (more reliable than snapshot parsing) ---
+    if cdp_session is not None:
+        try:
+            cdp_url = await cdp_session.evaluate_js("window.location.href")
+            if cdp_url and isinstance(cdp_url, str) and cdp_url.startswith("http"):
+                current_url = cdp_url
+            cdp_title = await cdp_session.evaluate_js("document.title")
+            if cdp_title and isinstance(cdp_title, str):
+                page_title = cdp_title
+        except Exception as exc:
+            logger.debug("CDP URL/title fetch failed (non-fatal): %s", exc)
+
     # --- Screenshot capture via CDP (non-fatal) ---
     import base64
     current_screenshot: bytes | None = None
@@ -166,10 +178,12 @@ def _parse_url_title(snapshot: str, fallback_url: str, fallback_title: str) -> t
     """
     url = fallback_url
     title = fallback_title
-    for line in snapshot.splitlines()[:10]:
-        line_lower = line.lower()
-        if "navigated to" in line_lower or "url:" in line_lower:
-            # Extract the quoted URL
+    for line in snapshot.splitlines()[:20]:
+        line_stripped = line.strip()
+        line_lower = line_stripped.lower()
+        if "navigated to" in line_lower or "page url:" in line_lower or ("url:" in line_lower and "page" in line_lower):
+            # Try quoted first
+            found = False
             for q in ('"', "'"):
                 start = line.find(q)
                 end = line.rfind(q)
@@ -177,12 +191,26 @@ def _parse_url_title(snapshot: str, fallback_url: str, fallback_title: str) -> t
                     candidate = line[start + 1:end]
                     if candidate.startswith("http"):
                         url = candidate
+                        found = True
                         break
-        elif "page title" in line_lower or "title:" in line_lower:
+            if not found:
+                # Unquoted: find first http token in the line
+                idx = line_stripped.lower().find("http")
+                if idx >= 0:
+                    candidate = line_stripped[idx:].split()[0].rstrip(".,)>")
+                    if candidate.startswith("http"):
+                        url = candidate
+        elif "page title:" in line_lower or "page title" in line_lower:
+            found = False
             for q in ('"', "'"):
                 start = line.find(q)
                 end = line.rfind(q)
                 if 0 <= start < end:
                     title = line[start + 1:end]
+                    found = True
                     break
+            if not found:
+                colon_idx = line_stripped.find(":")
+                if colon_idx >= 0:
+                    title = line_stripped[colon_idx + 1:].strip()
     return url, title
