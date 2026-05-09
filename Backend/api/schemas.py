@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 class RunRequest(BaseModel):
     test_case_path: str
-    model: str = "openrouter:openai/gpt-oss-120b:free"
+    model: str = "openrouter:openai/gpt-4o"
     browser: str | None = None
     record: bool = False
     figma_url: str | None = None

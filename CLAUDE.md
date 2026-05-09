@@ -393,26 +393,23 @@ python -m orchestrator validate --test orchestrator/test_cases/wikipedia_search.
 # List available tools
 python -m orchestrator list-tools
 
-# Basic run
+# Basic run (default model is gpt-4o — visual agent always on)
 OPENROUTER_API_KEY=$(grep '^OPENROUTER_API_KEY=' .env | cut -d= -f2-) python -m orchestrator run \
-  --test orchestrator/test_cases/wikipedia_search.yaml \
-  --model openrouter:openai/gpt-oss-120b:free
+  --test orchestrator/test_cases/wikipedia_search.yaml
 
 # With recording
 OPENROUTER_API_KEY=$(grep '^OPENROUTER_API_KEY=' .env | cut -d= -f2-) python -m orchestrator run \
-  --test orchestrator/test_cases/saucedemo_cart.yaml \
-  --model openrouter:openai/gpt-oss-120b:free --record
-
-# With vision model
-OPENROUTER_API_KEY=$(grep '^OPENROUTER_API_KEY=' .env | cut -d= -f2-) python -m orchestrator run \
-  --test orchestrator/test_cases/saucedemo_cart.yaml \
-  --model openrouter:openai/gpt-4o --record
+  --test orchestrator/test_cases/saucedemo_cart.yaml --record
 
 # With Figma design diff
 OPENROUTER_API_KEY=$(grep '^OPENROUTER_API_KEY=' .env | cut -d= -f2-) python -m orchestrator run \
-  --test orchestrator/test_cases/saucedemo_cart.yaml \
-  --model openrouter:openai/gpt-4o --record \
+  --test orchestrator/test_cases/saucedemo_cart.yaml --record \
   --figma-url https://www.figma.com/file/xxx --figma-token <token>
+
+# Override to a cheaper text-only model (disables visual agent)
+OPENROUTER_API_KEY=$(grep '^OPENROUTER_API_KEY=' .env | cut -d= -f2-) python -m orchestrator run \
+  --test orchestrator/test_cases/saucedemo_cart.yaml \
+  --model openrouter:openai/gpt-oss-120b:free
 
 # Init DB
 python -m orchestrator init-db --db-url postgres://user:pass@localhost/hawkeye
