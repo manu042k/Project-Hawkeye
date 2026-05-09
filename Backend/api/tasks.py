@@ -57,6 +57,8 @@ async def _execute(celery_task_id: str, run_id: str, request_dict: dict) -> dict
         await r.publish(_EVENTS_CHANNEL.format(run_id), json.dumps(event))
 
     async def _ws_emitter(event_type: str, data: dict) -> None:
+        if event_type == "sandbox_ready" and "novnc_url" in data:
+            await _update_record({"novnc_url": data["novnc_url"]})
         await _publish(event_type, data)
 
     try:
@@ -101,6 +103,11 @@ async def _execute(celery_task_id: str, run_id: str, request_dict: dict) -> dict
             "estimated_cost_usd": result.estimated_cost_usd,
             "termination_reason": result.termination_reason,
             "output_dir": str(result.trace_path.parent) if result.trace_path else None,
+            "steps_completed": result.steps_completed,
+            "total_input_tokens": result.total_input_tokens,
+            "total_output_tokens": result.total_output_tokens,
+            "error_count": result.error_count,
+            "tool_call_count": result.tool_call_count,
             "assertion_results": [
                 {
                     "id": ar.assertion_id,
@@ -113,6 +120,13 @@ async def _execute(celery_task_id: str, run_id: str, request_dict: dict) -> dict
                 for ar in result.assertion_results
             ],
         }
+
+        # Persist step traces so the report page can fetch them.
+        if manager._collector and manager._collector.traces:
+            from dataclasses import asdict
+            from api.redis_store import save_traces as _save_traces
+            await _save_traces(run_id, [asdict(t) for t in manager._collector.traces])
+
         await _update_record({**result_dict, "completed_at": _utcnow()})
         await _publish("complete", {"status": result.status})
         return result_dict

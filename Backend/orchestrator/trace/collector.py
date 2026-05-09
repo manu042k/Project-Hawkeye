@@ -107,6 +107,7 @@ class TraceCollector:
         _console.print(f"{_tag('sandbox')} Spawning container...  noVNC: [cyan]{novnc_url}[/cyan]")
         if cdp_url:
             _console.print(f"{_tag('sandbox')} CDP: [cyan]{cdp_url}[/cyan]")
+        self._emit("sandbox_ready", {"novnc_url": novnc_url})
 
     def on_tools_ready(self, mcp_count: int, custom_count: int) -> None:
         _console.print(

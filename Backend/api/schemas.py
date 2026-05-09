@@ -39,6 +39,11 @@ class RunResponse(BaseModel):
     novnc_url: str | None = None
     assertion_results: list[dict] | None = None
     error_message: str | None = None
+    steps_completed: list[str] | None = None
+    total_input_tokens: int | None = None
+    total_output_tokens: int | None = None
+    error_count: int | None = None
+    tool_call_count: int | None = None
 
 
 class RunListResponse(BaseModel):

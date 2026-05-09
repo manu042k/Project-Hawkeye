@@ -10,58 +10,54 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { mockCheckpointsTC001, mockCheckpointsTC002, type Checkpoint } from "@/lib/mock-data/runs";
+import { useTestCases, useCreateRun } from "@/lib/api/hooks";
+import { type TestCaseInfo } from "@/lib/api/client";
 
-type Preset = {
-  url: string;
-  browser: "chromium" | "firefox" | "webkit";
-  goal: string;
-  maxSteps: number;
-  timeout: number;
-  checkpoints: Checkpoint[];
-};
-
-const TEST_CASE_PRESETS: Record<string, Preset> = {
-  "TC-001": {
-    url: "https://www.wikipedia.org",
-    browser: "chromium",
-    goal: "Starting from the Wikipedia homepage, search for 'artificial intelligence', open the article, and scroll through multiple sections.",
-    maxSteps: 20,
-    timeout: 600,
-    checkpoints: mockCheckpointsTC001,
-  },
-  "TC-002": {
-    url: "https://www.amazon.com",
-    browser: "chromium",
-    goal: "Starting from the Amazon homepage, search for 'wireless bluetooth headphones', open any product listing, add the product to the cart, navigate to the cart, and verify the item is present in the cart.",
-    maxSteps: 35,
-    timeout: 480,
-    checkpoints: mockCheckpointsTC002,
-  },
-};
+const MODEL_PRESETS = [
+  { value: "nvidia:moonshotai/kimi-k2.6", label: "NVIDIA – Kimi K2.6 (recommended)" },
+  { value: "openrouter:openai/gpt-4o", label: "OpenRouter – GPT-4o" },
+  { value: "openrouter:openai/gpt-oss-120b:free", label: "OpenRouter – GPT-OSS 120B (free)" },
+  { value: "openrouter:google/gemma-4-31b-it:free", label: "OpenRouter – Gemma 4 31B (free)" },
+  { value: "ollama:llama3.2", label: "Ollama – Llama 3.2 (local)" },
+];
 
 export default function NewRunPage() {
-  const [targetUrl, setTargetUrl] = useState("");
-  const [notes, setNotes] = useState("");
-  const [environment, setEnvironment] = useState("Staging");
-  const [selectedTestCase, setSelectedTestCase] = useState<string>("custom");
+  const { data: testCases, loading: tcLoading, error: tcError } = useTestCases();
+  const { createRun, loading: submitting, error: submitError } = useCreateRun();
+
+  const [selectedPath, setSelectedPath] = useState<string>("");
+  const [model, setModel] = useState(MODEL_PRESETS[0].value);
   const [browser, setBrowser] = useState<"chromium" | "firefox" | "webkit">("chromium");
   const [maxSteps, setMaxSteps] = useState(20);
-  const [timeoutSeconds, setTimeoutSeconds] = useState(120);
+  const [timeoutSeconds, setTimeoutSeconds] = useState(300);
+  const [record, setRecord] = useState(false);
+
+  const selectedCase: TestCaseInfo | undefined = testCases?.find((tc) => tc.path === selectedPath);
+
+  // Auto-select first test case when list loads
+  useEffect(() => {
+    if (testCases && testCases.length > 0 && !selectedPath) {
+      setSelectedPath(testCases[0].path);
+      setBrowser(testCases[0].browser as "chromium" | "firefox" | "webkit");
+    }
+  }, [testCases, selectedPath]);
 
   useEffect(() => {
-    if (selectedTestCase === "custom") return;
-    const p = TEST_CASE_PRESETS[selectedTestCase];
-    if (!p) return;
-    setTargetUrl(p.url);
-    setBrowser(p.browser);
-    setNotes(p.goal);
-    setMaxSteps(p.maxSteps);
-    setTimeoutSeconds(p.timeout);
-  }, [selectedTestCase]);
+    if (selectedCase) setBrowser(selectedCase.browser as "chromium" | "firefox" | "webkit");
+  }, [selectedCase]);
+
+  function handleLaunch() {
+    if (!selectedPath) return;
+    createRun({
+      test_case_path: selectedPath,
+      model,
+      browser,
+      record,
+      max_steps: maxSteps,
+      timeout: timeoutSeconds,
+    });
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
@@ -73,71 +69,70 @@ export default function NewRunPage() {
             <div>
               <h2 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">Configure test</h2>
               <p className="mt-2 text-muted-foreground">
-                Select a test case or configure a custom goal and execution parameters.
+                Select a test case and configure execution parameters.
               </p>
             </div>
-            <Link href="/app/runs/live" className={cn(buttonVariants({ variant: "secondary" }), "shrink-0")}>
-              Save changes
-            </Link>
           </header>
+
+          {(tcError || submitError) && (
+            <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-400">
+              {tcError ?? submitError}
+            </div>
+          )}
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
             <div className="space-y-6 lg:col-span-8">
               <div className="space-y-2">
                 <Label>Test Case</Label>
-                <Select
-                  value={selectedTestCase}
-                  onValueChange={(v) => v && setSelectedTestCase(v)}
-                >
+                {tcLoading ? (
+                  <div className="h-11 rounded-md border border-border/60 bg-muted/30 animate-pulse" />
+                ) : (
+                  <Select
+                    value={selectedPath}
+                    onValueChange={(v) => v && setSelectedPath(v)}
+                  >
+                    <SelectTrigger className="h-11 w-full">
+                      <SelectValue placeholder="Select a test case..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(testCases ?? []).map((tc) => (
+                        <SelectItem key={tc.path} value={tc.path}>
+                          {tc.id} — {tc.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+
+              {selectedCase && (
+                <div className="space-y-2">
+                  <Label>Goal</Label>
+                  <div className="min-h-24 rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-sm text-muted-foreground leading-relaxed">
+                    {selectedCase.goal}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {selectedCase.assertions} assertion{selectedCase.assertions !== 1 ? "s" : ""} defined
+                  </p>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <Label>Model</Label>
+                <Select value={model} onValueChange={(v) => v && setModel(v)}>
                   <SelectTrigger className="h-11 w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="custom">Custom (manual)</SelectItem>
-                    <SelectItem value="TC-001">TC-001 — Wikipedia: search and scroll</SelectItem>
-                    <SelectItem value="TC-002">TC-002 — Amazon: add to cart</SelectItem>
+                    {MODEL_PRESETS.map((m) => (
+                      <SelectItem key={m.value} value={m.value}>
+                        {m.label}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-muted-foreground font-mono">{model}</p>
               </div>
-
-              <div className="space-y-2">
-                <Label>Target URL</Label>
-                <div className="relative">
-                  <LinkIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-                  <Input
-                    placeholder="https://staging.myapp.com/..."
-                    value={targetUrl}
-                    onChange={(e) => setTargetUrl(e.target.value)}
-                    className="h-11 pl-9 font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Goal</Label>
-                <Textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Describe the goal in natural language. E.g., 'Search for a product and verify it appears in search results.'"
-                  className="min-h-40 resize-y"
-                />
-              </div>
-
-              {selectedTestCase !== "custom" && TEST_CASE_PRESETS[selectedTestCase] && (
-                <div className="rounded-lg border border-border/60 bg-card/40 p-4 space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Checkpoints</p>
-                  <ul className="space-y-1.5">
-                    {TEST_CASE_PRESETS[selectedTestCase].checkpoints.map((cp) => (
-                      <li key={cp.id} className="flex items-start gap-2 text-sm">
-                        <span className="mt-0.5 font-mono text-[10px] font-semibold text-primary bg-primary/10 rounded px-1.5 py-0.5 shrink-0">
-                          {cp.id}
-                        </span>
-                        <span className="text-muted-foreground">{cp.description}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
             </div>
 
             <div className="space-y-6 lg:col-span-4">
@@ -147,24 +142,9 @@ export default function NewRunPage() {
                     <Settings2 className="size-4 text-primary" aria-hidden="true" />
                     Execution Settings
                   </CardTitle>
-                  <CardDescription>Environment, browser, and execution limits.</CardDescription>
+                  <CardDescription>Browser, limits, and recording.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-5 pt-6">
-                  <div className="space-y-2">
-                    <Label>Environment</Label>
-                    <Select value={environment} onValueChange={(v) => v && setEnvironment(v)}>
-                      <SelectTrigger className="h-11 w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Staging">Staging</SelectItem>
-                        <SelectItem value="Production">Production</SelectItem>
-                        <SelectItem value="Development">Development</SelectItem>
-                        <SelectItem value="Preview">Preview</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
                   <div className="space-y-2">
                     <Label>Browser</Label>
                     <Select value={browser} onValueChange={(v) => v && setBrowser(v as "chromium" | "firefox" | "webkit")}>
@@ -202,7 +182,19 @@ export default function NewRunPage() {
                       onChange={(e) => setTimeoutSeconds(Number(e.target.value))}
                       className="h-11"
                     />
-                    <p className="text-xs text-muted-foreground">Agent timeout in seconds (120–600)</p>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <input
+                      id="record"
+                      type="checkbox"
+                      checked={record}
+                      onChange={(e) => setRecord(e.target.checked)}
+                      className="size-4 rounded border-border"
+                    />
+                    <Label htmlFor="record" className="cursor-pointer">
+                      Record MP4
+                    </Label>
                   </div>
                 </CardContent>
               </Card>
@@ -213,18 +205,14 @@ export default function NewRunPage() {
             <Link href="/app/dashboard" className={cn(buttonVariants({ variant: "outline" }))}>
               Cancel
             </Link>
-            <Link
-              href="/app/runs/live"
-              onClick={() =>
-                toast.success("Run launched", {
-                  description: `Launching ${selectedTestCase === "custom" ? "custom test" : selectedTestCase} on ${browser}.`,
-                })
-              }
-              className={cn(buttonVariants({ variant: "default" }), "shadow-[0_0_20px_rgba(173,198,255,0.15)]")}
+            <Button
+              onClick={handleLaunch}
+              disabled={!selectedPath || submitting}
+              className="shadow-[0_0_20px_rgba(173,198,255,0.15)]"
             >
               <Play className="size-4" aria-hidden="true" />
-              Launch Hawkeye
-            </Link>
+              {submitting ? "Launching…" : "Launch Hawkeye"}
+            </Button>
           </div>
         </div>
       </main>
