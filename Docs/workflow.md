@@ -1206,3 +1206,362 @@ Frontend/src/components/artifacts/                  Report viewer, gallery, diff
 | Self-hosted option | – | – | – | ✓ |
 
 Billing model: subscription + LLM cost pass-through at cost (no markup).
+
+---
+
+## 13. Phase 6 — Production Hardening & Eval
+
+> Status: **Planned** | Prerequisites: Phase 5 complete
+
+Phase 6 turns the Phase 5 in-memory prototype into a production-grade SaaS. Three tracks run in parallel: persistence, monetization, and eval infrastructure.
+
+---
+
+### 13.1 Track A — PostgreSQL Persistence
+
+*Unlocks: data survives restarts; multi-worker deployments; audit trail*
+
+#### What to replace
+
+All Phase 5 backend routes use dict-based in-memory stores. Each must be swapped for asyncpg-backed queries against the DDL in `Backend/orchestrator/db/schema.sql`.
+
+| In-memory store | Target table(s) | Route file |
+|---|---|---|
+| `routes/projects.py` `_store` | `projects` | `routes/projects.py` |
+| `routes/test_cases_crud.py` `_store` | `test_cases` | `routes/test_cases_crud.py` |
+| `routes/suites.py` `_store` | `test_suites`, `suite_members` | `routes/suites.py` |
+| `routes/vault.py` `_store` | `vault_secrets` | `routes/vault.py` |
+| `routes/schedules.py` `_schedules` | `suite_schedules` | `routes/schedules.py` |
+
+#### Migration plan
+
+1. Add `asyncpg` connection pool to `api/app.py` lifespan (reuse pattern from `orchestrator/db/`).
+2. Create `api/db.py` — pool singleton + `get_conn()` dependency.
+3. For each route, replace dict operations with parameterised SQL.
+4. Run `init-db` on first deploy to apply `schema.sql`.
+5. Write a one-shot `seed_from_yaml_dir()` migration that inserts existing YAML test cases.
+
+#### New tables needed
+
+```sql
+-- suite_schedules (cron triggers)
+CREATE TABLE suite_schedules (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  suite_id    UUID REFERENCES test_suites(id) ON DELETE CASCADE,
+  cron        TEXT NOT NULL,
+  branch      TEXT NOT NULL DEFAULT 'main',
+  enabled     BOOLEAN NOT NULL DEFAULT true,
+  last_triggered_at TIMESTAMPTZ,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- vault_secrets (AES-256-GCM envelope encryption via KMS or local key)
+CREATE TABLE vault_secrets (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id  UUID REFERENCES projects(id) ON DELETE CASCADE,
+  name        TEXT NOT NULL,
+  ciphertext  BYTEA NOT NULL,    -- AES-256-GCM encrypted value
+  iv          BYTEA NOT NULL,    -- 12-byte nonce
+  environment TEXT NOT NULL DEFAULT 'Development',
+  type        TEXT NOT NULL DEFAULT 'API Key',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (project_id, name)
+);
+```
+
+#### Vault encryption
+
+Phase 5 stores secrets in plaintext (in-memory). Phase 6 uses AES-256-GCM:
+
+```python
+# Backend/api/crypto.py
+import os, secrets
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+_KEY = bytes.fromhex(os.environ["VAULT_ENCRYPTION_KEY"])  # 32-byte hex
+
+def encrypt(plaintext: str) -> tuple[bytes, bytes]:
+    iv = secrets.token_bytes(12)
+    ct = AESGCM(_KEY).encrypt(iv, plaintext.encode(), None)
+    return ct, iv
+
+def decrypt(ciphertext: bytes, iv: bytes) -> str:
+    return AESGCM(_KEY).decrypt(iv, ciphertext, None).decode()
+```
+
+Add `VAULT_ENCRYPTION_KEY` to `.env.example` and docker-compose secrets.
+
+---
+
+### 13.2 Track B — Stripe Billing
+
+*Unlocks: paid subscriptions, plan enforcement, revenue*
+
+#### New backend file: `Backend/api/routes/billing.py`
+
+```
+POST /api/billing/checkout          Create Stripe Checkout Session → redirect URL
+POST /api/billing/portal            Create Stripe Customer Portal session
+POST /api/billing/webhook           Receive Stripe events (signature verified)
+GET  /api/billing/subscription      Current plan + usage for org
+```
+
+#### Stripe event handling
+
+| Stripe event | Action |
+|---|---|
+| `checkout.session.completed` | Set `org.plan`, `org.stripe_customer_id`, `org.stripe_subscription_id` |
+| `invoice.paid` | Reset monthly usage counters (`runs_used = 0`) |
+| `invoice.payment_failed` | Downgrade org to Free; send email |
+| `customer.subscription.deleted` | Downgrade org to Free |
+
+#### Plan enforcement middleware
+
+```python
+# In POST /api/runs before dispatching:
+if org.runs_used >= PLAN_LIMITS[org.plan]["runs_per_month"]:
+    raise HTTPException(429, "Monthly run limit reached. Upgrade your plan.")
+```
+
+#### Plan limits table
+
+```python
+PLAN_LIMITS = {
+    "free":       {"runs_per_month": 50,    "parallel": 1, "retention_days": 7},
+    "pro":        {"runs_per_month": 500,   "parallel": 2, "retention_days": 30},
+    "team":       {"runs_per_month": 2000,  "parallel": 5, "retention_days": 90},
+    "enterprise": {"runs_per_month": 99999, "parallel": 20, "retention_days": 365},
+}
+```
+
+#### Frontend changes
+
+- `billing/page.tsx` — replace static "Manage billing" button with real Stripe portal redirect
+- Add upgrade modal: triggered when a run is rejected with 429
+- Usage meter reads from `/api/billing/subscription` (org-scoped, not global)
+
+---
+
+### 13.3 Track C — Celery Beat Scheduling
+
+*Unlocks: cron-triggered suite runs without a GitHub push*
+
+Phase 5 stores schedules in-memory and the GitHub webhook manually sets `last_triggered_at`. Phase 6 wires Celery Beat to actually fire them.
+
+#### Implementation
+
+1. Add `celery beat` service to `docker-compose.yml` (shares `celery_app.py` config).
+2. Create `api/tasks_beat.py` — `check_due_schedules` task runs every minute:
+
+```python
+@celery_app.task
+def check_due_schedules():
+    """Fire suite runs for any schedule whose cron is due."""
+    from croniter import croniter
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    schedules = db.fetch_all("SELECT * FROM suite_schedules WHERE enabled = true")
+    for s in schedules:
+        it = croniter(s["cron"], s["last_triggered_at"] or s["created_at"])
+        if it.get_next(datetime) <= now:
+            suite = db.fetch_one("SELECT * FROM test_suites WHERE id = %s", s["suite_id"])
+            for tc_id in suite["test_case_ids"]:
+                run_test_case.delay(test_case_id=tc_id, triggered_by="schedule")
+            db.execute("UPDATE suite_schedules SET last_triggered_at = %s WHERE id = %s", now, s["id"])
+```
+
+3. Add `celery beat --schedule /tmp/celerybeat-schedule -l info` to Beat service entrypoint.
+4. Add `croniter` to `pyproject.toml` dependencies.
+
+---
+
+### 13.4 Track D — GitHub CI Integration
+
+*Unlocks: pass/fail status posted back to PRs; Slack failure alerts*
+
+#### GitHub Check Run API
+
+When a run completes, post a Check Run result to GitHub:
+
+```python
+# Backend/api/github_checks.py
+import httpx
+
+async def post_check_run(repo: str, sha: str, run_result: dict):
+    status = "completed"
+    conclusion = "success" if run_result["status"] == "passed" else "failure"
+    await httpx.AsyncClient().post(
+        f"https://api.github.com/repos/{repo}/check-runs",
+        headers={
+            "Authorization": f"token {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github+json",
+        },
+        json={
+            "name": "Hawkeye",
+            "head_sha": sha,
+            "status": status,
+            "conclusion": conclusion,
+            "output": {
+                "title": f"Hawkeye: {run_result['test_name']}",
+                "summary": f"Steps: {run_result['total_steps']} · Cost: ${run_result['estimated_cost_usd']:.4f}",
+            },
+        },
+    )
+```
+
+- Extend the GitHub webhook handler (`schedules.py`) to extract `head_commit.id` from the push payload and pass it through to the run record.
+- After Celery task completes, call `post_check_run()` if `run.github_sha` is set.
+
+#### Slack notifications
+
+```python
+# Backend/api/slack.py
+async def notify_failure(run: dict, webhook_url: str):
+    await httpx.AsyncClient().post(webhook_url, json={
+        "text": f":x: *{run['test_name']}* failed",
+        "blocks": [{
+            "type": "section",
+            "text": {"type": "mrkdwn",
+                     "text": f"*Run:* `{run['run_id']}`\n*Steps:* {run['total_steps']}\n*Reason:* {run['termination_reason']}"}
+        }]
+    })
+```
+
+- Org-level `slack_webhook_url` stored in `organizations` table.
+- Integrations page — Slack webhook URL input (currently a static toggle).
+
+---
+
+### 13.5 Track E — Agent Evaluation & Benchmarking
+
+*Unlocks: data-driven prompt improvement; regression prevention*
+
+#### Trace instrumentation
+
+Add optional MLflow / Arize Phoenix logging to `TraceCollector`:
+
+```python
+# Backend/orchestrator/trace/collector.py
+if os.getenv("MLFLOW_TRACKING_URI"):
+    import mlflow
+    mlflow.log_metrics({
+        "steps": self.step_count,
+        "cost_usd": self.total_cost,
+        "duration_s": self.duration_s,
+        "pass": 1 if result == "passed" else 0,
+    })
+```
+
+#### Eval dataset
+
+- After each run, write a JSONL record to `artifacts/{run_id}/eval.jsonl`:
+  ```json
+  {"run_id": "...", "test_case_id": "...", "status": "passed", "steps": 8, "cost": 0.031, "model": "openrouter:openai/gpt-4o"}
+  ```
+- `GET /api/eval/dataset` — streams JSONL of all historical eval records.
+- `GET /api/eval/summary` — aggregate pass rate, avg steps, avg cost per model.
+
+#### Regression gate (CI)
+
+Add a GitHub Actions workflow `eval_gate.yml`:
+
+```yaml
+- name: Run eval
+  run: |
+    python Backend/scripts/eval_gate.py \
+      --baseline-run-id ${{ vars.BASELINE_RUN_ID }} \
+      --current-branch ${{ github.ref_name }} \
+      --max-cost-increase 0.20 \
+      --min-pass-rate 0.90
+```
+
+`eval_gate.py` fetches `/api/eval/summary` for both baseline and current, fails the workflow if:
+- Pass rate dropped >5 percentage points, or
+- Average cost increased >20%
+
+#### New files
+
+```
+Backend/api/routes/eval.py            GET /api/eval/dataset, /api/eval/summary
+Backend/scripts/eval_gate.py          CLI regression gate
+.github/workflows/eval_gate.yml       GitHub Actions eval job
+```
+
+---
+
+### 13.6 Track F — Organization Management UI
+
+*Unlocks: team invitations, role assignment, per-org settings*
+
+#### Backend: `Backend/api/routes/orgs.py`
+
+```
+GET    /api/orgs/me                   Current user's org + role
+PUT    /api/orgs/me                   Update org name / slug
+GET    /api/orgs/me/members           List members + roles
+POST   /api/orgs/me/invitations       Send invitation email (signed JWT link)
+PUT    /api/orgs/me/members/{user_id} Change role (owner only)
+DELETE /api/orgs/me/members/{user_id} Remove member
+GET    /api/orgs/invitations/{token}  Validate + accept invitation
+```
+
+#### Frontend pages
+
+| Page | Path | What it does |
+|---|---|---|
+| Org settings | `/app/account/org` | Name, slug, danger zone (delete org) |
+| Members | `/app/account/members` | Table of members + role badges; invite button |
+| Invite flow | `/app/invite/[token]` | Accept page (public, no auth required before accept) |
+
+#### Role matrix
+
+| Action | Viewer | Member | Admin | Owner |
+|---|:---:|:---:|:---:|:---:|
+| View runs / reports | ✓ | ✓ | ✓ | ✓ |
+| Create / delete runs | — | ✓ | ✓ | ✓ |
+| Create / edit test cases | — | ✓ | ✓ | ✓ |
+| Manage vault secrets | — | — | ✓ | ✓ |
+| Invite / remove members | — | — | ✓ | ✓ |
+| Billing / plan changes | — | — | — | ✓ |
+| Delete organization | — | — | — | ✓ |
+
+---
+
+### 13.7 Phase 6 Implementation Order
+
+```
+Week 1-2:  Track A — PostgreSQL migration (all in-memory stores → DB)
+Week 2-3:  Track A — Vault encryption (AES-256-GCM)
+Week 3-4:  Track B — Stripe billing (checkout, portal, webhook, plan limits)
+Week 4-5:  Track C — Celery Beat scheduling (croniter, beat service)
+Week 5:    Track D — GitHub Check Run API + Slack notifications
+Week 6:    Track E — Eval dataset + MLflow instrumentation + regression gate
+Week 6-7:  Track F — Org management UI (members, invitations, roles)
+```
+
+### 13.8 New Environment Variables (Phase 6)
+
+```bash
+# PostgreSQL
+HAWKEYE_DB_URL=postgresql://user:pass@localhost/hawkeye
+
+# Vault encryption (generate with: openssl rand -hex 32)
+VAULT_ENCRYPTION_KEY=<64-char hex>
+
+# Stripe
+STRIPE_SECRET_KEY=sk_live_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+STRIPE_PRO_PRICE_ID=price_...
+STRIPE_TEAM_PRICE_ID=price_...
+
+# GitHub CI
+GITHUB_TOKEN=ghp_...            # Classic PAT with repo:status scope
+GITHUB_WEBHOOK_SECRET=<secret>  # Already in Phase 5D
+
+# Slack
+SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
+
+# Eval / MLflow
+MLFLOW_TRACKING_URI=http://localhost:5000   # optional
+```
