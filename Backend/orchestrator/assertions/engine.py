@@ -1,12 +1,14 @@
 """Post-loop assertion evaluator.
 
 Phase 1 supports: 'content' (text_present, text_matches) and 'console'.
+Phase 2 adds: 'network', 'state'. 'visual' requires CDP screenshot.
 Unsupported types are marked 'skipped' — never fail the run.
 """
 from __future__ import annotations
 
 import logging
 import re
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -17,12 +19,15 @@ from orchestrator.models.results import AssertionResult
 
 logger = logging.getLogger(__name__)
 
-_SUPPORTED_TYPES = frozenset({"content", "console"})
-_PHASE2_TYPES = frozenset({"visual", "state", "network", "accessibility", "performance"})
+_SUPPORTED_TYPES = frozenset({"content", "console", "network", "state", "visual_design"})
+_PHASE2_TYPES = frozenset({"visual", "accessibility", "performance"})
 
 
 class AssertionEngine:
     """Evaluates test case assertions after the agent loop completes."""
+
+    def __init__(self, cdp_session: "CdpSession | None" = None) -> None:
+        self._cdp_session = cdp_session
 
     async def evaluate(
         self,
@@ -30,6 +35,9 @@ class AssertionEngine:
         *,
         page_snapshot: str,
         cdp_session: CdpSession | None,
+        figma_token: str | None = None,
+        final_screenshot: bytes | None = None,
+        output_dir: "Path | None" = None,
     ) -> list[AssertionResult]:
         """Evaluate all assertions. Each is wrapped in try/except —
         one buggy assertion never fails the whole run.
@@ -37,7 +45,14 @@ class AssertionEngine:
         results: list[AssertionResult] = []
         for assertion in assertions:
             try:
-                result = await self._evaluate_one(assertion, page_snapshot=page_snapshot, cdp_session=cdp_session)
+                result = await self._evaluate_one(
+                    assertion,
+                    page_snapshot=page_snapshot,
+                    cdp_session=cdp_session,
+                    figma_token=figma_token,
+                    final_screenshot=final_screenshot,
+                    output_dir=output_dir,
+                )
             except Exception as exc:
                 logger.error("Assertion %s raised unexpectedly: %s", assertion.id, exc)
                 result = AssertionResult(
@@ -57,19 +72,24 @@ class AssertionEngine:
         *,
         page_snapshot: str,
         cdp_session: CdpSession | None,
+        figma_token: str | None = None,
+        final_screenshot: bytes | None = None,
+        output_dir: "Path | None" = None,
     ) -> AssertionResult:
         if assertion.type in _PHASE2_TYPES:
             logger.warning(
-                "Assertion %s type=%r is not supported in Phase 1 (skipped)",
+                "Assertion %s type=%r is not yet supported (skipped)",
                 assertion.id, assertion.type,
             )
+            if assertion.type == "visual":
+                return await self._evaluate_visual(assertion, cdp_session)
             return AssertionResult(
                 assertion_id=assertion.id,
                 type=assertion.type,
                 description=assertion.description,
                 passed=True,  # skipped → does not fail the run
                 status="skipped",
-                details=f"Type {assertion.type!r} is a Phase 2 feature (skipped)",
+                details=f"Type {assertion.type!r} is not yet supported (skipped)",
             )
 
         if assertion.type == "content":
@@ -77,6 +97,20 @@ class AssertionEngine:
 
         if assertion.type == "console":
             return await self._evaluate_console(assertion, cdp_session)
+
+        if assertion.type == "network":
+            return await self._evaluate_network(assertion, cdp_session)
+
+        if assertion.type == "state":
+            return await self._evaluate_state(assertion, cdp_session)
+
+        if assertion.type == "visual_design":
+            return await self._evaluate_visual_design(
+                assertion,
+                figma_token=figma_token,
+                final_screenshot=final_screenshot,
+                output_dir=output_dir or Path("artifacts"),
+            )
 
         # Completely unknown type — skip with a warning.
         logger.warning("Unknown assertion type %r (assertion %s) — skipped", assertion.type, assertion.id)
@@ -160,4 +194,123 @@ class AssertionEngine:
                 f"{result.count} error(s) found (max={max_count}): "
                 + "; ".join(result.messages[:3])
             ),
+        )
+
+    async def _evaluate_network(
+        self,
+        assertion: Assertion,
+        cdp_session: CdpSession | None,
+    ) -> AssertionResult:
+        from orchestrator.tools.assert_network_request import assert_network_request
+        params = assertion.params
+        result = await assert_network_request(
+            cdp_session=cdp_session,
+            url_pattern=params.get("url_pattern", ""),
+            method=params.get("method"),
+            expected_status=params.get("expected_status"),
+            min_count=params.get("min_count", 1),
+        )
+        return AssertionResult(
+            assertion_id=assertion.id,
+            type="network",
+            description=assertion.description,
+            passed=result.passed,
+            status="passed" if result.passed else "failed",
+            details=result.details,
+        )
+
+    async def _evaluate_state(
+        self,
+        assertion: Assertion,
+        cdp_session: CdpSession | None,
+    ) -> AssertionResult:
+        from orchestrator.tools.assert_element_state import assert_element_state
+        params = assertion.params
+        result = await assert_element_state(
+            cdp_session=cdp_session,
+            selector=params.get("selector", ""),
+            check=params.get("check", "visible"),
+            expected=params.get("expected"),
+        )
+        return AssertionResult(
+            assertion_id=assertion.id,
+            type="state",
+            description=assertion.description,
+            passed=result.passed,
+            status="passed" if result.passed else "failed",
+            details=result.details,
+        )
+
+    async def _evaluate_visual(
+        self,
+        assertion: Assertion,
+        cdp_session: CdpSession | None,
+    ) -> AssertionResult:
+        if cdp_session is None:
+            return AssertionResult(
+                assertion_id=assertion.id,
+                type="visual",
+                description=assertion.description,
+                passed=True,
+                status="skipped",
+                details="CDP session unavailable — visual assertion skipped",
+            )
+        # No baseline available in Phase 2 — take screenshot but skip comparison.
+        screenshot = await cdp_session.take_screenshot()
+        if not screenshot:
+            return AssertionResult(
+                assertion_id=assertion.id,
+                type="visual",
+                description=assertion.description,
+                passed=True,
+                status="skipped",
+                details="Screenshot capture failed — visual assertion skipped",
+            )
+        return AssertionResult(
+            assertion_id=assertion.id,
+            type="visual",
+            description=assertion.description,
+            passed=True,
+            status="skipped",
+            details=f"Screenshot captured ({len(screenshot)} bytes); no baseline for comparison — skipped",
+        )
+
+    async def _evaluate_visual_design(
+        self,
+        assertion: Assertion,
+        *,
+        figma_token: str | None,
+        final_screenshot: bytes | None,
+        output_dir: Path,
+    ) -> AssertionResult:
+        if figma_token is None:
+            logger.warning(
+                "Assertion %s type='visual_design' skipped: no Figma token provided",
+                assertion.id,
+            )
+            return AssertionResult(
+                assertion_id=assertion.id,
+                type="visual_design",
+                description=assertion.description,
+                passed=True,
+                status="skipped",
+                details="visual_design assertion skipped: FIGMA_TOKEN not provided",
+            )
+        if not final_screenshot:
+            return AssertionResult(
+                assertion_id=assertion.id,
+                type="visual_design",
+                description=assertion.description,
+                passed=True,
+                status="skipped",
+                details="visual_design assertion skipped: no screenshot captured during run",
+            )
+        from orchestrator.vision.visual_assertions import run_visual_assertion
+        return await run_visual_assertion(
+            assertion_id=assertion.id,
+            description=assertion.description,
+            params=assertion.params,
+            actual_screenshot=final_screenshot,
+            figma_token=figma_token,
+            output_dir=output_dir,
         )

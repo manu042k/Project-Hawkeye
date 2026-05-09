@@ -107,73 +107,82 @@ async def observe_node(
             "termination_reason": "browser_snapshot unavailable after 5 retries",
         }
 
+    # --- Screenshot capture via CDP (non-fatal) ---
+    import base64
+    current_screenshot: bytes | None = None
+    screenshot_b64: str | None = None
+    step_screenshots: list[bytes] = list(state.get("step_screenshots", []))
+
+    if cdp_session is not None:
+        try:
+            raw = await cdp_session.take_screenshot()
+            if raw:
+                current_screenshot = raw
+                screenshot_b64 = base64.b64encode(raw).decode("ascii")
+                step_screenshots = step_screenshots + [raw]
+        except Exception as exc:
+            logger.warning("Screenshot capture failed (non-fatal): %s", exc)
+
     collector.on_observe(
         url=current_url,
         title=page_title,
         wait_ms=wait_ms,
         snapshot_chars=len(snapshot_text),
+        screenshot_b64=screenshot_b64,
     )
 
-    # Reset scroll counter when the page URL changes.
-    prev_url = state.get("current_url", "")
-    scroll_count = 0 if current_url != prev_url else state.get("page_scroll_count", 0)
-
-    return {
+    base_update: dict = {
         "step_number": step_number,
         "current_url": current_url,
         "page_title": page_title,
         "page_snapshot": snapshot_text,
-        "page_scroll_count": scroll_count,
+        "current_screenshot": current_screenshot,
+        "screenshot_b64": screenshot_b64,
+        "step_screenshots": step_screenshots,
     }
+
+    # Auto-complete for unguided tests: if all text_present assertions are already
+    # satisfied by the current snapshot, mark the goal as passed without requiring
+    # the LLM to emit <GOAL_COMPLETE>. Only check after step 3 to skip the start page.
+    if test_case.steps is None and step_number >= 3 and snapshot_text:
+        text_assertions = [
+            a for a in test_case.assertions
+            if a.type == "content" and a.params.get("check") == "text_present"
+        ]
+        if text_assertions and all(a.params.get("text", "") in snapshot_text for a in text_assertions):
+            logger.info("OBSERVE: all content assertions pass — auto-completing goal")
+            base_update.update({"goal_complete": True, "status": "passed"})
+
+    return base_update
 
 
 def _parse_url_title(snapshot: str, fallback_url: str, fallback_title: str) -> tuple[str, str]:
-    """Extract URL and title from a Playwright MCP accessibility tree snapshot.
+    """Extract URL and title from a Playwright accessibility tree snapshot.
 
-    @playwright/mcp emits unquoted headers like:
-      - Page URL: https://en.wikipedia.org/wiki/Main_Page
-      - Page Title: Wikipedia, the free encyclopedia
-
-    Older / alternative formats use quoted values or 'navigated to' phrasing.
-    Falls back to provided values when nothing matches.
+    The snapshot typically starts with lines like:
+      - page title 'My Page'
+      - navigated to 'https://...'
+    This is a best-effort extraction; falls back to provided values.
     """
-    import re
-
     url = fallback_url
     title = fallback_title
-    for line in snapshot.splitlines()[:15]:
+    for line in snapshot.splitlines()[:10]:
         line_lower = line.lower()
-        if "url:" in line_lower or "navigated to" in line_lower:
-            # Try quoted first: '...' or "..."
-            matched = False
+        if "navigated to" in line_lower or "url:" in line_lower:
+            # Extract the quoted URL
             for q in ('"', "'"):
-                s = line.find(q)
-                e = line.rfind(q)
-                if 0 <= s < e:
-                    candidate = line[s + 1:e]
+                start = line.find(q)
+                end = line.rfind(q)
+                if 0 <= start < end:
+                    candidate = line[start + 1:end]
                     if candidate.startswith("http"):
                         url = candidate
-                        matched = True
                         break
-            if not matched:
-                # Unquoted: grab first http(s) token on the line.
-                m = re.search(r'https?://\S+', line)
-                if m:
-                    url = m.group(0).rstrip(')>,')
-        elif "title:" in line_lower or "page title" in line_lower:
-            matched = False
+        elif "page title" in line_lower or "title:" in line_lower:
             for q in ('"', "'"):
-                s = line.find(q)
-                e = line.rfind(q)
-                if 0 <= s < e:
-                    title = line[s + 1:e]
-                    matched = True
+                start = line.find(q)
+                end = line.rfind(q)
+                if 0 <= start < end:
+                    title = line[start + 1:end]
                     break
-            if not matched:
-                # Unquoted: take everything after the last colon on the line.
-                idx = line.rfind(":")
-                if idx >= 0:
-                    candidate = line[idx + 1:].strip()
-                    if candidate:
-                        title = candidate
     return url, title

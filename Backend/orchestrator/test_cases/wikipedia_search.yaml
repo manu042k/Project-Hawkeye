@@ -16,9 +16,6 @@ goal: |
   "artificial intelligence", open the article, and scroll
   through the article content to read multiple sections.
 
-# steps removed: guided checkpoints require the LLM to emit text markers alongside
-# tool calls, which small/fast models don't do. Unguided mode lets the agent
-# emit <GOAL_COMPLETE> in a text-only response after scroll_count >= 3.
 steps: null
 
 assertions:
@@ -55,3 +52,4 @@ context:
     - "After typing, press Enter to search or click the search button"
     - "If auto-redirected to the article, proceed directly to scrolling"
     - "After searching, click the article link in results if not auto-redirected"
+    - "Once you are on the Artificial Intelligence article page, press PageDown 3 times to scroll through content, then immediately emit <GOAL_COMPLETE> — do NOT keep scrolling indefinitely"

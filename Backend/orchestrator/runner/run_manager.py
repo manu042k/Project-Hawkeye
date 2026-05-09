@@ -22,6 +22,7 @@ if str(_BACKEND) not in sys.path:
 from hawkeye_sandbox import SandboxConfig, SandboxManager  # noqa: E402
 
 from orchestrator.assertions.engine import AssertionEngine
+from orchestrator.db.connection import db_enabled
 from orchestrator.loader.yaml_loader import load_test_case
 from orchestrator.mcp.client import PlaywrightMcpClient
 from orchestrator.mcp.tool_adapter import mcp_tools_to_langchain
@@ -54,6 +55,8 @@ class RunManager:
         model_name: str = "ollama:qwen3.5:2b",
         verbose: bool = False,
         record: bool = False,
+        figma_url: str | None = None,
+        figma_token: str | None = None,
     ) -> None:
         self._llm = llm
         self._sandbox_manager = sandbox_manager or SandboxManager()
@@ -61,6 +64,8 @@ class RunManager:
         self._model_name = model_name
         self._verbose = verbose
         self._record = record
+        self._figma_url = figma_url
+        self._figma_token = figma_token
 
     async def run(
         self,
@@ -77,7 +82,7 @@ class RunManager:
         Returns RunResult regardless of outcome — never propagates exceptions.
         """
         run_id = f"run-{uuid.uuid4().hex[:8]}"
-        output_dir = (output_dir or _DEFAULT_OUTPUT_DIR).resolve()
+        output_dir = (output_dir or _DEFAULT_OUTPUT_DIR).resolve() / run_id
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Apply CLI overrides to the test case constraints.
@@ -102,6 +107,7 @@ class RunManager:
             model=self._model_name,
             browser=browser,
             verbose=self._verbose,
+            db_run_id=run_id if db_enabled() else None,
         )
         collector.on_run_start()
 
@@ -125,20 +131,25 @@ class RunManager:
                 sandbox_handle = self._sandbox_manager.spawn(cfg)
                 cdp_url = sandbox_handle.cdp_url or ""
                 novnc_url = sandbox_handle.novnc_url
-                # Start recording before browser loads if requested.
-                if self._record:
-                    container_path = f"/tmp/hawkeye-{run_id}.mp4"
-                    sandbox_handle = self._sandbox_manager.start_recording(
-                        sandbox_handle,
-                        width=cfg.width,
-                        height=cfg.height,
-                        container_path=container_path,
-                    )
-                    logger.info("Recording started: %s", container_path)
                 # Wait for browser to fully start.
                 await asyncio.sleep(_BROWSER_STARTUP_WAIT_S)
+                if self._record and sandbox_handle:
+                    try:
+                        sandbox_handle = self._sandbox_manager.start_recording(sandbox_handle)
+                    except Exception as exc:
+                        logger.warning("Recording start failed (non-fatal): %s", exc)
 
             collector.on_sandbox_ready(novnc_url, cdp_url)
+
+            # --- DB: record test case and create run row ---
+            if db_enabled():
+                from orchestrator.db import store
+                container_name = getattr(sandbox_handle, "container_name", "") if sandbox_handle else ""
+                await store.upsert_test_case(test_case)
+                await store.create_run(
+                    run_id, test_case.id, browser, self._model_name,
+                    novnc_url, container_name,
+                )
 
             # --- CDP session ---
             if cdp_url:
@@ -158,11 +169,6 @@ class RunManager:
                     "No CDP URL available. Use a chromium-family browser "
                     "or provide --cdp-url."
                 )
-            # Ensure exactly one tab is open before MCP connects.
-            # The persistent browser profile can restore previous session tabs,
-            # and launch_browser.py calls new_page() unconditionally — together
-            # they can produce 2+ tabs. Close all but the target-URL tab here.
-            await _ensure_single_tab(cdp_url, test_case.target.url)
             mcp_client = PlaywrightMcpClient(cdp_url)
             await mcp_client.initialize()
             mcp_schemas = await mcp_client.list_tools()
@@ -196,7 +202,7 @@ class RunManager:
             await asyncio.sleep(2.0)
 
             # --- Compile graph ---
-            assertion_engine = AssertionEngine()
+            assertion_engine = AssertionEngine(cdp_session=cdp_session)
             from orchestrator.agent.graph import build_graph
             graph = build_graph(
                 llm=self._llm,
@@ -209,6 +215,7 @@ class RunManager:
                 custom_tools=custom_tools,
                 model_name=self._model_name,
                 output_dir=output_dir,
+                figma_token=self._figma_token,
             )
 
             # --- Build initial state ---
@@ -241,15 +248,21 @@ class RunManager:
                 "status": "running",
                 "goal_complete": False,
                 "termination_reason": None,
-                "page_scroll_count": 0,
+                "guard_blocked": False,
                 "run_start_time": start_time,
+                "current_screenshot": None,
+                "screenshot_b64": None,
+                "step_screenshots": [],
             }
 
             # --- Run graph ---
             # Use ainvoke() because all graph nodes are async functions.
             final_state = await graph.ainvoke(initial_state)
 
-            return _build_run_result(run_id, test_case, final_state, collector, output_dir)
+            return _build_run_result(
+                run_id, test_case, final_state, collector, output_dir,
+                figma_token=self._figma_token,
+            )
 
         except Exception as exc:
             logger.exception("RunManager: unhandled exception for run %s: %s", run_id, exc)
@@ -268,6 +281,25 @@ class RunManager:
                 termination_reason=f"Unhandled exception: {exc}",
             )
         finally:
+            # --- DB: finalize run ---
+            if db_enabled():
+                from orchestrator.db import store as _store
+                try:
+                    summary = collector.get_summary(run_id=run_id, status="errored")
+                    await _store.update_run_status(
+                        run_id, summary.status,
+                        int(summary.duration_s * 1000),
+                        summary.total_steps,
+                        summary.total_input_tokens + summary.total_output_tokens,
+                        summary.mcp_tool_calls + summary.custom_tool_calls,
+                        summary.total_cost_usd,
+                        summary.steps_completed,
+                        None,
+                    )
+                    await _store.insert_assertion_results(run_id, summary.assertion_results)
+                    await _store.insert_run_summary(run_id, summary)
+                except Exception as _db_exc:
+                    logger.warning("DB finalization failed (non-fatal): %s", _db_exc)
             # Always clean up resources.
             if mcp_client:
                 try:
@@ -279,16 +311,15 @@ class RunManager:
                     await cdp_session.close()
                 except Exception:
                     pass
+            if sandbox_handle and self._record and sandbox_handle.recording_container_path:
+                try:
+                    self._sandbox_manager.stop_recording(sandbox_handle)
+                    mp4_path = output_dir / "recording.mp4"
+                    self._sandbox_manager.fetch_recording(sandbox_handle, host_path=str(mp4_path))
+                    print(f"[recording] {mp4_path}")
+                except Exception as exc:
+                    logger.warning("Recording fetch failed (non-fatal): %s", exc)
             if sandbox_handle:
-                # Fetch recording before stopping the container.
-                if self._record and getattr(sandbox_handle, "recording_container_path", None):
-                    try:
-                        self._sandbox_manager.stop_recording(sandbox_handle)
-                        rec_host_path = str(output_dir / f"{run_id}.mp4")
-                        self._sandbox_manager.fetch_recording(sandbox_handle, host_path=rec_host_path)
-                        print(f"[recording] Saved to {rec_host_path}")
-                    except Exception as exc:
-                        logger.warning("Failed to fetch recording for %s: %s", run_id, exc)
                 try:
                     self._sandbox_manager.stop(sandbox_handle)
                 except Exception as exc:
@@ -301,14 +332,18 @@ def _build_run_result(
     final_state: dict,
     collector: TraceCollector,
     output_dir: Path,
+    *,
+    figma_token: str | None = None,
 ) -> RunResult:
     """Convert the final graph state into a RunResult."""
+    import asyncio
+    from orchestrator.reporting.report_generator import generate_markdown_report, generate_html_report
     summary = collector.get_summary(run_id=run_id, status=final_state.get("status", "errored"))
     try:
         trace_path = collector.write_json(output_dir, status=summary.status)
     except Exception:
         trace_path = None
-    return RunResult(
+    run_result = RunResult(
         run_id=run_id,
         test_id=test_case.id,
         test_name=test_case.name,
@@ -325,43 +360,14 @@ def _build_run_result(
         error_count=summary.error_count,
         tool_call_count=summary.mcp_tool_calls + summary.custom_tool_calls,
     )
-
-
-async def _ensure_single_tab(cdp_http_url: str, target_url: str) -> None:
-    """Close all browser tabs except one, preferring the tab at target_url.
-
-    The persistent Chrome profile restores previous sessions, and
-    launch_browser.py calls new_page() unconditionally, so 2+ tabs can
-    exist before the agent starts. This trims them to exactly one.
-    """
     try:
-        import httpx
-        base = cdp_http_url.rstrip("/")
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(f"{base}/json/list")
-            all_targets = [t for t in resp.json() if t.get("type") == "page"]
-
-        if len(all_targets) <= 1:
-            return  # Nothing to do
-
-        # Prefer to keep the tab already at the target URL.
-        target_prefix = target_url.rstrip("/")
-        at_target = [t for t in all_targets if t.get("url", "").startswith(target_prefix)]
-        others = [t for t in all_targets if not t.get("url", "").startswith(target_prefix)]
-
-        # Build close list: close all extras, always keep exactly 1 tab alive.
-        keep = (at_target or others)[0]
-        to_close = [t for t in all_targets if t["id"] != keep["id"]]
-
-        async with httpx.AsyncClient(timeout=3.0) as client:
-            for t in to_close:
-                try:
-                    await client.get(f"{base}/json/close/{t['id']}")
-                    logger.debug("Closed extra tab: %s (%s)", t['id'], t.get('url', ''))
-                except Exception:
-                    pass
-    except Exception as exc:
-        logger.debug("_ensure_single_tab failed (non-fatal): %s", exc)
+        md_path = generate_markdown_report(run_result, collector.traces, output_dir)
+        html_path = generate_html_report(run_result, collector.traces, output_dir)
+        print(f"[report]    {md_path}")
+        print(f"[report]    {html_path}")
+    except Exception as _rep_exc:
+        logger.warning("Report generation failed (non-fatal): %s", _rep_exc)
+    return run_result
 
 
 def _build_custom_langchain_tools(

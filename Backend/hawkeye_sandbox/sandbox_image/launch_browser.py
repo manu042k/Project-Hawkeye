@@ -41,6 +41,8 @@ def main() -> int:
                 "--disable-sync",
                 "--disable-breakpad",
                 "--disable-gpu",
+                "--no-restore-last-session",
+                "--restore-last-session=false",
             ]
         elif browser_name == "firefox":
             browser_type = p.firefox

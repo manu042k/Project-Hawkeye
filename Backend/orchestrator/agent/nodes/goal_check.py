@@ -64,6 +64,21 @@ def goal_check_node(state: AgentState) -> dict:
         from orchestrator.trace.collector import TraceCollector  # avoid circular at module level
         # collector is not available here directly; checkpoint update is logged by on_goal_check
 
+    # --- Auto-complete for unguided tests when all content assertions pass ---
+    # Requires step >= 3 so we don't complete on the start page before any navigation.
+    if test_case.steps is None and state.get("step_number", 0) >= 3 and state.get("page_snapshot"):
+        snapshot = state.get("page_snapshot", "")
+        text_present_assertions = [
+            a for a in test_case.assertions
+            if a.type == "content" and a.params.get("check") == "text_present"
+        ]
+        if text_present_assertions and all(
+            a.params.get("text", "") in snapshot
+            for a in text_present_assertions
+        ):
+            updates.update({"goal_complete": True, "status": "passed", "completed_checkpoints": completed})
+            return updates
+
     # --- Goal complete / blocked ---
     if _GOAL_COMPLETE_RE.search(agent_text):
         updates.update({

@@ -8,22 +8,22 @@ from pathlib import Path
 
 import click
 
+
+@click.group()
+def cli() -> None:
+    """Hawkeye — AI-powered agentic test runner."""
+
 # Ensure Backend is on path for hawkeye_sandbox import.
 _BACKEND = Path(__file__).parent.parent.parent
 if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
 
 
-@click.group()
-def cli() -> None:
-    """Hawkeye — AI-powered agentic test runner."""
-
-
 @cli.command()
 @click.option("--test", "test_path", required=True, type=click.Path(exists=True),
               help="Path to YAML or JSON test case file.")
 @click.option("--model", default="ollama:qwen3.5:2b", show_default=True,
-              help="LLM model: 'ollama:<name>', 'groq:<name>', or 'openrouter:<provider/model>'.")
+              help="LLM model: 'ollama:<name>' or 'groq:<name>'.")
 @click.option("--ollama-host", default="http://localhost:11434", show_default=True,
               envvar="OLLAMA_HOST", help="Ollama base URL.")
 @click.option("--browser", default=None,
@@ -42,6 +42,12 @@ def cli() -> None:
               help="Enable verbose output (show LLM reasoning, full snapshots).")
 @click.option("--record", is_flag=True, default=False,
               help="Record the browser session to MP4 in the output directory.")
+@click.option("--db-url", default=None, envvar="HAWKEYE_DB_URL",
+              help="PostgreSQL DSN for persistence (postgres://user:pass@host/db). Also reads HAWKEYE_DB_URL env var.")
+@click.option("--figma-url", default=None, envvar="FIGMA_URL",
+              help="Figma file URL for visual design diff (Pass 2).")
+@click.option("--figma-token", default=None, envvar="FIGMA_TOKEN",
+              help="Figma personal access token.")
 def run(
     test_path: str,
     model: str,
@@ -54,6 +60,9 @@ def run(
     output_dir: str,
     verbose: bool,
     record: bool,
+    db_url: str | None,
+    figma_url: str | None,
+    figma_token: str | None,
 ) -> None:
     """Run a single test case."""
     from orchestrator.loader.yaml_loader import load_test_case
@@ -61,6 +70,13 @@ def run(
     from orchestrator.llm.provider import get_llm
     from orchestrator.runner.run_manager import RunManager
     from hawkeye_sandbox import SandboxManager
+
+    if db_url:
+        os.environ["HAWKEYE_DB_URL"] = db_url
+    if figma_token:
+        os.environ["FIGMA_TOKEN"] = figma_token
+    if figma_url:
+        os.environ["FIGMA_URL"] = figma_url
 
     # Load and validate test case.
     try:
@@ -75,13 +91,7 @@ def run(
     # Build LLM.
     try:
         groq_key = os.environ.get("GROQ_API_KEY")
-        openrouter_key = os.environ.get("OPENROUTER_API_KEY")
-        llm = get_llm(
-            model,
-            ollama_host=ollama_host,
-            groq_api_key=groq_key,
-            openrouter_api_key=openrouter_key,
-        )
+        llm = get_llm(model, ollama_host=ollama_host, groq_api_key=groq_key)
     except ValueError as exc:
         click.echo(f"[error] {exc}", err=True)
         sys.exit(3)
@@ -95,6 +105,8 @@ def run(
         model_name=model,
         verbose=verbose,
         record=record,
+        figma_url=figma_url,
+        figma_token=figma_token,
     )
 
     result = asyncio.run(
@@ -157,3 +169,21 @@ def list_tools(model: str) -> None:
         click.echo(f"  {name}")
 
     click.echo(f"\nTotal: {len(ALL_CUSTOM_SCHEMAS)} custom + {len(DEFAULT_ALLOWLIST)} MCP tools")
+
+
+@cli.command("init-db")
+@click.option("--db-url", required=True, envvar="HAWKEYE_DB_URL",
+              help="PostgreSQL DSN (postgres://user:pass@host/db).")
+def init_db(db_url: str) -> None:
+    """Apply schema.sql to the database."""
+    import asyncio
+    import asyncpg
+    schema = (Path(__file__).parent.parent / "db" / "schema.sql").read_text()
+
+    async def _apply() -> None:
+        conn = await asyncpg.connect(db_url)
+        await conn.execute(schema)
+        await conn.close()
+        click.echo("[ok] Schema applied.")
+
+    asyncio.run(_apply())

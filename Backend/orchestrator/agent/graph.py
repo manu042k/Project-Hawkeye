@@ -10,7 +10,9 @@ from langgraph.graph import END, START, StateGraph
 from orchestrator.agent.edges.route_after_act import route_after_act
 from orchestrator.agent.edges.route_after_error import route_after_error
 from orchestrator.agent.edges.route_after_goal_check import route_after_goal_check
+from orchestrator.agent.edges.route_after_guard_rails import route_after_guard_rails
 from orchestrator.agent.edges.route_after_reason import route_after_reason
+from orchestrator.agent.edges.route_after_observe import route_after_observe
 from orchestrator.models.run_state import AgentState
 
 if TYPE_CHECKING:
@@ -34,6 +36,7 @@ def build_graph(
     custom_tools: list,
     model_name: str,
     output_dir: Path,
+    figma_token: str | None = None,
 ):
     """Build and compile the agent StateGraph.
 
@@ -47,6 +50,7 @@ def build_graph(
     from orchestrator.agent.nodes.goal_check import goal_check_node
     from orchestrator.agent.nodes.error_handler import error_handler_node
     from orchestrator.agent.nodes.finalize import finalize_node
+    from orchestrator.agent.nodes.guard_rails import guard_rails_node
 
     # Bind runtime dependencies into each node via functools.partial.
     observe = functools.partial(
@@ -80,24 +84,35 @@ def build_graph(
         cdp_session=cdp_session,
         collector=collector,
         output_dir=output_dir,
+        figma_token=figma_token,
     )
 
     builder = StateGraph(AgentState)
 
     builder.add_node("observe",        observe)
     builder.add_node("reason",         reason)
+    builder.add_node("guard_rails",    guard_rails_node)
     builder.add_node("act",            act)
     builder.add_node("goal_check",     goal_check_node)
     builder.add_node("error_handler",  error_handler)
     builder.add_node("finalize",       finalize)
 
     builder.add_edge(START, "observe")
-    builder.add_edge("observe", "reason")
+    builder.add_conditional_edges(
+        "observe",
+        route_after_observe,
+        {"reason": "reason", "finalize": "finalize"},
+    )
 
     builder.add_conditional_edges(
         "reason",
         route_after_reason,
-        {"act": "act", "goal_check": "goal_check", "error": "error_handler"},
+        {"act": "guard_rails", "goal_check": "goal_check", "error": "error_handler"},
+    )
+    builder.add_conditional_edges(
+        "guard_rails",
+        route_after_guard_rails,
+        {"act": "act", "observe": "observe"},
     )
     builder.add_conditional_edges(
         "act",

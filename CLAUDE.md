@@ -1,6 +1,8 @@
 # Project Hawkeye
 
-AI-powered pre-deployment testing platform where autonomous agents execute verification tests against web applications inside observable Docker sandbox containers. Agents reason about what to do next based on a natural-language test goal and the current page state — no brittle recorded scripts.
+AI-powered pre-deployment testing platform where autonomous agents execute verification tests against web applications inside observable Docker sandbox containers. Agents reason about what to do next based on **visual screenshots + accessibility tree** — no brittle recorded scripts.
+
+The agent is fundamentally a **visual QA agent**: it takes a screenshot at every step, sends it to a vision-capable LLM alongside the accessibility tree, and decides actions based on what it *sees*. An optional second pass diffs final screenshots against a provided Figma/design file to catch visual regressions.
 
 Spec document: `C:\Users\vjayr\Downloads\spec.md` (Hawkeye Implementation Specification v1.0)
 
@@ -34,9 +36,11 @@ Sandbox Containers (Docker, one per test run)
 |---|---|
 | Frontend | Next.js 16.2, React 19, Tailwind 4, shadcn/ui, Zustand, NextAuth (Google/GitHub OAuth) |
 | Orchestrator | Python 3.11+, LangGraph (Python), LangChain, Ollama (local LLM) |
+| Vision LLM | Any multimodal model: GPT-4o, Claude Sonnet, Gemini — user-selectable via `--model` |
 | API (Phase 3) | FastAPI, WebSocket |
 | Database (Phase 2) | PostgreSQL + JSONB |
 | Sandbox | Docker, Playwright, Xvfb, x11vnc, websockify, noVNC, @playwright/mcp |
+| Visual diffing | Pillow + numpy (pixelmatch-style) — Phase 2.5, opt-in with Figma file |
 | Container networking | Docker bridge (`hawkeye-net`) with container DNS (Phase 3) |
 
 ---
@@ -65,7 +69,7 @@ Project-Hawkeye/
 │   │   │   ├── launch_browser.py
 │   │   │   └── supervisord.conf
 │   │   └── examples/              # Example scripts
-│   ├── orchestrator/              # Phase 1 agent harness (CLI-only, no API yet)
+│   ├── orchestrator/              # Agent harness (CLI-only, no API yet)
 │   │   ├── agent/                 # LangGraph StateGraph (nodes, edges, graph, prompt_builder)
 │   │   ├── models/                # TestCase, AgentState, StepTrace, RunResult dataclasses
 │   │   ├── runner/                # RunManager — full test lifecycle orchestration
@@ -73,11 +77,14 @@ Project-Hawkeye/
 │   │   ├── mcp/                   # PlaywrightMcpClient (stdio transport)
 │   │   ├── cdp/                   # Chrome DevTools Protocol session
 │   │   ├── trace/                 # Per-step trace collector (tokens, latency, cost)
-│   │   ├── assertions/            # AssertionEngine (content + console types)
-│   │   ├── llm/                   # LLM provider factory (Ollama / Groq)
+│   │   ├── assertions/            # AssertionEngine (content + console + network + state + visual_design)
+│   │   ├── llm/                   # LLM provider factory (Ollama / Groq / OpenRouter / NVIDIA NIM)
+│   │   ├── vision/                # Visual QA: figma_client.py, pixel_diff.py, visual_assertions.py
+│   │   ├── reporting/             # HTML + Markdown report generator
+│   │   ├── db/                    # asyncpg DB layer + schema.sql (gated by HAWKEYE_DB_URL)
 │   │   ├── loader/                # YAML test case loader
 │   │   ├── cli/                   # Click CLI entry point
-│   │   └── test_cases/            # wikipedia_search.yaml (TC-001), amazon_add_to_cart.yaml (TC-002)
+│   │   └── test_cases/            # wikipedia_search.yaml (TC-001), saucedemo_cart.yaml (TC-002b)
 │   └── pyproject.toml             # uv / pyproject config
 │
 ├── Docs/                          # Architecture & design docs
@@ -92,6 +99,65 @@ Project-Hawkeye/
 ├── docker-compose.yml
 ├── .env.example
 └── CLAUDE.md                      # ← This file
+```
+
+---
+
+## Visual QA Agent Design
+
+### How it works
+
+Every agent step has two parallel inputs to the LLM:
+
+```
+Observe step
+  ├── take_screenshot() via CDP  →  base64 PNG  ──┐
+  └── browser_snapshot() via MCP →  accessibility  ─┤→ multimodal LLM → action
+                                      tree (text)  ──┘
+```
+
+- **Screenshot** (primary): vision LLM sees the page exactly as a human would. Used for intent verification — "does this look correct?", "is the cart visible?", "is there a login wall?"
+- **Accessibility tree** (secondary): provides precise element references (`e53`, `.cart-link`) needed for Playwright MCP tool calls (click, type, navigate)
+- **Fallback**: text-only models (Ollama local) skip the screenshot and use accessibility tree only — no crash, graceful degradation
+
+### Pass 1 — Visual reasoning agent (always on)
+
+| Step | What happens |
+|------|--------------|
+| Observe | Screenshot via CDP + accessibility tree via MCP |
+| Reason | Multimodal message: image + tree sent to vision LLM |
+| Act | Playwright MCP tool call using element refs from tree |
+| Goal check | LLM emits `<GOAL_COMPLETE>` or `<GOAL_BLOCKED>` based on visual state |
+
+### Pass 2 — Design diff (opt-in, requires Figma file)
+
+Triggered only when user provides `--figma-url` + `--figma-token`. Runs after Pass 1 completes.
+
+| Step | What happens |
+|------|--------------|
+| Export | Fetch target frames from Figma API as PNG |
+| Capture | Take full-page screenshots from the completed run |
+| Diff | Pixelmatch (Pillow-based) — actual vs Figma frame |
+| Report | Diff % + highlighted diff image appended to HTML report |
+
+**Design diff YAML schema:**
+```yaml
+assertions:
+  - id: "V1"
+    type: "visual_design"
+    description: "Cart page matches Figma design"
+    params:
+      figma_frame: "E-Commerce / Cart Page"
+      threshold: 0.05   # max 5% pixel deviation
+      viewport: { width: 1280, height: 720 }
+```
+
+### AgentState fields added in Phase 2.5
+
+```python
+current_screenshot: bytes | None       # raw PNG from CDP
+screenshot_b64: str | None             # base64 for LLM message
+step_screenshots: list[bytes]          # all step screenshots (for Pass 2)
 ```
 
 ---
@@ -122,9 +188,9 @@ Project-Hawkeye/
 - [x] **CDP session** — Chrome DevTools Protocol session manager in `Backend/orchestrator/cdp/`
 - [x] **Trace collector** — Per-step token/latency/cost tracking in `Backend/orchestrator/trace/`
 - [x] **Assertion engine** — Content + console assertion types in `Backend/orchestrator/assertions/`
-- [x] **Phase 1 smoke test cases** — `wikipedia_search.yaml` (TC-001) and `amazon_add_to_cart.yaml` (TC-002)
-
-> **Phase 1 exit criteria status:** Backend ready. Pending real Ollama/Groq run against live Docker sandbox to confirm both test cases pass end-to-end from CLI.
+- [x] **Phase 1 smoke test cases** — `wikipedia_search.yaml` (TC-001) and `saucedemo_cart.yaml` (TC-002b) — both PASS with `--record`
+- [x] **Phase 2 observability** — DB layer, guard-rails node, 3 new tools, HTML+MD reports, `--record` flag, OpenRouter support
+- [x] **Phase 2.5 visual QA agent** — screenshot capture in `observe_node`, multimodal LLM messages in `reason_node`, `is_vision_capable()` helper, NVIDIA NIM provider, Figma design diff pipeline (`vision/` package), `--figma-url`/`--figma-token` CLI flags, per-step screenshots embedded in HTML report, context trimming + rate-limit backoff in reason node
 
 #### Phase 1 Orchestrator — Complete ✓ (branch: `feat/phase1-orchestrator`)
 - [x] **Data models** — `orchestrator/models/` — `TestCase`, `AgentState`, `RunResult`, `StepTrace`, `ErrorInfo` (Pydantic + dataclasses)
@@ -176,7 +242,7 @@ Project-Hawkeye/
 - [ ] **WebSocket live trace streaming** — real-time agent trace in Live Execution page (Phase 3)
 - [ ] **CI/CD integration** — GitHub Actions webhook (Phase 4)
 - [ ] **Billing** — Stripe integration (Phase 4)
-- [ ] **Extended assertion types** — visual (pixelmatch), network, a11y, performance (Phase 2)
+- [ ] **a11y + performance assertion types** — Phase 3
 
 ---
 
@@ -184,12 +250,17 @@ Project-Hawkeye/
 
 ### Phase 1 — CLI Agent Harness ✓ COMPLETE
 
-**Primary model:** `openrouter:openai/gpt-oss-120b:free` — free tier, reliable tool calling, ~$0.03/run
+**Verified passing:**
+- TC-001 Wikipedia — search, open article, scroll → PASSED (6–20 steps)
+- TC-002b SauceDemo — login, add to cart, verify → PASSED (6 steps)
+- Both with `--record` producing MP4 + MD + HTML artifacts
 
-**LLM providers available:**
-- `openrouter:<provider/model>` — primary; requires `OPENROUTER_API_KEY` in `Backend/.env`
-- `groq:<model>` — fallback; 200K token/day limit; requires `GROQ_API_KEY`
-- `ollama:<model>` — local only; thinking models (qwen3) don't emit tool calls, avoid
+**What was built:**
+- LangGraph StateGraph: `OBSERVE → REASON → ACT → GOAL_CHECK → ERROR_HANDLER → FINALIZE`
+- Playwright MCP client (stdio) + 4 custom tools
+- YAML test case loader + Pydantic schema
+- Per-step trace collector, assertion engine (content + console)
+- Click CLI: `python -m orchestrator run --test <file.yaml> [--record]`
 
 **Passing tests:**
 | Test | File | Status | Steps | Cost |
@@ -199,23 +270,38 @@ Project-Hawkeye/
 | TC-002 Amazon add-to-cart | `amazon_add_to_cart.yaml` | BLOCKED (bot detection) | — | — |
 | TC-003 Temu add-to-cart | `temu_cart.yaml` | BLOCKED (login wall) | 2 | ~$0.01 |
 
-### Phase 2 — Observability & Tracing
+### Phase 2 — Observability & Tracing ✓ COMPLETE
 
-- Full per-step tracing: tokens, latency, cost breakdown per agent step
-- PostgreSQL persistence: `agent_traces`, `run_traces_summary` tables (see spec §8)
-- CDP-based custom tools: `get_network_log`, `get_console_errors`, `assert_network_request`
-- Assertion engine: visual (`pixelmatch`), content, state, network, console types (spec §3.3)
-- `wait_for_stable` upgraded to multi-signal (DOM mutations, network quiescence, visual stability)
-- Structured HTML/markdown report generation
-- Guard rails node: navigation policy enforcement, forbidden action checks (spec §7.4)
+**What was built:**
+- PostgreSQL persistence: 5 tables via asyncpg, gated by `HAWKEYE_DB_URL`
+- CDP enhancements: `NetworkRequest` buffer, `take_screenshot()`, `enable_page_capture()`
+- 3 new custom tools: `get_network_log`, `assert_network_request`, `assert_element_state` (7 total)
+- Guard-rails node between reason → act (navigation policy + forbidden action checks)
+- Assertion engine: `network` + `state` types added
+- HTML + Markdown report generator — saved to `artifacts/` after every run
+- CLI: `--record` MP4 capture, `--db-url`, `init-db` command
+- LLM provider: `openrouter:` prefix routes to OpenRouter API
+
+### Phase 2.5 — Visual QA Agent ✓ COMPLETE
+
+**What was built:**
+- `observe_node`: captures screenshot via `cdp_session.take_screenshot()` at every step; non-fatal on failure
+- `reason_node`: detects vision-capable model via `is_vision_capable()`; sends multimodal `HumanMessage` (image + accessibility tree) to vision LLMs; text-only models receive tree only (no crash)
+- `llm/provider.py`: `is_vision_capable(model)` helper + NVIDIA NIM provider (`nvidia:<name>`, requires `NVIDIA_API_KEY`)
+- `AgentState`: new fields `current_screenshot`, `screenshot_b64`, `step_screenshots`
+- `orchestrator/vision/`: `figma_client.py` (Figma API export), `pixel_diff.py` (Pillow/numpy pixelmatch), `visual_assertions.py` (runs `visual_design` assertion type)
+- `assertions/engine.py`: `visual_design` type wired through vision package
+- `cli/main.py`: `--figma-url` + `--figma-token` flags (also read from `FIGMA_URL`/`FIGMA_TOKEN` env vars)
+- `reporting/report_generator.py`: per-step screenshots embedded inline in HTML report
+- `reason_node` reliability: context trimming (24K char limit, keep last 3 pairs), exponential backoff for 429/5xx, emergency trim + retry on 413 context overflow, fast-fail on auth/billing errors
 
 ### Phase 3 — Multi-Browser & API
 
-- Docker bridge network (`hawkeye-net`) with container DNS — no host port mapping (spec §4.4)
+- Docker bridge network (`hawkeye-net`) with container DNS — no host port mapping
 - WebKit + Firefox browser support
-- FastAPI REST API: test CRUD, run triggers, results (spec §9.1)
-- WebSocket live trace streaming (spec §9.2)
-- Job queue (Celery/Redis or similar) for run scheduling
+- FastAPI REST API: test CRUD, run triggers, results
+- WebSocket live trace streaming
+- Job queue (Celery/Redis) for run scheduling
 - Container pool with pre-warming
 - Nginx reverse proxy routing noVNC by run ID (`/observe/:run_id`)
 
@@ -224,7 +310,7 @@ Project-Hawkeye/
 - Wire Next.js frontend to FastAPI (replace all mock data)
 - Real-time noVNC + agent trace in Live Execution page
 - CI/CD webhook integration (GitHub Actions)
-- Visual baseline management with approval workflow
+- Visual baseline management with approval workflow (uses Pass 2 diff)
 - Vault secrets injection into test runs
 - Billing/usage metering
 - Suite-level orchestration: parallel runs, dependency chains
@@ -256,26 +342,35 @@ python scripts/test_spawn_all_browsers_groq_mcp.py --url https://example.com
 cd Backend
 uv sync --extra dev
 
-# Validate a test case YAML
+# Validate a test case
 python -m orchestrator validate --test orchestrator/test_cases/wikipedia_search.yaml
 
-# List available Playwright MCP tools
+# List available tools
 python -m orchestrator list-tools
 
-# Run TC-001 Wikipedia (PASSING)
+# Basic run
 OPENROUTER_API_KEY=$(grep '^OPENROUTER_API_KEY=' .env | cut -d= -f2-) python -m orchestrator run \
   --test orchestrator/test_cases/wikipedia_search.yaml \
-  --model openrouter:openai/gpt-oss-120b:free --verbose
+  --model openrouter:openai/gpt-oss-120b:free
 
-# Run TC-002b SauceDemo add-to-cart (PASSING)
+# With recording
 OPENROUTER_API_KEY=$(grep '^OPENROUTER_API_KEY=' .env | cut -d= -f2-) python -m orchestrator run \
   --test orchestrator/test_cases/saucedemo_cart.yaml \
-  --model openrouter:openai/gpt-oss-120b:free --verbose
+  --model openrouter:openai/gpt-oss-120b:free --record
 
-# Run with MP4 recording
+# With vision model
 OPENROUTER_API_KEY=$(grep '^OPENROUTER_API_KEY=' .env | cut -d= -f2-) python -m orchestrator run \
   --test orchestrator/test_cases/saucedemo_cart.yaml \
-  --model openrouter:openai/gpt-oss-120b:free --verbose --record
+  --model openrouter:openai/gpt-4o --record
+
+# With Figma design diff
+OPENROUTER_API_KEY=$(grep '^OPENROUTER_API_KEY=' .env | cut -d= -f2-) python -m orchestrator run \
+  --test orchestrator/test_cases/saucedemo_cart.yaml \
+  --model openrouter:openai/gpt-4o --record \
+  --figma-url https://www.figma.com/file/xxx --figma-token <token>
+
+# Init DB
+python -m orchestrator init-db --db-url postgres://user:pass@localhost/hawkeye
 ```
 
 ---
