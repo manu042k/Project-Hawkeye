@@ -269,6 +269,14 @@ export const apiClient = {
     subscription: { plan: string; price_monthly: number; next_billing_date: string | null };
   }>("/api/usage"),
 
+  getBillingPlans: () => apiFetch<{ plans: Array<{ id: string; name: string; price_monthly: number; limits: Record<string, number> }> }>("/api/billing/plans"),
+
+  createBillingCheckout: (body: { plan: string; org_id: string }) =>
+    apiFetch<{ checkout_url: string; stub?: boolean }>("/api/billing/checkout", { method: "POST", body: JSON.stringify(body) }),
+
+  createBillingPortal: (body: { org_id: string }) =>
+    apiFetch<{ portal_url: string; stub?: boolean }>("/api/billing/portal", { method: "POST", body: JSON.stringify(body) }),
+
   // Identity
   getMe: () => apiFetch<{ email: string; authenticated: boolean; role: string }>("/api/me"),
 };

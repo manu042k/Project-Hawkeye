@@ -8,7 +8,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from api.job_queue import job_queue
-from api.routes import runs, test_cases, ws, artifacts, projects, test_cases_crud, suites, vault, schedules, me, usage
+from api.routes import runs, test_cases, ws, artifacts, projects, test_cases_crud, suites, vault, schedules, me, usage, billing
 
 
 @asynccontextmanager
@@ -56,6 +56,7 @@ app.include_router(vault.router, prefix="/api")
 app.include_router(schedules.router, prefix="/api")
 app.include_router(me.router, prefix="/api")
 app.include_router(usage.router, prefix="/api")
+app.include_router(billing.router, prefix="/api")
 
 
 @app.get("/health")
