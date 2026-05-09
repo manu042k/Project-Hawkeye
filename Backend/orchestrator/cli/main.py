@@ -22,8 +22,11 @@ if str(_BACKEND) not in sys.path:
 @cli.command()
 @click.option("--test", "test_path", required=True, type=click.Path(exists=True),
               help="Path to YAML or JSON test case file.")
-@click.option("--model", default="ollama:qwen3.5:2b", show_default=True,
-              help="LLM model: 'ollama:<name>' or 'groq:<name>'.")
+@click.option("--model", default="nvidia:moonshotai/kimi-k2.6", show_default=True,
+              help=("LLM model string: 'nvidia:<name>', 'openrouter:<name>', "
+                    "'ollama:<name>', 'vllm:<name>', 'groq:<name>'. "
+                    "Examples: nvidia:moonshotai/kimi-k2.6, ollama:llama3.2, "
+                    "vllm:Qwen/Qwen2.5-VL-3B-Instruct."))
 @click.option("--ollama-host", default="http://localhost:11434", show_default=True,
               envvar="OLLAMA_HOST", help="Ollama base URL.")
 @click.option("--browser", default=None,
@@ -153,7 +156,7 @@ def validate(test_path: str) -> None:
 
 
 @cli.command("list-tools")
-@click.option("--model", default="ollama:qwen3.5:2b", help="LLM model (for tool schema display).")
+@click.option("--model", default="openrouter:openai/gpt-4o", help="LLM model (for tool schema display).")
 def list_tools(model: str) -> None:
     """Print all available tools (MCP + custom) and their descriptions."""
     from orchestrator.tools.schemas import ALL_CUSTOM_SCHEMAS

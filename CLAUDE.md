@@ -243,6 +243,10 @@ step_screenshots: list[bytes]          # all step screenshots (for Pass 2)
 - [ ] **CI/CD integration** — GitHub Actions webhook (Phase 4)
 - [ ] **Billing** — Stripe integration (Phase 4)
 - [ ] **a11y + performance assertion types** — Phase 3
+- [ ] **Eval observability** — MLflow / Arize Phoenix trace instrumentation (Phase 4.5)
+- [ ] **Eval dataset** — Curated traces from past runs with ground-truth labels (Phase 4.5)
+- [ ] **Prompt tuning pipeline** — Versioned system instructions with eval-gated regression checks (Phase 4.5)
+- [ ] **Benchmark suite** — Automated eval loop with goal completion rate, cost, hallucination metrics (Phase 4.5)
 
 ---
 
@@ -295,15 +299,30 @@ step_screenshots: list[bytes]          # all step screenshots (for Pass 2)
 - `reporting/report_generator.py`: per-step screenshots embedded inline in HTML report
 - `reason_node` reliability: context trimming (24K char limit, keep last 3 pairs), exponential backoff for 429/5xx, emergency trim + retry on 413 context overflow, fast-fail on auth/billing errors
 
-### Phase 3 — Multi-Browser & API
+### Phase 3 — Multi-Browser & API 🔧 IN PROGRESS
 
-- Docker bridge network (`hawkeye-net`) with container DNS — no host port mapping
-- WebKit + Firefox browser support
-- FastAPI REST API: test CRUD, run triggers, results
-- WebSocket live trace streaming
-- Job queue (Celery/Redis) for run scheduling
-- Container pool with pre-warming
-- Nginx reverse proxy routing noVNC by run ID (`/observe/:run_id`)
+**What was built:**
+- FastAPI REST API at `Backend/api/` — `POST /api/runs`, `GET /api/runs`, `GET /api/runs/{id}`, `DELETE /api/runs/{id}`
+- WebSocket live trace streaming — `WS /api/ws/runs/{run_id}/trace`; `WebSocketManager` broadcasts per-step events to connected clients
+- asyncio-based job queue (`api/job_queue.py`) — single background worker, 100-run in-memory history, cancel support
+- `TraceCollector` gains optional `ws_emitter` callback — wired by job queue to push events over WebSocket
+- `GET /api/test-cases` + `POST /api/test-cases/validate` — scans `orchestrator/test_cases/*.yaml`
+- `GET /health` — readiness probe
+- `Backend/Dockerfile.api` — slim Python 3.11 image with uv
+- `docker-compose.yml` updated: `hawkeye-net` bridge network, `hawkeye-api` service on port 8000
+- `pyproject.toml`: added `fastapi`, `uvicorn[standard]`, `python-multipart`; `hawkeye-api` script entry point
+
+- Firefox/WebKit support: `PlaywrightMcpClient` now accepts `browser` param; uses `--browser firefox/webkit` (MCP launches headless browser) when CDP URL is absent
+- Container pool (`api/container_pool.py`): `ContainerPool` pre-warms N chromium containers; `acquire()`/`release()` used by job queue; controlled by `HAWKEYE_POOL_SIZE` env var (default 0 = disabled)
+- `RunManager` accepts `_prewarmed_handle`: skips spawn (1s settle vs 6s), releases back to pool after run
+- `GET /api/runs/{run_id}/observe` endpoint returns live noVNC URL for a run
+- Nginx reverse proxy (`nginx/nginx.conf`): proxies `/api/` + WebSocket upgrade to `hawkeye-api:8000`; `hawkeye-nginx` service added to docker-compose on port 80
+
+- Celery + Redis job queue (`api/celery_app.py`, `api/tasks.py`, `api/redis_store.py`): persistent runs (survive API restart), parallel execution via `--concurrency N` worker
+- Redis pub/sub for WebSocket streaming across worker/API process boundary
+- `cancel()` revokes Celery task by stored `celery_task_id`
+- Redis service + `hawkeye-worker` Celery service added to docker-compose
+- **Tested:** persistence survives API restart; 2 parallel runs confirmed running simultaneously
 
 ### Phase 4 — Dashboard Integration & Polish
 
@@ -315,6 +334,32 @@ step_screenshots: list[bytes]          # all step screenshots (for Pass 2)
 - Billing/usage metering
 - Suite-level orchestration: parallel runs, dependency chains
 - Cross-run analytics dashboard
+
+### Phase 4.5 — Agent Evaluation & Benchmarking (parallel to Phase 4)
+
+**Goal:** Systematically measure and improve agent quality by building an eval pipeline around real test traces.
+
+#### Observability instrumentation
+- Integrate **MLflow** or **Arize Phoenix** for trace logging — instrument `TraceCollector` to emit per-step spans (tool call, LLM latency, token count, screenshot, assertion result) to the chosen backend
+- Log full agent runs as MLflow experiments or Phoenix traces; tag by test case, model, and pass/fail outcome
+- Dashboard: step latency distribution, tool call frequency, goal completion rate per test case
+
+#### Dataset curation
+- Collect agent traces from past runs (PostgreSQL `agent_traces` table + HTML/MD artifacts) into a structured eval dataset
+- Each dataset record: `{ goal, step_observations, actions_taken, final_outcome, assertion_results, screenshots }`
+- Annotate with ground-truth labels: `pass`, `fail`, `blocked`, `hallucinated_action`
+- Target diversity: ≥5 different sites, ≥3 failure modes (bot detection, login wall, element not found), ≥2 models
+
+#### System instruction tuning
+- Systematically vary `prompt_builder.py` system prompt sections (tool conventions, checkpoint rules, goal-check criteria) and measure outcome delta
+- Track prompt version alongside each eval run so changes are attributable
+- Identify failure patterns from trace logs (e.g. agent clicks wrong element, misses `<GOAL_COMPLETE>`) and add targeted prompt rules
+
+#### Evaluation & optimization loop
+- Define eval metrics: **goal completion rate**, **steps-to-completion**, **cost per run**, **hallucination rate** (tool args referencing non-existent refs), **false GOAL_COMPLETE rate**
+- Run evals via MLflow `mlflow.evaluate()` or Arize Phoenix `run_evals()` against the curated dataset
+- Regression gate: block prompt changes that drop completion rate > 5% or increase cost > 20%
+- Publish eval reports to `artifacts/evals/` alongside existing run artifacts
 
 ---
 
@@ -348,26 +393,23 @@ python -m orchestrator validate --test orchestrator/test_cases/wikipedia_search.
 # List available tools
 python -m orchestrator list-tools
 
-# Basic run
+# Basic run (default model is gpt-4o — visual agent always on)
 OPENROUTER_API_KEY=$(grep '^OPENROUTER_API_KEY=' .env | cut -d= -f2-) python -m orchestrator run \
-  --test orchestrator/test_cases/wikipedia_search.yaml \
-  --model openrouter:openai/gpt-oss-120b:free
+  --test orchestrator/test_cases/wikipedia_search.yaml
 
 # With recording
 OPENROUTER_API_KEY=$(grep '^OPENROUTER_API_KEY=' .env | cut -d= -f2-) python -m orchestrator run \
-  --test orchestrator/test_cases/saucedemo_cart.yaml \
-  --model openrouter:openai/gpt-oss-120b:free --record
-
-# With vision model
-OPENROUTER_API_KEY=$(grep '^OPENROUTER_API_KEY=' .env | cut -d= -f2-) python -m orchestrator run \
-  --test orchestrator/test_cases/saucedemo_cart.yaml \
-  --model openrouter:openai/gpt-4o --record
+  --test orchestrator/test_cases/saucedemo_cart.yaml --record
 
 # With Figma design diff
 OPENROUTER_API_KEY=$(grep '^OPENROUTER_API_KEY=' .env | cut -d= -f2-) python -m orchestrator run \
-  --test orchestrator/test_cases/saucedemo_cart.yaml \
-  --model openrouter:openai/gpt-4o --record \
+  --test orchestrator/test_cases/saucedemo_cart.yaml --record \
   --figma-url https://www.figma.com/file/xxx --figma-token <token>
+
+# Override to a cheaper text-only model (disables visual agent)
+OPENROUTER_API_KEY=$(grep '^OPENROUTER_API_KEY=' .env | cut -d= -f2-) python -m orchestrator run \
+  --test orchestrator/test_cases/saucedemo_cart.yaml \
+  --model openrouter:openai/gpt-oss-120b:free
 
 # Init DB
 python -m orchestrator init-db --db-url postgres://user:pass@localhost/hawkeye

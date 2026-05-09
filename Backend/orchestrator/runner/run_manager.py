@@ -57,6 +57,7 @@ class RunManager:
         record: bool = False,
         figma_url: str | None = None,
         figma_token: str | None = None,
+        ws_emitter=None,  # Callable[[str, dict], Awaitable[None]] | None
     ) -> None:
         self._llm = llm
         self._sandbox_manager = sandbox_manager or SandboxManager()
@@ -66,6 +67,8 @@ class RunManager:
         self._record = record
         self._figma_url = figma_url
         self._figma_token = figma_token
+        self._ws_emitter = ws_emitter
+        self._prewarmed_handle = None
 
     async def run(
         self,
@@ -108,20 +111,29 @@ class RunManager:
             browser=browser,
             verbose=self._verbose,
             db_run_id=run_id if db_enabled() else None,
+            ws_emitter=self._ws_emitter,
         )
         collector.on_run_start()
 
         mcp_client: PlaywrightMcpClient | None = None
         cdp_session = None
         sandbox_handle = None
+        _used_prewarmed = False
         start_time = time.time()
 
         try:
             # --- Sandbox setup ---
+            prewarmed = getattr(self, '_prewarmed_handle', None)
             if cdp_url_override:
                 # --no-sandbox mode: connect to existing browser.
                 cdp_url = cdp_url_override
                 novnc_url = "(no sandbox)"
+            elif prewarmed:
+                sandbox_handle = prewarmed
+                _used_prewarmed = True
+                cdp_url = sandbox_handle.cdp_url or ""
+                novnc_url = sandbox_handle.novnc_url
+                await asyncio.sleep(1.0)
             else:
                 cfg = SandboxConfig(
                     url=test_case.target.url,
@@ -164,12 +176,7 @@ class RunManager:
                     cdp_session = None
 
             # --- Playwright MCP client ---
-            if not cdp_url:
-                raise RuntimeError(
-                    "No CDP URL available. Use a chromium-family browser "
-                    "or provide --cdp-url."
-                )
-            mcp_client = PlaywrightMcpClient(cdp_url)
+            mcp_client = PlaywrightMcpClient(cdp_url or None, browser=browser)
             await mcp_client.initialize()
             mcp_schemas = await mcp_client.list_tools()
             mcp_tools = mcp_tools_to_langchain(mcp_client, mcp_schemas)
@@ -319,7 +326,13 @@ class RunManager:
                     print(f"[recording] {mp4_path}")
                 except Exception as exc:
                     logger.warning("Recording fetch failed (non-fatal): %s", exc)
-            if sandbox_handle:
+            if sandbox_handle and _used_prewarmed:
+                try:
+                    from api.container_pool import container_pool
+                    await container_pool.release(sandbox_handle)
+                except Exception as exc:
+                    logger.warning("Pool release failed (non-fatal): %s", exc)
+            elif sandbox_handle:
                 try:
                     self._sandbox_manager.stop(sandbox_handle)
                 except Exception as exc:

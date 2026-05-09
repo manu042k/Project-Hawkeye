@@ -40,8 +40,9 @@ class PlaywrightMcpClient:
     ``McpToolResult(is_error=True)``. ``close()`` is idempotent.
     """
 
-    def __init__(self, cdp_url: str, *, timeout_s: float = _TOOL_TIMEOUT_S) -> None:
+    def __init__(self, cdp_url: str | None = None, *, browser: str = "chromium", timeout_s: float = _TOOL_TIMEOUT_S) -> None:
         self._cdp_url = cdp_url
+        self._browser = browser
         self._timeout_s = timeout_s
         self._proc: asyncio.subprocess.Process | None = None
         self._cmd_id = 0
@@ -59,12 +60,15 @@ class PlaywrightMcpClient:
         """Spawn the MCP subprocess and perform the JSON-RPC handshake."""
         # On Windows, npx is a .cmd script and cannot be invoked directly
         # by CreateProcess without going through cmd.exe.
-        if sys.platform == "win32":
-            cmd = ["cmd", "/c", "npx", "@playwright/mcp@latest",
-                   "--cdp-endpoint", self._cdp_url]
+        if self._cdp_url:
+            base_args = ["--cdp-endpoint", self._cdp_url]
         else:
-            cmd = ["npx", "@playwright/mcp@latest",
-                   "--cdp-endpoint", self._cdp_url]
+            base_args = ["--browser", self._browser]
+
+        if sys.platform == "win32":
+            cmd = ["cmd", "/c", "npx", "@playwright/mcp@latest"] + base_args
+        else:
+            cmd = ["npx", "@playwright/mcp@latest"] + base_args
 
         # 10MB limit: Playwright accessibility tree snapshots for complex pages
         # easily exceed asyncio's default 64KB StreamReader limit.
@@ -98,7 +102,7 @@ class PlaywrightMcpClient:
         # Notify initialized (no response expected)
         await self._notify("notifications/initialized", {})
         self._initialized = True
-        logger.debug("Playwright MCP initialized (cdp=%s)", self._cdp_url)
+        logger.debug("Playwright MCP initialized (cdp=%s, browser=%s)", self._cdp_url or "none", self._browser)
 
     async def list_tools(self) -> list[McpToolSchema]:
         """Fetch and cache the list of available tools."""

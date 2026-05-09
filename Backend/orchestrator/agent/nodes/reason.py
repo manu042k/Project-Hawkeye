@@ -186,6 +186,16 @@ async def reason_node(
                 )
                 break
 
+            # Model doesn't support tools or not found — fatal, no point retrying.
+            if any(k in exc_str.lower() for k in ("does not support tools", "tool_use is not supported")) or \
+                    ("404" in exc_str and any(k in exc_str.lower() for k in ("no endpoints", "not found", "unknown model"))):
+                last_error = ErrorInfo(
+                    error_type="llm_auth_error",
+                    message=exc_str[:200],
+                    step_number=state["step_number"],
+                    recoverable=False,
+                )
+                break
             # Standard rate limit or server errors: retry with short backoff.
             if any(k in exc_str for k in ("429", "500", "503", "rate", "overloaded")):
                 last_error = ErrorInfo(

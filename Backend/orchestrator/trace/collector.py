@@ -59,6 +59,7 @@ class TraceCollector:
         browser: str,
         verbose: bool = False,
         db_run_id: str | None = None,
+        ws_emitter=None,  # Callable[[str, dict], Awaitable[None]] | None
     ) -> None:
         self._run_id = run_id
         self._test_id = test_id
@@ -67,6 +68,7 @@ class TraceCollector:
         self._browser = browser
         self._verbose = verbose
         self._db_run_id = db_run_id
+        self._ws_emitter = ws_emitter
         self._traces: list[StepTrace] = []
         self._start_time = time.time()
         self._assertion_results: list[AssertionResult] = []
@@ -75,6 +77,17 @@ class TraceCollector:
     def traces(self) -> list[StepTrace]:
         """All accumulated step traces."""
         return self._traces
+
+    def _emit(self, event_type: str, data: dict) -> None:
+        if self._ws_emitter is None:
+            return
+        import asyncio
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.create_task(self._ws_emitter(event_type, data))
+        except RuntimeError:
+            pass
 
     # ------------------------------------------------------------------
     # Callback API (called by graph nodes)
@@ -106,6 +119,7 @@ class TraceCollector:
         self._traces.append(StepTrace(step_number=step_number, timestamp=time.time()))
         if checkpoint_id and self._verbose:
             _console.print(f"{_tag('observe')} checkpoint={checkpoint_id}")
+        self._emit("step_start", {"step_number": step_number, "checkpoint_id": checkpoint_id})
 
     def on_observe(
         self,
@@ -125,6 +139,7 @@ class TraceCollector:
             f"{_tag('observe')} wait_for_stable: [cyan]{wait_ms}ms[/cyan]  "
             f"URL: {_esc(url)}  snapshot: {snapshot_chars} chars"
         )
+        self._emit("observe", {"url": url, "title": title, "wait_ms": wait_ms, "snapshot_chars": snapshot_chars})
 
     def on_reason(
         self,
@@ -154,6 +169,14 @@ class TraceCollector:
         if agent_text and self._verbose:
             preview = agent_text[:120].replace("\n", " ")
             _console.print(f"{_tag('reason')}  [italic]{_esc(preview)}[/italic]")
+        self._emit("reason", {
+            "model": model,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "latency_ms": latency_ms,
+            "cost_usd": cost_usd,
+            "stop_reason": stop_reason,
+        })
 
     def on_act(
         self,
@@ -194,6 +217,13 @@ class TraceCollector:
         )
         if error and not success:
             _console.print(f"{_tag('act')}     [red]{_esc(error[:120])}[/red]")
+        self._emit("act", {
+            "tool_name": tool_name,
+            "tool_source": tool_source,
+            "latency_ms": latency_ms,
+            "success": success,
+            "error": error,
+        })
 
     def on_goal_check(
         self, *, completed_checkpoints: list[str], goal_complete: bool
@@ -210,11 +240,16 @@ class TraceCollector:
     def on_error(self, *, error_type: str, message: str, recoverable: bool) -> None:
         color = "yellow" if recoverable else "red"
         _console.print(f"{_tag('error')}   [{color}]{_esc(error_type)}: {_esc(message[:200])}[/{color}]")
+        self._emit("error", {"error_type": error_type, "message": message, "recoverable": recoverable})
 
     def on_finalize(self, assertion_results: list[AssertionResult]) -> None:
         self._assertion_results = assertion_results
         if self._traces:
             self._traces[-1].completed_at = time.time()
+        self._emit("complete", {
+            "total_steps": len(self._traces),
+            "assertion_count": len(assertion_results),
+        })
 
     # ------------------------------------------------------------------
     # Summary
