@@ -57,6 +57,7 @@ class RunManager:
         record: bool = False,
         figma_url: str | None = None,
         figma_token: str | None = None,
+        ws_emitter=None,  # Callable[[str, dict], Awaitable[None]] | None
     ) -> None:
         self._llm = llm
         self._sandbox_manager = sandbox_manager or SandboxManager()
@@ -66,6 +67,7 @@ class RunManager:
         self._record = record
         self._figma_url = figma_url
         self._figma_token = figma_token
+        self._ws_emitter = ws_emitter
 
     async def run(
         self,
@@ -108,6 +110,7 @@ class RunManager:
             browser=browser,
             verbose=self._verbose,
             db_run_id=run_id if db_enabled() else None,
+            ws_emitter=self._ws_emitter,
         )
         collector.on_run_start()
 

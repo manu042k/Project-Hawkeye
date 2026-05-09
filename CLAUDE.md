@@ -295,15 +295,24 @@ step_screenshots: list[bytes]          # all step screenshots (for Pass 2)
 - `reporting/report_generator.py`: per-step screenshots embedded inline in HTML report
 - `reason_node` reliability: context trimming (24K char limit, keep last 3 pairs), exponential backoff for 429/5xx, emergency trim + retry on 413 context overflow, fast-fail on auth/billing errors
 
-### Phase 3 — Multi-Browser & API
+### Phase 3 — Multi-Browser & API 🔧 IN PROGRESS
 
-- Docker bridge network (`hawkeye-net`) with container DNS — no host port mapping
+**What was built:**
+- FastAPI REST API at `Backend/api/` — `POST /api/runs`, `GET /api/runs`, `GET /api/runs/{id}`, `DELETE /api/runs/{id}`
+- WebSocket live trace streaming — `WS /api/ws/runs/{run_id}/trace`; `WebSocketManager` broadcasts per-step events to connected clients
+- asyncio-based job queue (`api/job_queue.py`) — single background worker, 100-run in-memory history, cancel support
+- `TraceCollector` gains optional `ws_emitter` callback — wired by job queue to push events over WebSocket
+- `GET /api/test-cases` + `POST /api/test-cases/validate` — scans `orchestrator/test_cases/*.yaml`
+- `GET /health` — readiness probe
+- `Backend/Dockerfile.api` — slim Python 3.11 image with uv
+- `docker-compose.yml` updated: `hawkeye-net` bridge network, `hawkeye-api` service on port 8000
+- `pyproject.toml`: added `fastapi`, `uvicorn[standard]`, `python-multipart`; `hawkeye-api` script entry point
+
+**Still to build:**
 - WebKit + Firefox browser support
-- FastAPI REST API: test CRUD, run triggers, results
-- WebSocket live trace streaming
-- Job queue (Celery/Redis) for run scheduling
 - Container pool with pre-warming
 - Nginx reverse proxy routing noVNC by run ID (`/observe/:run_id`)
+- Job queue persistence (Redis/Celery) for multi-instance deployments
 
 ### Phase 4 — Dashboard Integration & Polish
 
