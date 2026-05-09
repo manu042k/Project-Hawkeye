@@ -28,6 +28,7 @@ dependencies = [
     "redis>=5.0.0",
     "arize-phoenix-otel>=0.16.1",
     "openinference-instrumentation-langchain>=0.1.63",
+    "cryptography>=42.0.0",
 ]
 
 [project.optional-dependencies]

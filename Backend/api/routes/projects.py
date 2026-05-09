@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-import json
 import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from api.db import db_enabled, fetch, fetchrow, execute
+
 router = APIRouter(prefix="/projects", tags=["projects"])
 
-# In-memory store until HAWKEYE_DB_URL is set.
+# Fallback in-memory store used when HAWKEYE_DB_URL is not set.
 _projects: dict[str, dict] = {}
 
 
@@ -41,15 +42,19 @@ def _to_response(p: dict) -> dict:
 @router.post("", status_code=201)
 async def create_project(body: ProjectCreate) -> dict:
     project_id = str(uuid.uuid4())
+    if db_enabled():
+        import json as _json
+        row = await fetchrow(
+            """INSERT INTO projects (id, name, slug, description, settings)
+               VALUES ($1,$2,$3,$4,$5) RETURNING *""",
+            project_id, body.name, body.slug, body.description,
+            _json.dumps(body.settings),
+        )
+        return _to_response(dict(row))
     record = {
-        "id": project_id,
-        "name": body.name,
-        "slug": body.slug,
-        "description": body.description,
-        "org_id": body.org_id,
-        "settings": body.settings,
-        "created_at": _utcnow(),
-        "archived_at": None,
+        "id": project_id, "name": body.name, "slug": body.slug,
+        "description": body.description, "org_id": body.org_id,
+        "settings": body.settings, "created_at": _utcnow(), "archived_at": None,
     }
     _projects[project_id] = record
     return _to_response(record)
@@ -57,12 +62,20 @@ async def create_project(body: ProjectCreate) -> dict:
 
 @router.get("")
 async def list_projects() -> dict:
+    if db_enabled():
+        rows = await fetch("SELECT * FROM projects WHERE archived_at IS NULL ORDER BY created_at DESC")
+        return {"projects": [_to_response(r) for r in rows], "total": len(rows)}
     projects = [_to_response(p) for p in _projects.values() if not p.get("archived_at")]
     return {"projects": projects, "total": len(projects)}
 
 
 @router.get("/{project_id}")
 async def get_project(project_id: str) -> dict:
+    if db_enabled():
+        row = await fetchrow("SELECT * FROM projects WHERE id=$1", project_id)
+        if not row:
+            raise HTTPException(404, f"Project {project_id!r} not found")
+        return _to_response(row)
     p = _projects.get(project_id)
     if not p:
         raise HTTPException(404, f"Project {project_id!r} not found")
@@ -71,11 +84,20 @@ async def get_project(project_id: str) -> dict:
 
 @router.put("/{project_id}")
 async def update_project(project_id: str, body: ProjectCreate) -> dict:
+    if db_enabled():
+        import json as _json
+        row = await fetchrow(
+            """UPDATE projects SET name=$2,slug=$3,description=$4,settings=$5
+               WHERE id=$1 RETURNING *""",
+            project_id, body.name, body.slug, body.description, _json.dumps(body.settings),
+        )
+        if not row:
+            raise HTTPException(404, f"Project {project_id!r} not found")
+        return _to_response(row)
     p = _projects.get(project_id)
     if not p:
         raise HTTPException(404, f"Project {project_id!r} not found")
-    p.update({"name": body.name, "slug": body.slug, "description": body.description,
-              "settings": body.settings})
+    p.update({"name": body.name, "slug": body.slug, "description": body.description, "settings": body.settings})
     return _to_response(p)
 
 

@@ -1,7 +1,6 @@
 """Full CRUD for test cases (Phase 5A).
 
-Stores in-memory until HAWKEYE_DB_URL is set. Each test case spec is the
-full TestCase Pydantic model serialised as JSON.
+Falls back to in-memory store when HAWKEYE_DB_URL is not set.
 """
 from __future__ import annotations
 
@@ -14,6 +13,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from api.db import db_enabled, fetch, fetchrow, execute
 from orchestrator.loader.yaml_loader import load_test_case
 from orchestrator.models.test_case import TestCase
 
@@ -96,6 +96,28 @@ def _to_summary(tc: dict) -> dict:
     }
 
 
+def _row_to_summary(row: dict) -> dict:
+    """Convert a DB row (from test_cases table) to summary shape."""
+    spec = row.get("spec") or {}
+    if isinstance(spec, str):
+        spec = json.loads(spec)
+    tags = row.get("tags") or []
+    if isinstance(tags, str):
+        tags = json.loads(tags)
+    return {
+        "id": str(row["id"]),
+        "name": row["name"],
+        "status": row["status"],
+        "version": row["version"],
+        "priority": row.get("priority") or spec.get("priority", "P1"),
+        "tags": tags,
+        "last_run_status": row.get("last_run_status"),
+        "last_run_at": str(row["last_run_at"]) if row.get("last_run_at") else None,
+        "created_at": str(row["created_at"]),
+        "updated_at": str(row["updated_at"]),
+    }
+
+
 def _build_spec(tc_id: str, body: TestCaseCreate) -> dict:
     return {
         "id": tc_id,
@@ -115,16 +137,20 @@ def _build_spec(tc_id: str, body: TestCaseCreate) -> dict:
 async def create_test_case(project_id: str, body: TestCaseCreate) -> dict:
     tc_id = str(uuid.uuid4())
     spec = _build_spec(tc_id, body)
+    if db_enabled():
+        row = await fetchrow(
+            """INSERT INTO test_cases
+               (id, project_id, status, version, name, priority, tags, spec, created_at, updated_at)
+               VALUES ($1,$2,'active',1,$3,$4,$5::jsonb,$6::jsonb,now(),now())
+               RETURNING *""",
+            tc_id, project_id, body.name, body.priority,
+            json.dumps(body.tags), json.dumps(spec),
+        )
+        return _row_to_summary(dict(row))  # type: ignore[arg-type]
     record = {
-        "id": tc_id,
-        "project_id": project_id,
-        "status": "active",
-        "version": 1,
-        "spec": spec,
-        "last_run_status": None,
-        "last_run_at": None,
-        "created_at": _utcnow(),
-        "updated_at": _utcnow(),
+        "id": tc_id, "project_id": project_id, "status": "active", "version": 1,
+        "spec": spec, "last_run_status": None, "last_run_at": None,
+        "created_at": _utcnow(), "updated_at": _utcnow(),
     }
     _store.setdefault(project_id, {})[tc_id] = record
     return _to_summary(record)
@@ -132,6 +158,19 @@ async def create_test_case(project_id: str, body: TestCaseCreate) -> dict:
 
 @router.get("/{project_id}/test-cases")
 async def list_test_cases(project_id: str, status: str = "active", q: str = "") -> dict:
+    if db_enabled():
+        sql = "SELECT * FROM test_cases WHERE project_id=$1"
+        args: list = [project_id]
+        if status != "all":
+            sql += " AND status=$2"
+            args.append(status)
+        sql += " ORDER BY created_at DESC"
+        rows = await fetch(sql, *args)
+        if q:
+            q_low = q.lower()
+            rows = [r for r in rows if q_low in r["name"].lower()]
+        summaries = [_row_to_summary(r) for r in rows]
+        return {"test_cases": summaries, "total": len(summaries)}
     cases = list(_store.get(project_id, {}).values())
     if status != "all":
         cases = [c for c in cases if c["status"] == status]
@@ -143,6 +182,12 @@ async def list_test_cases(project_id: str, status: str = "active", q: str = "") 
 
 @router.get("/{project_id}/test-cases/{tc_id}")
 async def get_test_case(project_id: str, tc_id: str) -> dict:
+    if db_enabled():
+        row = await fetchrow("SELECT * FROM test_cases WHERE id=$1 AND project_id=$2", tc_id, project_id)
+        if not row:
+            raise HTTPException(404, f"Test case {tc_id!r} not found")
+        r = dict(row)
+        return {**_row_to_summary(r), "spec": r["spec"]}
     record = _store.get(project_id, {}).get(tc_id)
     if not record:
         raise HTTPException(404, f"Test case {tc_id!r} not found")
@@ -151,10 +196,22 @@ async def get_test_case(project_id: str, tc_id: str) -> dict:
 
 @router.put("/{project_id}/test-cases/{tc_id}")
 async def update_test_case(project_id: str, tc_id: str, body: TestCaseCreate) -> dict:
+    spec = _build_spec(tc_id, body)
+    if db_enabled():
+        row = await fetchrow(
+            """UPDATE test_cases SET name=$3, priority=$4, tags=$5::jsonb, spec=$6::jsonb,
+               version=version+1, updated_at=now()
+               WHERE id=$1 AND project_id=$2 RETURNING *""",
+            tc_id, project_id, body.name, body.priority,
+            json.dumps(body.tags), json.dumps(spec),
+        )
+        if not row:
+            raise HTTPException(404, f"Test case {tc_id!r} not found")
+        return _row_to_summary(dict(row))  # type: ignore[arg-type]
     record = _store.get(project_id, {}).get(tc_id)
     if not record:
         raise HTTPException(404, f"Test case {tc_id!r} not found")
-    record["spec"] = _build_spec(tc_id, body)
+    record["spec"] = spec
     record["version"] += 1
     record["updated_at"] = _utcnow()
     return _to_summary(record)
@@ -162,6 +219,14 @@ async def update_test_case(project_id: str, tc_id: str, body: TestCaseCreate) ->
 
 @router.delete("/{project_id}/test-cases/{tc_id}")
 async def archive_test_case(project_id: str, tc_id: str) -> dict:
+    if db_enabled():
+        tag = await execute(
+            "UPDATE test_cases SET status='archived', updated_at=now() WHERE id=$1 AND project_id=$2",
+            tc_id, project_id,
+        )
+        if tag == "UPDATE 0":
+            raise HTTPException(404, f"Test case {tc_id!r} not found")
+        return {"archived": True}
     record = _store.get(project_id, {}).get(tc_id)
     if not record:
         raise HTTPException(404, f"Test case {tc_id!r} not found")
@@ -172,21 +237,33 @@ async def archive_test_case(project_id: str, tc_id: str) -> dict:
 
 @router.post("/{project_id}/test-cases/{tc_id}/clone", status_code=201)
 async def clone_test_case(project_id: str, tc_id: str) -> dict:
+    if db_enabled():
+        original = await fetchrow("SELECT * FROM test_cases WHERE id=$1 AND project_id=$2", tc_id, project_id)
+        if not original:
+            raise HTTPException(404, f"Test case {tc_id!r} not found")
+        orig = dict(original)
+        new_id = str(uuid.uuid4())
+        spec = orig["spec"]
+        if isinstance(spec, str):
+            spec = json.loads(spec)
+        spec["id"] = new_id
+        spec["name"] = f"{orig['name']} (copy)"
+        row = await fetchrow(
+            """INSERT INTO test_cases (id,project_id,status,version,name,priority,tags,spec,created_at,updated_at)
+               VALUES ($1,$2,'draft',1,$3,$4,$5::jsonb,$6::jsonb,now(),now()) RETURNING *""",
+            new_id, project_id, spec["name"], orig.get("priority", "P1"),
+            json.dumps(orig.get("tags") or []), json.dumps(spec),
+        )
+        return _row_to_summary(dict(row))  # type: ignore[arg-type]
     original = _store.get(project_id, {}).get(tc_id)
     if not original:
         raise HTTPException(404, f"Test case {tc_id!r} not found")
     new_id = str(uuid.uuid4())
     new_spec = {**original["spec"], "id": new_id, "name": f"{original['spec']['name']} (copy)"}
     record = {
-        "id": new_id,
-        "project_id": project_id,
-        "status": "draft",
-        "version": 1,
-        "spec": new_spec,
-        "last_run_status": None,
-        "last_run_at": None,
-        "created_at": _utcnow(),
-        "updated_at": _utcnow(),
+        "id": new_id, "project_id": project_id, "status": "draft", "version": 1,
+        "spec": new_spec, "last_run_status": None, "last_run_at": None,
+        "created_at": _utcnow(), "updated_at": _utcnow(),
     }
     _store.setdefault(project_id, {})[new_id] = record
     return _to_summary(record)

@@ -13,12 +13,13 @@ from api.routes import runs, test_cases, ws, artifacts, projects, test_cases_cru
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from api.db import init_pool, close_pool
+    await init_pool()
     pool_size = int(os.environ.get("HAWKEYE_POOL_SIZE", "0"))
     if pool_size > 0:
         from api.container_pool import container_pool
         await container_pool.start()
     job_queue.start()
-    # Seed YAML test cases into the default project on startup.
     from api.routes.test_cases_crud import seed_from_yaml_dir
     seed_from_yaml_dir(project_id="default")
     yield
@@ -26,6 +27,7 @@ async def lifespan(app: FastAPI):
     if pool_size > 0:
         from api.container_pool import container_pool
         await container_pool.stop()
+    await close_pool()
 
 
 app = FastAPI(title="Hawkeye API", version="0.1.0", lifespan=lifespan)
