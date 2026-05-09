@@ -237,7 +237,6 @@ step_screenshots: list[bytes]          # all step screenshots (for Pass 2)
 - [ ] **PostgreSQL persistence** — swap in-memory stores (projects, test_cases, suites, vault, schedules) for real asyncpg-backed tables; Phase 5 used dict-based stores
 - [ ] **Stripe billing** — checkout portal, webhook, plan enforcement on `POST /api/runs`
 - [ ] **Visual baseline approval UI** — side-by-side diff viewer, approve/reject queue
-- [ ] **Eval observability** — MLflow / Arize Phoenix trace instrumentation in `TraceCollector`
 - [ ] **Celery Beat scheduling** — persist cron schedules to Redis/DB and fire via Celery Beat worker
 - [ ] **GitHub Check Run API** — post pass/fail status back to PR; Slack failure notifications
 - [ ] **Organization management UI** — invite members, assign roles, per-org billing
@@ -397,6 +396,7 @@ Full spec: `Docs/workflow.md` §13 (6 tracks, API contracts, SQL DDL, code sketc
 - Extend GitHub push webhook to capture `head_commit.id` and attach to run record
 
 #### Track E — Agent Eval & Benchmarking
+- [ ] **Eval observability** — MLflow / Arize Phoenix trace instrumentation in `TraceCollector`
 - Optional MLflow / Arize Phoenix logging in `TraceCollector`
 - JSONL eval dataset written per run to `artifacts/{run_id}/eval.jsonl`
 - `GET /api/eval/summary` — aggregate pass rate / cost per model
