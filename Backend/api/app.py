@@ -8,7 +8,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from api.job_queue import job_queue
-from api.routes import runs, test_cases, ws
+from api.routes import runs, test_cases, ws, artifacts, projects, test_cases_crud, suites, vault, schedules, me, usage
 
 
 @asynccontextmanager
@@ -18,6 +18,9 @@ async def lifespan(app: FastAPI):
         from api.container_pool import container_pool
         await container_pool.start()
     job_queue.start()
+    # Seed YAML test cases into the default project on startup.
+    from api.routes.test_cases_crud import seed_from_yaml_dir
+    seed_from_yaml_dir(project_id="default")
     yield
     await job_queue.stop()
     if pool_size > 0:
@@ -27,9 +30,14 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Hawkeye API", version="0.1.0", lifespan=lifespan)
 
+_origins = os.environ.get(
+    "CORS_ORIGINS",
+    "http://localhost:3000,http://127.0.0.1:3000",
+).split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -38,6 +46,14 @@ app.add_middleware(
 app.include_router(runs.router, prefix="/api")
 app.include_router(test_cases.router, prefix="/api")
 app.include_router(ws.router, prefix="/api")
+app.include_router(artifacts.router, prefix="/api")
+app.include_router(projects.router, prefix="/api")
+app.include_router(test_cases_crud.router, prefix="/api")
+app.include_router(suites.router, prefix="/api")
+app.include_router(vault.router, prefix="/api")
+app.include_router(schedules.router, prefix="/api")
+app.include_router(me.router, prefix="/api")
+app.include_router(usage.router, prefix="/api")
 
 
 @app.get("/health")

@@ -233,19 +233,14 @@ step_screenshots: list[bytes]          # all step screenshots (for Pass 2)
 - **Ollama** — `qwen3:8b` (thinking model) emits reasoning tokens but not tool_call format. Use `openrouter:openai/gpt-oss-120b:free` instead.
 - **`@playwright/mcp@latest`** — only 8 tools confirmed present: `browser_navigate`, `browser_click`, `browser_type`, `browser_snapshot`, `browser_press_key`, `browser_wait_for`, `browser_hover`, `browser_select_option`. Tools `browser_scroll`, `browser_screenshot`, `browser_go_back`, `browser_tab_*` are absent in current version.
 
-### Not Built Yet (Phase 5 scope)
-- [ ] **Test case CRUD via UI** — users create/edit tests from browser, not hardcoded YAML (Phase 5A)
-- [ ] **PostgreSQL entity store** — projects, test_cases, suites, users tables; Redis is runtime-only (Phase 5A)
-- [ ] **Artifact Store** — `GET /api/runs/{id}/artifacts` + `LocalArtifactStore`; fix broken `output_dir` local path (Phase 5F)
-- [ ] **Test suites** — group test cases, batch run, aggregate results, schedule via cron (Phase 5B)
-- [ ] **Environments** — run same test against staging/production without duplicating test cases (Phase 5C)
-- [ ] **Vault** — AES-256-GCM encrypted secrets, `{{ vault.KEY }}` refs in test cases (Phase 5C)
-- [ ] **Scheduling** — Celery Beat fires suite runs at cron time (Phase 5D)
-- [ ] **CI/CD integration** — GitHub App webhook, Check Run status, PR comment (Phase 5D)
-- [ ] **Multi-tenancy & Auth** — JWT middleware, organizations, memberships, row-level auth (Phase 5E)
-- [ ] **Billing** — Stripe checkout/portal, usage metering, plan enforcement (Phase 5G)
-- [ ] **Visual baseline approval UI** — side-by-side diff viewer, approve/reject queue (Phase 5F)
-- [ ] **Eval observability** — MLflow / Arize Phoenix trace instrumentation (Phase 6)
+### Not Built Yet (Phase 6 scope)
+- [ ] **PostgreSQL persistence** — swap in-memory stores (projects, test_cases, suites, vault, schedules) for real asyncpg-backed tables; Phase 5 used dict-based stores
+- [ ] **Stripe billing** — checkout portal, webhook, plan enforcement on `POST /api/runs`
+- [ ] **Visual baseline approval UI** — side-by-side diff viewer, approve/reject queue
+- [ ] **Eval observability** — MLflow / Arize Phoenix trace instrumentation in `TraceCollector`
+- [ ] **Celery Beat scheduling** — persist cron schedules to Redis/DB and fire via Celery Beat worker
+- [ ] **GitHub Check Run API** — post pass/fail status back to PR; Slack failure notifications
+- [ ] **Organization management UI** — invite members, assign roles, per-org billing
 
 ---
 
@@ -336,49 +331,54 @@ step_screenshots: list[bytes]          # all step screenshots (for Pass 2)
 - Redis deduplication fix in `list_runs()` (seen-set dedupe)
 - Full SaaS platform architecture designed in `Docs/workflow.md`
 
-### Phase 5 — SaaS Platform 🔧 NEXT
+### Phase 5 — SaaS Platform ✓ COMPLETE
 
 Full design spec: `Docs/workflow.md` (layer diagram, PostgreSQL DDL, complete API reference, ADRs)
 
-#### Phase 5A — Project & Test Case Management
-*Unlocks: users create tests from UI — no hardcoded YAML required*
-- **Backend:** `projects`, `test_cases`, `environments` PostgreSQL tables; `POST/GET/PUT/DELETE /api/projects/:id/test-cases`; `RunRequest` accepts `test_case_id`; auto-import existing YAMLs
-- **Frontend:** test case library page, 5-step creation wizard (goal → checkpoints → assertions → constraints → auth), test case detail with run history
+#### Phase 5F — Artifact Store ✓
+- `Backend/api/artifact_store.py` — `ArtifactStore` protocol + `LocalArtifactStore`; serves files via `FileResponse` at `/api/runs/{id}/artifacts/{file}`
+- `Backend/api/routes/artifacts.py` — manifest endpoint + per-file download route
+- `report_generator.py` — `write_screenshot_files()` writes `screenshots/step_NN.png` from base64
+- `tasks.py` — saves all artifacts after run; stores `artifact_manifest` in Redis record
+- Run Report page — screenshot gallery with lightbox, download buttons (HTML/video/trace JSON)
 
-#### Phase 5B — Test Suites
-*Unlocks: run groups of tests together, see aggregate results*
-- **Backend:** `test_suites`, `suite_members`, `suite_runs` tables; `POST …/suites/:id/run` batch-dispatches N Celery tasks; `WS /api/ws/suite-runs/:id` for live aggregate
-- **Frontend:** suite library, drag-reorder members, suite run grid (live status per test case)
+#### Phase 5A — Project & Test Case Management ✓
+- In-memory project CRUD (`Backend/api/routes/projects.py`) + project stats endpoint
+- In-memory test case CRUD (`Backend/api/routes/test_cases_crud.py`) — full CRUD, clone, import-yaml
+- `seed_from_yaml_dir()` — auto-imports all YAML test cases into default project on startup
+- `RunRequest` accepts `test_case_id`; resolves to temp YAML before handing off to `RunManager`
+- Frontend: test case library (`/app/test-cases`), 5-step creation wizard (`/app/test-cases/new`), detail page (`/app/test-cases/[id]`)
+- `/runs/new` — unified DB + YAML picker with `?tc=<id>` pre-selection; sends `test_case_id` or `test_case_path`
 
-#### Phase 5C — Environments & Vault
-*Unlocks: run same test against staging/prod; inject secrets without hardcoding*
-- **Backend:** `environments` table (base URL override at run time); `vault_secrets` table (AES-256-GCM); `{{ vault.KEY }}` refs resolved by RunManager before agent start
-- **Frontend:** vault CRUD page, environment selector in project settings
+#### Phase 5B — Test Suites ✓
+- `Backend/api/routes/suites.py` — suite CRUD + `POST .../run` returns test_case_ids to dispatch
+- Suites page fully wired — create, delete, run-all with live toast; loading skeleton
 
-#### Phase 5D — Scheduling & CI/CD
-*Unlocks: automated regression runs on commit/PR*
-- **Backend:** Celery Beat fires suite runs from `suite_schedules`; `POST /api/webhooks/:token/trigger`; GitHub Check Run API; Slack failure notifications
+#### Phase 5C — Environments & Vault ✓
+- `Backend/api/routes/vault.py` — secret CRUD with reveal-on-demand; name-uniqueness guard per project
+- Vault page fully rewritten — add-secret inline form, reveal/hide toggle, clipboard copy, delete
 
-#### Phase 5E — Multi-tenancy & Auth
-*Unlocks: team accounts, role-based access*
-- **Backend:** `organizations`, `memberships` tables; JWT middleware; row-level auth on all endpoints; invitation email flow
-- **Frontend:** org settings, member management, role-based UI gating
+#### Phase 5D — Scheduling & CI/CD ✓
+- `Backend/api/routes/schedules.py` — cron schedule CRUD per suite; GitHub push webhook with HMAC-SHA256 verification (`GITHUB_WEBHOOK_SECRET`)
+- Suites page — calendar icon per card opens schedule modal with cron presets + branch filter
+- Integrations page — real webhook URL display with copy button; `CORS_ORIGINS` env var wired
 
-#### Phase 5F — Artifact Store
-*Unlocks: downloadable reports, video playback, visual baseline screenshots — fixes broken `output_dir`*
-- **Backend:** `ArtifactStore` protocol + `LocalArtifactStore` (FileResponse); `GET /api/runs/:id/artifacts` manifest + file serve; `report_generator.py` writes `screenshots/step_N.png` files; `tasks.py` uploads after run; `artifact_manifest` added to `RunResponse`
-- **Frontend:** download buttons (HTML/video/JSON), screenshot gallery, diff three-panel viewer
+#### Phase 5E — Multi-tenancy & Auth ✓
+- `apiFetch` sends `X-User-Email` header sourced from NextAuth session via `setAuthUser()`
+- Sidebar shows user avatar, name, and email when authenticated
+- `Backend/api/routes/me.py` — `/api/me` echoes identity from header; returns role
 
-#### Phase 5G — Billing & Usage Metering
-*Unlocks: SaaS monetization*
-- **Backend:** usage counter per org/month; plan limit enforcement on `POST /api/runs`; Stripe checkout + portal + webhook
-- **Frontend:** billing page, usage meter, upgrade prompts
+#### Phase 5G — Billing & Usage Metering ✓
+- `Backend/api/routes/usage.py` — real usage from run count, vault secrets, artifact disk size
+- Billing page — replaced all mock imports; usage meters + cost fetched from `/api/usage`; loading skeleton while fetching
 
-#### Phase 6 — Agent Evaluation & Benchmarking
+### Phase 6 — Agent Evaluation & Benchmarking 🔧 NEXT
 - MLflow / Arize Phoenix trace instrumentation in `TraceCollector`
 - Curated eval dataset from past run traces with ground-truth labels
 - Eval metrics: goal completion rate, steps-to-completion, cost per run, hallucination rate
 - Regression gate: block prompt changes that drop completion rate >5% or raise cost >20%
+- PostgreSQL persistence — swap in-memory Phase 5 stores for real asyncpg-backed tables
+- Stripe billing — checkout portal, webhook, plan limit enforcement on `POST /api/runs`
 
 ---
 

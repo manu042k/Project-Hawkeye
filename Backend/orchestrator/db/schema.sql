@@ -1,15 +1,108 @@
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- ─── ORGANIZATIONS ────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS organizations (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name          TEXT NOT NULL,
+  slug          TEXT UNIQUE NOT NULL,
+  plan          TEXT NOT NULL DEFAULT 'free'
+                  CHECK (plan IN ('free','pro','team','enterprise')),
+  billing_email       TEXT,
+  stripe_customer_id  TEXT,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ─── USERS & MEMBERSHIPS ──────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS users (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email         TEXT UNIQUE NOT NULL,
+  name          TEXT,
+  avatar_url    TEXT,
+  auth_provider TEXT NOT NULL DEFAULT 'google',
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS memberships (
+  user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  org_id     UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  role       TEXT NOT NULL DEFAULT 'developer'
+               CHECK (role IN ('owner','admin','developer','viewer')),
+  joined_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, org_id)
+);
+
+-- ─── PROJECTS ─────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS projects (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id       UUID REFERENCES organizations(id) ON DELETE CASCADE,
+  name         TEXT NOT NULL,
+  slug         TEXT NOT NULL,
+  description  TEXT,
+  created_by   UUID REFERENCES users(id),
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  archived_at  TIMESTAMPTZ,
+  settings     JSONB NOT NULL DEFAULT '{}'
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_project_org_slug ON projects (org_id, slug);
+
+CREATE TABLE IF NOT EXISTS environments (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id  UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name        TEXT NOT NULL,
+  base_url    TEXT NOT NULL,
+  is_default  BOOLEAN NOT NULL DEFAULT false,
+  headers     JSONB NOT NULL DEFAULT '{}',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ─── VAULT ────────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS vault_secrets (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id       UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  key              TEXT NOT NULL,
+  encrypted_value  TEXT NOT NULL,
+  description      TEXT,
+  created_by       UUID REFERENCES users(id),
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (project_id, key)
+);
+
+-- ─── INTEGRATIONS ─────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS integrations (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id  UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  type        TEXT NOT NULL,
+  config      JSONB NOT NULL DEFAULT '{}',
+  enabled     BOOLEAN NOT NULL DEFAULT true,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 
 CREATE TABLE IF NOT EXISTS test_cases (
-    id            VARCHAR(64)  PRIMARY KEY,
+    id            UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id    UUID         REFERENCES projects(id) ON DELETE CASCADE,
+    created_by    UUID         REFERENCES users(id),
+    status        TEXT         NOT NULL DEFAULT 'active'
+                                CHECK (status IN ('active','draft','archived')),
+    version       INT          NOT NULL DEFAULT 1,
     name          VARCHAR(255) NOT NULL,
     suite         VARCHAR(128),
     priority      VARCHAR(4),
     tags          JSONB        DEFAULT '[]',
     spec          JSONB        NOT NULL,
-    created_at    TIMESTAMPTZ  DEFAULT NOW(),
-    updated_at    TIMESTAMPTZ  DEFAULT NOW()
+    last_run_id   TEXT,
+    last_run_status TEXT,
+    last_run_at   TIMESTAMPTZ,
+    created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
+CREATE INDEX IF NOT EXISTS idx_test_cases_project ON test_cases (project_id, status);
 CREATE INDEX IF NOT EXISTS idx_test_cases_suite ON test_cases (suite);
 
 CREATE TABLE IF NOT EXISTS test_runs (

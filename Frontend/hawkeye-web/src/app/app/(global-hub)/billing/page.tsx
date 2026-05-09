@@ -14,9 +14,10 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 
-import type { UsageMeter } from "@/lib/mock-data/billing";
-import { subscription, usageMeters, usagePeriodLabel } from "@/lib/mock-data/billing";
+import { apiClient } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
+
+type UsageMeter = { id: string; label: string; description: string; used: number; limit: number; unit: string };
 
 type BillingTab = "Profile" | "Billing" | "Security" | "Notifications";
 
@@ -46,14 +47,33 @@ function formatLimit(m: UsageMeter) {
 export default function BillingPage() {
   const { data: session } = useSession();
   const [tab, setTab] = useState<BillingTab>("Billing");
-  const [fullName, setFullName] = useState(session?.user?.name ?? "Alex Mitchell");
-  const [email, setEmail] = useState(session?.user?.email ?? "alex@techflow.pro");
+  const [fullName, setFullName] = useState(session?.user?.name ?? "");
+  const [email, setEmail] = useState(session?.user?.email ?? "");
   const [invoiceEmails, setInvoiceEmails] = useState(true);
   const [paymentAlerts, setPaymentAlerts] = useState(true);
   const [usageAlertEmails, setUsageAlertEmails] = useState(false);
+  const [usageMeters, setUsageMeters] = useState<UsageMeter[]>([]);
+  const [usagePeriodLabel, setUsagePeriodLabel] = useState("Current billing period");
+  const [subscription, setSubscription] = useState({ plan: "Pro", price_monthly: 99, next_billing_date: null as string | null });
+  const [costUsd, setCostUsd] = useState(0);
+
+  useEffect(() => {
+    apiClient.getUsage().then((res) => {
+      setUsageMeters(res.meters);
+      setUsagePeriodLabel(res.period);
+      setSubscription(res.subscription);
+      setCostUsd(res.cost_usd);
+    }).catch(() => {});
+  }, []);
+
+  // Keep profile fields in sync with session once it loads
+  useEffect(() => {
+    if (session?.user?.name) setFullName(session.user.name);
+    if (session?.user?.email) setEmail(session.user.email);
+  }, [session?.user?.name, session?.user?.email]);
 
   const primaryMeter = usageMeters[0];
-  const runsPct = meterPct(primaryMeter);
+  const runsPct = primaryMeter ? meterPct(primaryMeter) : 0;
 
   useEffect(() => {
     const syncTabFromHash = () => {
@@ -109,6 +129,7 @@ export default function BillingPage() {
                   <CardDescription>{usagePeriodLabel}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-8 p-6">
+                  {primaryMeter ? (
                   <div className="rounded-xl border border-border/60 bg-muted/20 px-4 py-3">
                     <div className="flex flex-wrap items-end justify-between gap-2">
                       <div>
@@ -116,18 +137,20 @@ export default function BillingPage() {
                         <p className="mt-1 text-lg font-semibold tracking-tight">{primaryMeter.label}</p>
                       </div>
                       <p className="font-mono text-sm text-muted-foreground">
-                        {subscription.usage.used.toLocaleString()} / {subscription.usage.limit.toLocaleString()}{" "}
-                        <span className="text-muted-foreground/80">runs</span>
+                        {primaryMeter.used.toLocaleString()} / {primaryMeter.limit.toLocaleString()}{" "}
+                        <span className="text-muted-foreground/80">{primaryMeter.unit}</span>
                       </p>
                     </div>
                     <div className="mt-3 h-2 w-full rounded-full bg-muted">
                       <div className={cn("h-2 rounded-full bg-primary transition-all")} style={{ width: `${runsPct}%` }} />
                     </div>
                     <p className="mt-2 text-xs text-muted-foreground">
-                      You have used <span className="font-medium text-foreground">{runsPct}%</span> of included test runs this period.
-                      Overage billing applies per your Enterprise agreement if you exceed the limit.
+                      You have used <span className="font-medium text-foreground">{runsPct}%</span> of included test runs this period. Total estimated cost: <span className="font-medium text-foreground">${costUsd.toFixed(4)}</span>.
                     </p>
                   </div>
+                  ) : (
+                    <div className="h-20 rounded-xl border border-border/60 bg-muted/20 animate-pulse" />
+                  )}
 
                   <div className="grid gap-6">
                     {usageMeters.slice(1).map((m) => {
@@ -175,7 +198,7 @@ export default function BillingPage() {
                     </div>
                     <div className="text-right">
                       <div className="text-2xl font-semibold tracking-tight">
-                        ${subscription.priceMonthly}
+                        ${subscription.price_monthly}
                         <span className="text-sm font-normal text-muted-foreground">/mo</span>
                       </div>
                     </div>
@@ -183,7 +206,7 @@ export default function BillingPage() {
 
                   <div className="flex flex-col gap-3 border-t border-border/60 pt-4 sm:flex-row sm:items-center sm:justify-between">
                     <div className="text-sm text-muted-foreground">
-                      Next billing date: <span className="text-foreground/90">{subscription.nextBillingDate}</span>
+                      Next billing date: <span className="text-foreground/90">{subscription.next_billing_date ?? "—"}</span>
                     </div>
                     <Button variant="outline" onClick={() => toast.message("Billing portal", { description: "Connect Stripe Customer Portal when backend is ready." })}>
                       Manage billing

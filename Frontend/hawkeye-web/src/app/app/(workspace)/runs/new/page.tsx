@@ -11,8 +11,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { useSearchParams } from "next/navigation";
 import { useTestCases, useCreateRun } from "@/lib/api/hooks";
-import { type TestCaseInfo } from "@/lib/api/client";
+import { apiClient, type TestCaseInfo } from "@/lib/api/client";
 
 const MODEL_PRESETS = [
   { value: "nvidia:moonshotai/kimi-k2.6", label: "NVIDIA – Kimi K2.6 (recommended)" },
@@ -23,40 +24,56 @@ const MODEL_PRESETS = [
 ];
 
 export default function NewRunPage() {
+  const searchParams = useSearchParams();
+  const preselectedTcId = searchParams.get("tc"); // from /test-cases/:id "Run" button
+
   const { data: testCases, loading: tcLoading, error: tcError } = useTestCases();
   const { createRun, loading: submitting, error: submitError } = useCreateRun();
 
-  const [selectedPath, setSelectedPath] = useState<string>("");
+  // Unified selector value: "db:{id}" for DB cases, "yaml:{path}" for YAML cases
+  const [selectedValue, setSelectedValue] = useState<string>(
+    preselectedTcId ? `db:${preselectedTcId}` : ""
+  );
   const [model, setModel] = useState(MODEL_PRESETS[0].value);
   const [browser, setBrowser] = useState<"chromium" | "firefox" | "webkit">("chromium");
   const [maxSteps, setMaxSteps] = useState(20);
   const [timeoutSeconds, setTimeoutSeconds] = useState(300);
   const [record, setRecord] = useState(false);
+  const [dbCases, setDbCases] = useState<Array<{ id: string; name: string }>>([]);
 
-  const selectedCase: TestCaseInfo | undefined = testCases?.find((tc) => tc.path === selectedPath);
-
-  // Auto-select first test case when list loads
   useEffect(() => {
-    if (testCases && testCases.length > 0 && !selectedPath) {
-      setSelectedPath(testCases[0].path);
+    apiClient.listProjectTestCases("default").then((res) => setDbCases(res.test_cases)).catch(() => {});
+  }, []);
+
+  const isDbCase = selectedValue.startsWith("db:");
+  const selectedDbId = isDbCase ? selectedValue.slice(3) : null;
+  const selectedYamlPath = !isDbCase && selectedValue ? selectedValue.replace(/^yaml:/, "") : "";
+  const selectedCase: TestCaseInfo | undefined = testCases?.find((tc) => tc.path === selectedYamlPath);
+
+  // Auto-select first available case when lists load (only if nothing pre-selected)
+  useEffect(() => {
+    if (selectedValue) return;
+    if (dbCases.length > 0) {
+      setSelectedValue(`db:${dbCases[0].id}`);
+    } else if (testCases && testCases.length > 0) {
+      setSelectedValue(`yaml:${testCases[0].path}`);
       setBrowser(testCases[0].browser as "chromium" | "firefox" | "webkit");
     }
-  }, [testCases, selectedPath]);
+  }, [dbCases, testCases, selectedValue]);
 
   useEffect(() => {
     if (selectedCase) setBrowser(selectedCase.browser as "chromium" | "firefox" | "webkit");
   }, [selectedCase]);
 
+  const canLaunch = Boolean(selectedValue) && !submitting;
+
   function handleLaunch() {
-    if (!selectedPath) return;
-    createRun({
-      test_case_path: selectedPath,
-      model,
-      browser,
-      record,
-      max_steps: maxSteps,
-      timeout: timeoutSeconds,
-    });
+    if (!selectedValue) return;
+    if (isDbCase && selectedDbId) {
+      createRun({ test_case_id: selectedDbId, model, browser, record, max_steps: maxSteps, timeout: timeoutSeconds });
+    } else {
+      createRun({ test_case_path: selectedYamlPath, model, browser, record, max_steps: maxSteps, timeout: timeoutSeconds });
+    }
   }
 
   return (
@@ -84,22 +101,40 @@ export default function NewRunPage() {
             <div className="space-y-6 lg:col-span-8">
               <div className="space-y-2">
                 <Label>Test Case</Label>
-                {tcLoading ? (
+                {tcLoading && dbCases.length === 0 ? (
                   <div className="h-11 rounded-md border border-border/60 bg-muted/30 animate-pulse" />
                 ) : (
                   <Select
-                    value={selectedPath}
-                    onValueChange={(v) => v && setSelectedPath(v)}
+                    value={selectedValue}
+                    onValueChange={(v) => {
+                      if (!v) return;
+                      setSelectedValue(v);
+                    }}
                   >
                     <SelectTrigger className="h-11 w-full">
                       <SelectValue placeholder="Select a test case..." />
                     </SelectTrigger>
                     <SelectContent>
-                      {(testCases ?? []).map((tc) => (
-                        <SelectItem key={tc.path} value={tc.path}>
-                          {tc.id} — {tc.name}
-                        </SelectItem>
-                      ))}
+                      {dbCases.length > 0 && (
+                        <>
+                          <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Library</div>
+                          {dbCases.map((tc) => (
+                            <SelectItem key={`db:${tc.id}`} value={`db:${tc.id}`}>
+                              {tc.name}
+                            </SelectItem>
+                          ))}
+                        </>
+                      )}
+                      {(testCases ?? []).length > 0 && (
+                        <>
+                          <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">YAML</div>
+                          {(testCases ?? []).map((tc) => (
+                            <SelectItem key={`yaml:${tc.path}`} value={`yaml:${tc.path}`}>
+                              {tc.id} — {tc.name}
+                            </SelectItem>
+                          ))}
+                        </>
+                      )}
                     </SelectContent>
                   </Select>
                 )}
@@ -207,7 +242,7 @@ export default function NewRunPage() {
             </Link>
             <Button
               onClick={handleLaunch}
-              disabled={!selectedPath || submitting}
+              disabled={!canLaunch}
               className="shadow-[0_0_20px_rgba(173,198,255,0.15)]"
             >
               <Play className="size-4" aria-hidden="true" />
