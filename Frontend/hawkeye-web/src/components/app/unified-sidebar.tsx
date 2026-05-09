@@ -90,6 +90,33 @@ function FooterRow({ item, pathname }: { item: GlobalFooterNavItem; pathname: st
   );
 }
 
+type AnchorItem = { href: string; label: string; icon: ComponentType<{ className?: string }> };
+
+function AnchorNavList({ anchors, hash }: { anchors: AnchorItem[]; hash: string }) {
+  return (
+    <>
+      {anchors.map(({ href, label, icon: Icon }) => {
+        const fragment = href.includes("#") ? `#${href.split("#")[1]}` : "";
+        const active = fragment.length > 0 && hash === fragment;
+        return (
+          <Link
+            key={href}
+            href={href}
+            className={cn(
+              "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium tracking-tight transition-colors",
+              "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+              active && "bg-muted text-primary ring-1 ring-border/60"
+            )}
+          >
+            <Icon className="size-4 shrink-0" aria-hidden />
+            {label}
+          </Link>
+        );
+      })}
+    </>
+  );
+}
+
 type HubKey = "projects" | "account" | "billing";
 
 const accountAnchors: Array<{ href: string; label: string; icon: ComponentType<{ className?: string }> }> = [
@@ -204,48 +231,14 @@ export function UnifiedSidebar({ className }: { className?: string }) {
             {hubKey === "account" ? (
               <>
                 <p className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">On this page</p>
-                {accountAnchors.map(({ href, label, icon: Icon }) => {
-                  const expected = href.includes("#") ? `#${href.split("#")[1]}` : "";
-                  const active = expected.length > 0 && hash === expected;
-                  return (
-                    <Link
-                      key={href}
-                      href={href}
-                      className={cn(
-                        "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium tracking-tight transition-colors",
-                        "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-                        active && "bg-muted text-primary ring-1 ring-border/60"
-                      )}
-                    >
-                      <Icon className="size-4 shrink-0" aria-hidden />
-                      {label}
-                    </Link>
-                  );
-                })}
+                <AnchorNavList anchors={accountAnchors} hash={hash} />
               </>
             ) : null}
 
             {hubKey === "billing" ? (
               <>
                 <p className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">On this page</p>
-                {billingAnchors.map(({ href, label, icon: Icon }) => {
-                  const expected = href.includes("#") ? `#${href.split("#")[1]}` : "";
-                  const active = expected.length > 0 && hash === expected;
-                  return (
-                    <Link
-                      key={href}
-                      href={href}
-                      className={cn(
-                        "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium tracking-tight transition-colors",
-                        "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-                        active && "bg-muted text-primary ring-1 ring-border/60"
-                      )}
-                    >
-                      <Icon className="size-4 shrink-0" aria-hidden />
-                      {label}
-                    </Link>
-                  );
-                })}
+                <AnchorNavList anchors={billingAnchors} hash={hash} />
               </>
             ) : null}
           </>

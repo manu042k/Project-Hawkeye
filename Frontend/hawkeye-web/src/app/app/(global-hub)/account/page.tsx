@@ -153,20 +153,18 @@ export default function AccountPage() {
                 <CardDescription>Improve protection for your account.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="flex items-start justify-between gap-6 rounded-lg border border-border/60 bg-card/50 p-4">
-                  <div>
-                    <div className="text-sm font-medium">Multi-factor authentication</div>
-                    <div className="text-xs text-muted-foreground">Require a second factor at sign-in.</div>
+                {([
+                  { label: "Multi-factor authentication", description: "Require a second factor at sign-in.",    checked: mfaEnabled,      onChange: setMfaEnabled },
+                  { label: "Security alerts",             description: "Email alerts for suspicious sign-ins.", checked: securityAlerts,   onChange: setSecurityAlerts },
+                ] as const).map(({ label, description, checked, onChange }) => (
+                  <div key={label} className="flex items-start justify-between gap-6 rounded-lg border border-border/60 bg-card/50 p-4">
+                    <div>
+                      <div className="text-sm font-medium">{label}</div>
+                      <div className="text-xs text-muted-foreground">{description}</div>
+                    </div>
+                    <Switch checked={checked} onCheckedChange={(v) => onChange(!!v)} />
                   </div>
-                  <Switch checked={mfaEnabled} onCheckedChange={(v) => setMfaEnabled(!!v)} />
-                </div>
-                <div className="flex items-start justify-between gap-6 rounded-lg border border-border/60 bg-card/50 p-4">
-                  <div>
-                    <div className="text-sm font-medium">Security alerts</div>
-                    <div className="text-xs text-muted-foreground">Email alerts for suspicious sign-ins.</div>
-                  </div>
-                  <Switch checked={securityAlerts} onCheckedChange={(v) => setSecurityAlerts(!!v)} />
-                </div>
+                ))}
                 <Button
                   variant="outline"
                   className="h-11 w-full justify-center"

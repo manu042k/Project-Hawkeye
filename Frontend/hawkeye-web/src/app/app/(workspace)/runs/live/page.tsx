@@ -1,18 +1,18 @@
 "use client";
 
-import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
-import { CircleDot, Monitor, MoreVertical, Terminal as TerminalIcon, XCircle } from "lucide-react";
+import { CheckCircle2, Monitor, MoreVertical, Terminal as TerminalIcon, XCircle } from "lucide-react";
 
 import { AppTopbar } from "@/components/app/app-topbar";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-import { initialExecutionLog, nextLogLines, type ExecutionLogLine } from "@/lib/mock-data/runs";
+import { initialExecutionLog, nextLogLines, mockCheckpointsTC001, type ExecutionLogLine } from "@/lib/mock-data/runs";
 
 function LogLine({ line }: { line: ExecutionLogLine }) {
   const tone = line.level === "action" ? "text-primary" : line.level === "reasoning" ? "text-foreground" : "text-muted-foreground";
@@ -27,8 +27,7 @@ function LogLine({ line }: { line: ExecutionLogLine }) {
 
 export default function LiveExecutionPage() {
   const [lines, setLines] = useState<ExecutionLogLine[]>(initialExecutionLog);
-  const [step, setStep] = useState<1 | 2 | 3 | 4>(3);
-  const [capturedLabel, setCapturedLabel] = useState("Last captured: 1.2s ago");
+  const [cpIdx, setCpIdx] = useState(0);
   const [abortOpen, setAbortOpen] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -36,10 +35,15 @@ export default function LiveExecutionPage() {
   useEffect(() => {
     let idx = 0;
     const t = setInterval(() => {
-      setCapturedLabel((prev) => (prev.includes("ago") ? "Last captured: just now" : "Last captured: 1.2s ago"));
       setLines((cur) => {
         if (idx >= nextLogLines.length) return cur;
         const next = [...cur, nextLogLines[idx]];
+        // S1 completes at line 0 ("Checkpoint S1 completed")
+        if (idx === 0) setCpIdx(1);
+        // S2 completes at line 3 ("Checkpoint S2 completed")
+        if (idx === 3) setCpIdx(2);
+        // S3 completes at line 6 ("Checkpoint S3 completed")
+        if (idx === 6) setCpIdx(3);
         idx += 1;
         return next;
       });
@@ -53,7 +57,7 @@ export default function LiveExecutionPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <AppTopbar title="Live execution" subtitle="Checkout flow · Guest · Run #4052" />
+      <AppTopbar title="Live execution" subtitle="TC-001 · Wikipedia · Run run-wiki-001" />
 
       <main className="flex-1 min-h-0 overflow-y-auto px-6 py-8">
         <div className="mx-auto max-w-[1600px] space-y-6">
@@ -61,7 +65,7 @@ export default function LiveExecutionPage() {
             <p className="text-sm text-muted-foreground">
               <span className="text-foreground/90">Test runs</span>
               <span className="mx-2 text-border">/</span>
-              Run #4052
+              run-wiki-001
             </p>
             <span className="inline-flex items-center gap-2 rounded-full border border-amber-500/25 bg-amber-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-amber-400">
               <span className="size-1.5 rounded-full bg-amber-400" />
@@ -70,40 +74,60 @@ export default function LiveExecutionPage() {
           </div>
 
           <Card className="border-border/60 bg-card/60">
-            <CardContent className="py-6">
-              <div className="relative max-w-3xl">
-                <div className="absolute left-0 top-4 h-0.5 w-full bg-border/60" />
-                <div className="absolute left-0 top-4 h-0.5 w-[66%] bg-primary/70" />
+            <CardContent className="py-5">
+              <div className="flex flex-wrap items-center gap-6 mb-5 px-1 text-sm">
+                <span className="text-muted-foreground">
+                  <span className="font-semibold text-foreground font-mono">{Math.min(lines.length, 20)}</span>
+                  {" / 20 steps"}
+                </span>
+                <span className="text-muted-foreground">
+                  {"Cost "}
+                  <span className="font-semibold text-foreground font-mono">$0.004</span>
+                </span>
+                <span className="text-muted-foreground">
+                  {"Tokens "}
+                  <span className="font-semibold text-foreground font-mono">13,732</span>
+                </span>
+              </div>
 
-                <div className="flex items-start justify-between">
-                  {[
-                    { n: 1, label: "Planning" },
-                    { n: 2, label: "Navigating" },
-                    { n: 3, label: "Interacting" },
-                    { n: 4, label: "Verifying" },
-                  ].map((s) => {
-                    const done = s.n < step;
-                    const active = s.n === step;
-                    return (
-                      <div key={s.n} className="relative flex w-24 flex-col items-center gap-2 bg-background px-2">
-                        <div
-                          className={
-                            done
-                              ? "inline-flex size-8 items-center justify-center rounded-full bg-emerald-400 text-background"
-                              : active
-                                ? "inline-flex size-8 items-center justify-center rounded-full border-2 border-primary bg-background"
-                                : "inline-flex size-8 items-center justify-center rounded-full border border-border/60 bg-card text-muted-foreground"
-                          }
-                        >
-                          {done ? "✓" : active ? <CircleDot className="size-4 text-primary" aria-hidden="true" /> : s.n}
-                        </div>
-                        <div className={`text-xs font-semibold ${done ? "text-emerald-400" : active ? "text-foreground" : "text-muted-foreground"}`}>
-                          {s.label}
-                        </div>
+              <div className="flex flex-col gap-2">
+                {mockCheckpointsTC001.map((cp, idx) => {
+                  const done = idx < cpIdx;
+                  const active = idx === cpIdx;
+                  return (
+                    <div
+                      key={cp.id}
+                      className={cn(
+                        "flex items-start gap-3 rounded-lg px-3 py-2.5 text-sm",
+                        active ? "bg-primary/8 border border-primary/20" : done ? "bg-card/40" : "opacity-50"
+                      )}
+                    >
+                      <div
+                        className={cn(
+                          "mt-0.5 shrink-0 size-5 rounded-full flex items-center justify-center text-[10px] font-bold",
+                          done
+                            ? "bg-emerald-500 text-background"
+                            : active
+                              ? "border-2 border-primary text-primary"
+                              : "border border-border/60 text-muted-foreground"
+                        )}
+                      >
+                        {done ? <CheckCircle2 className="size-3" /> : cp.id}
                       </div>
-                    );
-                  })}
-                </div>
+                      <div className="min-w-0 flex-1">
+                        <div className={cn("font-medium", done ? "text-emerald-400" : active ? "text-foreground" : "text-muted-foreground")}>
+                          {cp.description}
+                        </div>
+                        {active && (
+                          <div className="mt-0.5 text-xs text-muted-foreground">{cp.success_signal}</div>
+                        )}
+                      </div>
+                      {done && (
+                        <Badge variant="secondary" className="shrink-0 text-[10px]">done</Badge>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </CardContent>
           </Card>
@@ -139,34 +163,17 @@ export default function LiveExecutionPage() {
               <CardHeader className="flex flex-row items-center justify-between gap-4 border-b border-border/60">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <Monitor className="size-4 text-muted-foreground" aria-hidden="true" />
-                  Live Browser Feed
+                  Browser Feed
                 </CardTitle>
-                <span className="rounded-md border border-border/60 bg-card/60 px-2.5 py-1 text-xs text-muted-foreground">
-                  {capturedLabel}
-                </span>
+                <Badge variant="outline" className="text-xs text-muted-foreground">Phase 3</Badge>
               </CardHeader>
-              <CardContent className="flex flex-1 flex-col items-center justify-center bg-background/30 p-5">
-                <div className="w-full max-w-3xl">
-                  <div className="flex items-center gap-2 rounded-t-lg border-x border-t border-border/60 bg-muted/40 p-2">
-                    <div className="flex gap-1.5 px-2">
-                      <span className="size-3 rounded-full bg-rose-500/80" />
-                      <span className="size-3 rounded-full bg-amber-500/80" />
-                      <span className="size-3 rounded-full bg-emerald-500/80" />
-                    </div>
-                    <div className="flex-1 rounded border border-border/60 bg-card px-3 py-1 text-center font-mono text-xs text-muted-foreground">
-                      https://demo-store.testops.com/product/wh-1000xm4
-                    </div>
+              <CardContent className="flex flex-1 flex-col items-center justify-center bg-background/30 p-8 min-h-[420px]">
+                <div className="text-center space-y-3">
+                  <div className="inline-flex size-14 items-center justify-center rounded-full bg-muted/60">
+                    <Monitor className="size-7 text-muted-foreground/50" aria-hidden="true" />
                   </div>
-                  <div className="relative aspect-video overflow-hidden rounded-b-lg border border-border/60 bg-card">
-                    <Image
-                      alt="E-commerce product page preview"
-                      src="https://lh3.googleusercontent.com/aida-public/AB6AXuAcmtRa0Ei8gnHZwC89n81KP-yZTe96llMAA-7AYiUNNN1vgq-Lp_58bUxEEQYM9kIGFlGXku3usTBqbnD6-1qzlXBV6bVDkdH63F3ViSvGdFrbk6YqDUuS8Bl1jFjgENW6-WeJ0ToyNJ95iSw1gprumj1o3hdyMhPnu3may0zw5Sc7lG0yMFnGEORSc8qjfX88GSImZmo3u1AQx_rPz6NYH3PMVMedn4TS93uD3ujWMfFr-iGS7cR3VgiHMkr1hMDt9ej6LPakkW4"
-                      fill
-                      className="object-cover opacity-90"
-                    />
-                    <div className="pointer-events-none absolute inset-0 bg-black/20" />
-                    <div className="pointer-events-none absolute bottom-[20%] right-[15%] flex h-10 w-[120px] items-center justify-center rounded-lg border-2 border-primary bg-primary/10 shadow-[0_0_15px_rgba(173,198,255,0.35)]" />
-                  </div>
+                  <div className="text-sm font-medium text-muted-foreground">Live VNC stream</div>
+                  <div className="text-xs text-muted-foreground/70">Available in Phase 3</div>
                 </div>
 
                 <div className="mt-auto self-end pt-5">
@@ -195,7 +202,7 @@ export default function LiveExecutionPage() {
                           variant="destructive"
                           onClick={() => {
                             setAbortOpen(false);
-                            setStep(4);
+                            setCpIdx(mockCheckpointsTC001.length);
                           }}
                         >
                           Abort run
@@ -212,4 +219,3 @@ export default function LiveExecutionPage() {
     </div>
   );
 }
-

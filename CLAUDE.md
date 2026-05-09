@@ -65,7 +65,20 @@ Project-Hawkeye/
 │   │   │   ├── launch_browser.py
 │   │   │   └── supervisord.conf
 │   │   └── examples/              # Example scripts
-│   └── pyproject.toml             # Poetry config
+│   ├── orchestrator/              # Phase 1 agent harness (CLI-only, no API yet)
+│   │   ├── agent/                 # LangGraph StateGraph (nodes, edges, graph, prompt_builder)
+│   │   ├── models/                # TestCase, AgentState, StepTrace, RunResult dataclasses
+│   │   ├── runner/                # RunManager — full test lifecycle orchestration
+│   │   ├── tools/                 # Custom tools: wait_for_stable, assert_text_present, etc.
+│   │   ├── mcp/                   # PlaywrightMcpClient (stdio transport)
+│   │   ├── cdp/                   # Chrome DevTools Protocol session
+│   │   ├── trace/                 # Per-step trace collector (tokens, latency, cost)
+│   │   ├── assertions/            # AssertionEngine (content + console types)
+│   │   ├── llm/                   # LLM provider factory (Ollama / Groq)
+│   │   ├── loader/                # YAML test case loader
+│   │   ├── cli/                   # Click CLI entry point
+│   │   └── test_cases/            # wikipedia_search.yaml (TC-001), amazon_add_to_cart.yaml (TC-002)
+│   └── pyproject.toml             # uv / pyproject config
 │
 ├── Docs/                          # Architecture & design docs
 │   ├── SystemArchitecture.md
@@ -92,6 +105,7 @@ Project-Hawkeye/
   - Test suites, visual baselines, vault, settings/integrations
   - Middleware route protection, JWT validation, OAuth (Google/GitHub)
   - Zustand stores for project context and theme
+  - Phase 1 mock data (dashboard, runs, suites) shaped to match backend API types exactly
 - [x] **Sandbox container image** — Dockerfile with Xvfb, x11vnc, websockify, noVNC, Playwright, supervisord
 - [x] **SandboxManager** — Spawn/stop Docker containers, random host port mapping, health checks
 - [x] **VNC streaming** — Xvfb → x11vnc (view-only) → websockify → noVNC HTML client
@@ -100,6 +114,17 @@ Project-Hawkeye/
 - [x] **MCP config generation** — Dynamic server entries for chrome-devtools-mcp + @playwright/mcp
 - [x] **CLI** — `hawkeye-sandbox spawn --url <URL> --browser chromium [--record]`
 - [x] **PoC LLM integration** — Groq API + Playwright MCP stdio in `test_spawn_all_browsers_groq_mcp.py`
+- [x] **Agent loop engine** — LangGraph StateGraph (observe→reason→act→goal_check→error_handler→finalize) in `Backend/orchestrator/agent/`
+- [x] **Test case YAML format** — Pydantic schema in `Backend/orchestrator/models/test_case.py`; TC-001 + TC-002 YAML files ready
+- [x] **CLI runner** — `python -m orchestrator run --test <file.yaml>` via `Backend/orchestrator/cli/main.py`
+- [x] **Custom tools** — `wait_for_stable`, `assert_text_present`, `get_console_errors`, `report_step_result` in `Backend/orchestrator/tools/`
+- [x] **MCP client** — `PlaywrightMcpClient` (stdio transport) in `Backend/orchestrator/mcp/`
+- [x] **CDP session** — Chrome DevTools Protocol session manager in `Backend/orchestrator/cdp/`
+- [x] **Trace collector** — Per-step token/latency/cost tracking in `Backend/orchestrator/trace/`
+- [x] **Assertion engine** — Content + console assertion types in `Backend/orchestrator/assertions/`
+- [x] **Phase 1 smoke test cases** — `wikipedia_search.yaml` (TC-001) and `amazon_add_to_cart.yaml` (TC-002)
+
+> **Phase 1 exit criteria status:** Backend ready. Pending real Ollama/Groq run against live Docker sandbox to confirm both test cases pass end-to-end from CLI.
 
 #### Phase 1 Orchestrator — Complete ✓ (branch: `feat/phase1-orchestrator`)
 - [x] **Data models** — `orchestrator/models/` — `TestCase`, `AgentState`, `RunResult`, `StepTrace`, `ErrorInfo` (Pydantic + dataclasses)
@@ -143,22 +168,21 @@ Project-Hawkeye/
 - **`@playwright/mcp@latest`** — only 8 tools confirmed present: `browser_navigate`, `browser_click`, `browser_type`, `browser_snapshot`, `browser_press_key`, `browser_wait_for`, `browser_hover`, `browser_select_option`. Tools `browser_scroll`, `browser_screenshot`, `browser_go_back`, `browser_tab_*` are absent in current version.
 
 ### Not Built Yet
-- [ ] **Orchestrator API** — FastAPI service
-- [ ] **Database** — PostgreSQL schema (test_cases, test_runs, agent_traces, etc.)
-- [ ] **Docker bridge network** — hawkeye-net with container DNS
+- [ ] **Orchestrator HTTP API** — FastAPI service (Phase 3)
+- [ ] **Docker bridge network** — hawkeye-net with container DNS (Phase 3)
 - [ ] **Reverse proxy** — Nginx routing noVNC by run ID
-- [ ] **Tracing/observability** — Full per-step token/latency/cost tracking (Phase 2)
-- [ ] **Assertion engine (advanced)** — Visual, state, network, a11y, performance types (Phase 2)
 - [ ] **Container pool** — Pre-warmed containers
-- [ ] **Frontend ↔ backend wiring** — All pages use mock data; no real API calls
-- [ ] **CI/CD integration** — GitHub Actions webhook
-- [ ] **Billing** — Stripe integration
+- [ ] **Frontend ↔ backend wiring** — All pages use mock data; no real API calls (Phase 4)
+- [ ] **WebSocket live trace streaming** — real-time agent trace in Live Execution page (Phase 3)
+- [ ] **CI/CD integration** — GitHub Actions webhook (Phase 4)
+- [ ] **Billing** — Stripe integration (Phase 4)
+- [ ] **Extended assertion types** — visual (pixelmatch), network, a11y, performance (Phase 2)
 
 ---
 
 ## Phased Roadmap
 
-### Phase 1 — CLI Agent Harness ✅ COMPLETE
+### Phase 1 — CLI Agent Harness ✓ COMPLETE
 
 **Primary model:** `openrouter:openai/gpt-oss-120b:free` — free tier, reliable tool calling, ~$0.03/run
 
@@ -228,16 +252,14 @@ python -m hawkeye_sandbox --url https://example.com --all   # All browsers
 set GROQ_API_KEY=<key>
 python scripts/test_spawn_all_browsers_groq_mcp.py --url https://example.com
 
-# Orchestrator (Phase 1 — BUILT, run from Backend/ directory)
+# Orchestrator CLI (run from Backend/ directory)
 cd Backend
-
-# Install/sync dependencies
 uv sync --extra dev
 
 # Validate a test case YAML
 python -m orchestrator validate --test orchestrator/test_cases/wikipedia_search.yaml
 
-# List available Playwright MCP tools (useful for debugging tool name changes)
+# List available Playwright MCP tools
 python -m orchestrator list-tools
 
 # Run TC-001 Wikipedia (PASSING)
@@ -250,16 +272,10 @@ OPENROUTER_API_KEY=$(grep '^OPENROUTER_API_KEY=' .env | cut -d= -f2-) python -m 
   --test orchestrator/test_cases/saucedemo_cart.yaml \
   --model openrouter:openai/gpt-oss-120b:free --verbose
 
-# Run any test with MP4 recording saved to artifacts/
+# Run with MP4 recording
 OPENROUTER_API_KEY=$(grep '^OPENROUTER_API_KEY=' .env | cut -d= -f2-) python -m orchestrator run \
   --test orchestrator/test_cases/saucedemo_cart.yaml \
   --model openrouter:openai/gpt-oss-120b:free --verbose --record
-
-# Run unit tests (no external deps)
-pytest tests/unit/ -v
-
-# Run integration tests (requires running Docker)
-pytest tests/integration/ -v -m integration
 ```
 
 ---

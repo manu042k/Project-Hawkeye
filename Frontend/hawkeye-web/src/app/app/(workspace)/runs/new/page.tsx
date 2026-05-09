@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { CloudUpload, Link as LinkIcon, Play, Settings2 } from "lucide-react";
+import { Link as LinkIcon, Play, Settings2 } from "lucide-react";
 
 import { AppTopbar } from "@/components/app/app-topbar";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -10,20 +10,58 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Slider } from "@/components/ui/slider";
-import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { mockCheckpointsTC001, mockCheckpointsTC002, type Checkpoint } from "@/lib/mock-data/runs";
+
+type Preset = {
+  url: string;
+  browser: "chromium" | "firefox" | "webkit";
+  goal: string;
+  maxSteps: number;
+  timeout: number;
+  checkpoints: Checkpoint[];
+};
+
+const TEST_CASE_PRESETS: Record<string, Preset> = {
+  "TC-001": {
+    url: "https://www.wikipedia.org",
+    browser: "chromium",
+    goal: "Starting from the Wikipedia homepage, search for 'artificial intelligence', open the article, and scroll through multiple sections.",
+    maxSteps: 20,
+    timeout: 600,
+    checkpoints: mockCheckpointsTC001,
+  },
+  "TC-002": {
+    url: "https://www.amazon.com",
+    browser: "chromium",
+    goal: "Starting from the Amazon homepage, search for 'wireless bluetooth headphones', open any product listing, add the product to the cart, navigate to the cart, and verify the item is present in the cart.",
+    maxSteps: 35,
+    timeout: 480,
+    checkpoints: mockCheckpointsTC002,
+  },
+};
 
 export default function NewRunPage() {
   const [targetUrl, setTargetUrl] = useState("");
   const [notes, setNotes] = useState("");
   const [environment, setEnvironment] = useState("Staging");
-  const [device, setDevice] = useState("Desktop Chrome (1920x1080)");
-  const [bypassLogin, setBypassLogin] = useState(true);
-  /** 1–100 per UI-flow: higher = stricter visual matching (maps to backend tolerance policy). */
-  const [visualStrictness, setVisualStrictness] = useState(75);
+  const [selectedTestCase, setSelectedTestCase] = useState<string>("custom");
+  const [browser, setBrowser] = useState<"chromium" | "firefox" | "webkit">("chromium");
+  const [maxSteps, setMaxSteps] = useState(20);
+  const [timeoutSeconds, setTimeoutSeconds] = useState(120);
+
+  useEffect(() => {
+    if (selectedTestCase === "custom") return;
+    const p = TEST_CASE_PRESETS[selectedTestCase];
+    if (!p) return;
+    setTargetUrl(p.url);
+    setBrowser(p.browser);
+    setNotes(p.goal);
+    setMaxSteps(p.maxSteps);
+    setTimeoutSeconds(p.timeout);
+  }, [selectedTestCase]);
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
@@ -35,7 +73,7 @@ export default function NewRunPage() {
             <div>
               <h2 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">Configure test</h2>
               <p className="mt-2 text-muted-foreground">
-                Define parameters and assertions for your visual baseline test.
+                Select a test case or configure a custom goal and execution parameters.
               </p>
             </div>
             <Link href="/app/runs/live" className={cn(buttonVariants({ variant: "secondary" }), "shrink-0")}>
@@ -45,6 +83,23 @@ export default function NewRunPage() {
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
             <div className="space-y-6 lg:col-span-8">
+              <div className="space-y-2">
+                <Label>Test Case</Label>
+                <Select
+                  value={selectedTestCase}
+                  onValueChange={(v) => v && setSelectedTestCase(v)}
+                >
+                  <SelectTrigger className="h-11 w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="custom">Custom (manual)</SelectItem>
+                    <SelectItem value="TC-001">TC-001 — Wikipedia: search and scroll</SelectItem>
+                    <SelectItem value="TC-002">TC-002 — Amazon: add to cart</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div className="space-y-2">
                 <Label>Target URL</Label>
                 <div className="relative">
@@ -59,32 +114,30 @@ export default function NewRunPage() {
               </div>
 
               <div className="space-y-2">
-                <Label>Test Objective & Notes</Label>
+                <Label>Goal</Label>
                 <Textarea
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Describe the purpose of this run. E.g., 'Verify checkout flow visual stability post CSS refactor.'"
+                  placeholder="Describe the goal in natural language. E.g., 'Search for a product and verify it appears in search results.'"
                   className="min-h-40 resize-y"
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label>Reference Materials</Label>
-                <button
-                  type="button"
-                  onClick={() => toast.message("Static UI demo", { description: "File uploads are not persisted in this build." })}
-                  className="group flex w-full flex-col items-center justify-center rounded-xl border-2 border-dashed border-border/60 bg-card/40 p-8 text-center transition-colors hover:bg-card/60"
-                >
-                  <div className="mb-4 inline-flex size-12 items-center justify-center rounded-full bg-muted/60 text-muted-foreground transition-transform group-hover:scale-105">
-                    <CloudUpload className="size-6" aria-hidden="true" />
-                  </div>
-                  <div className="text-base font-semibold">Drag & drop design mocks</div>
-                  <div className="mt-1 text-sm text-muted-foreground">or click to browse from your computer</div>
-                  <div className="mt-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    JPG, PNG, PDF up to 50MB
-                  </div>
-                </button>
-              </div>
+              {selectedTestCase !== "custom" && TEST_CASE_PRESETS[selectedTestCase] && (
+                <div className="rounded-lg border border-border/60 bg-card/40 p-4 space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Checkpoints</p>
+                  <ul className="space-y-1.5">
+                    {TEST_CASE_PRESETS[selectedTestCase].checkpoints.map((cp) => (
+                      <li key={cp.id} className="flex items-start gap-2 text-sm">
+                        <span className="mt-0.5 font-mono text-[10px] font-semibold text-primary bg-primary/10 rounded px-1.5 py-0.5 shrink-0">
+                          {cp.id}
+                        </span>
+                        <span className="text-muted-foreground">{cp.description}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
 
             <div className="space-y-6 lg:col-span-4">
@@ -94,13 +147,13 @@ export default function NewRunPage() {
                     <Settings2 className="size-4 text-primary" aria-hidden="true" />
                     Execution Settings
                   </CardTitle>
-                  <CardDescription>Environment, device and tolerance settings.</CardDescription>
+                  <CardDescription>Environment, browser, and execution limits.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-5 pt-6">
                   <div className="space-y-2">
                     <Label>Environment</Label>
                     <Select value={environment} onValueChange={(v) => v && setEnvironment(v)}>
-                      <SelectTrigger className="h-11">
+                      <SelectTrigger className="h-11 w-full">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -113,50 +166,43 @@ export default function NewRunPage() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Device Profile</Label>
-                    <Select value={device} onValueChange={(v) => v && setDevice(v)}>
-                      <SelectTrigger className="h-11">
+                    <Label>Browser</Label>
+                    <Select value={browser} onValueChange={(v) => v && setBrowser(v as "chromium" | "firefox" | "webkit")}>
+                      <SelectTrigger className="h-11 w-full">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="Desktop Chrome (1920x1080)">Desktop Chrome (1920x1080)</SelectItem>
-                        <SelectItem value="Desktop Firefox (1920x1080)">Desktop Firefox (1920x1080)</SelectItem>
-                        <SelectItem value="Mobile iOS Safari (iPhone 14)">Mobile iOS Safari (iPhone 14)</SelectItem>
-                        <SelectItem value="Mobile Android Chrome (Pixel 7)">Mobile Android Chrome (Pixel 7)</SelectItem>
-                        <SelectItem value="Tablet Safari (iPad Pro)">Tablet Safari (iPad Pro)</SelectItem>
+                        <SelectItem value="chromium">Chromium</SelectItem>
+                        <SelectItem value="firefox">Firefox</SelectItem>
+                        <SelectItem value="webkit">WebKit</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
 
-                  <div className="flex items-start justify-between gap-4 rounded-lg border border-border/60 bg-background/30 p-4">
-                    <div className="space-y-1">
-                      <div className="text-sm font-medium">Bypass Login</div>
-                      <div className="text-xs text-muted-foreground font-mono">
-                        Injects session cookie to skip auth screen.
-                      </div>
-                    </div>
-                    <Switch checked={bypassLogin} onCheckedChange={setBypassLogin} />
+                  <div className="space-y-2">
+                    <Label>Max Steps</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={maxSteps}
+                      onChange={(e) => setMaxSteps(Number(e.target.value))}
+                      className="h-11"
+                    />
+                    <p className="text-xs text-muted-foreground">Maximum agent steps (20–35 recommended)</p>
                   </div>
 
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label>Visual strictness</Label>
-                      <span className="font-mono text-sm font-semibold text-primary">{visualStrictness}/100</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      Higher values require closer visual matches (stricter diffs). Aligns with UI-flow 1–100 scale; backend maps to pixel or SSIM policy.
-                    </p>
-                    <Slider
-                      value={[visualStrictness]}
-                      onValueChange={(v) => setVisualStrictness(Array.isArray(v) ? (v[0] ?? 1) : v ?? 1)}
-                      min={1}
-                      max={100}
-                      step={1}
+                    <Label>Timeout (seconds)</Label>
+                    <Input
+                      type="number"
+                      min={30}
+                      max={600}
+                      value={timeoutSeconds}
+                      onChange={(e) => setTimeoutSeconds(Number(e.target.value))}
+                      className="h-11"
                     />
-                    <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>1 — permissive</span>
-                      <span>100 — strict</span>
-                    </div>
+                    <p className="text-xs text-muted-foreground">Agent timeout in seconds (120–600)</p>
                   </div>
                 </CardContent>
               </Card>
@@ -169,7 +215,11 @@ export default function NewRunPage() {
             </Link>
             <Link
               href="/app/runs/live"
-              onClick={() => toast.success("Run launched", { description: "Routing to the live execution view." })}
+              onClick={() =>
+                toast.success("Run launched", {
+                  description: `Launching ${selectedTestCase === "custom" ? "custom test" : selectedTestCase} on ${browser}.`,
+                })
+              }
               className={cn(buttonVariants({ variant: "default" }), "shadow-[0_0_20px_rgba(173,198,255,0.15)]")}
             >
               <Play className="size-4" aria-hidden="true" />
@@ -181,4 +231,3 @@ export default function NewRunPage() {
     </div>
   );
 }
-
