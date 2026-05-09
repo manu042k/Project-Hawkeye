@@ -372,13 +372,40 @@ Full design spec: `Docs/workflow.md` (layer diagram, PostgreSQL DDL, complete AP
 - `Backend/api/routes/usage.py` — real usage from run count, vault secrets, artifact disk size
 - Billing page — replaced all mock imports; usage meters + cost fetched from `/api/usage`; loading skeleton while fetching
 
-### Phase 6 — Agent Evaluation & Benchmarking 🔧 NEXT
-- MLflow / Arize Phoenix trace instrumentation in `TraceCollector`
-- Curated eval dataset from past run traces with ground-truth labels
-- Eval metrics: goal completion rate, steps-to-completion, cost per run, hallucination rate
-- Regression gate: block prompt changes that drop completion rate >5% or raise cost >20%
-- PostgreSQL persistence — swap in-memory Phase 5 stores for real asyncpg-backed tables
-- Stripe billing — checkout portal, webhook, plan limit enforcement on `POST /api/runs`
+### Phase 6 — Production Hardening & Eval 🔧 NEXT
+
+Full spec: `Docs/workflow.md` §13 (6 tracks, API contracts, SQL DDL, code sketches, 7-week plan)
+
+#### Track A — PostgreSQL Persistence
+- Swap all Phase 5 in-memory stores (projects, test_cases, suites, vault, schedules) for asyncpg-backed tables
+- Add `api/db.py` pool singleton + `get_conn()` FastAPI dependency
+- AES-256-GCM vault encryption via `VAULT_ENCRYPTION_KEY` env var
+- New tables: `suite_schedules`, `vault_secrets` (with ciphertext + IV columns)
+
+#### Track B — Stripe Billing
+- `Backend/api/routes/billing.py` — checkout session, customer portal, webhook handler
+- Plan enforcement middleware on `POST /api/runs` (429 when limit hit)
+- Frontend: real Stripe portal redirect, upgrade modal on 429
+
+#### Track C — Celery Beat Scheduling
+- `api/tasks_beat.py` — `check_due_schedules` task fires due cron schedules every minute
+- Add `celery beat` service to docker-compose; add `croniter` dependency
+
+#### Track D — GitHub CI Integration
+- `api/github_checks.py` — post Check Run pass/fail to GitHub after each run
+- `api/slack.py` — failure notification to org Slack webhook
+- Extend GitHub push webhook to capture `head_commit.id` and attach to run record
+
+#### Track E — Agent Eval & Benchmarking
+- Optional MLflow / Arize Phoenix logging in `TraceCollector`
+- JSONL eval dataset written per run to `artifacts/{run_id}/eval.jsonl`
+- `GET /api/eval/summary` — aggregate pass rate / cost per model
+- `eval_gate.py` CLI + GitHub Actions workflow: fail CI if pass rate drops >5% or cost rises >20%
+
+#### Track F — Organization Management UI
+- `Backend/api/routes/orgs.py` — member CRUD, invitation flow (signed JWT links)
+- Frontend: org settings, members table, invite flow, role-based UI gating
+- Role matrix: Viewer → Member → Admin → Owner (see `Docs/workflow.md` §13.6)
 
 ---
 
