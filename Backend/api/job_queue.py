@@ -38,6 +38,7 @@ class RunRecord:
     request: RunRequest
     result: RunResult | None = None
     novnc_url: str | None = None
+    error_message: str | None = None
     created_at: str = field(default_factory=_utcnow)
     started_at: str | None = None
     completed_at: str | None = None
@@ -123,8 +124,10 @@ class JobQueue:
                 record.result = result
                 record.status = result.status
             except Exception as exc:
+                logger.exception("Worker: run %s failed: %s", run_id, exc)
                 record.status = "errored"
                 record.result = None
+                record.error_message = str(exc)
                 await ws_manager.broadcast(run_id, {
                     "event_type": "error",
                     "run_id": run_id,

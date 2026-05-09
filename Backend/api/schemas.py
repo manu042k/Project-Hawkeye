@@ -26,6 +26,7 @@ class RunResponse(BaseModel):
     output_dir: str | None = None
     novnc_url: str | None = None
     assertion_results: list[dict] | None = None
+    error_message: str | None = None
 
 
 class RunListResponse(BaseModel):

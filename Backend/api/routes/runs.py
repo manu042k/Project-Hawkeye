@@ -25,6 +25,7 @@ def _record_to_response(record) -> RunResponse:
         termination_reason=result.termination_reason if result else None,
         output_dir=str(result.trace_path.parent) if result and result.trace_path else None,
         novnc_url=record.novnc_url,
+        error_message=record.error_message,
         assertion_results=[
             {
                 "id": ar.assertion_id,

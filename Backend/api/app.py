@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
+from dotenv import load_dotenv
 from fastapi import FastAPI
+
+load_dotenv(Path(__file__).parent.parent / ".env")
 from fastapi.middleware.cors import CORSMiddleware
 
 import os
