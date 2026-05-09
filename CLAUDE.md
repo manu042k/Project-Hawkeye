@@ -233,20 +233,19 @@ step_screenshots: list[bytes]          # all step screenshots (for Pass 2)
 - **Ollama** — `qwen3:8b` (thinking model) emits reasoning tokens but not tool_call format. Use `openrouter:openai/gpt-oss-120b:free` instead.
 - **`@playwright/mcp@latest`** — only 8 tools confirmed present: `browser_navigate`, `browser_click`, `browser_type`, `browser_snapshot`, `browser_press_key`, `browser_wait_for`, `browser_hover`, `browser_select_option`. Tools `browser_scroll`, `browser_screenshot`, `browser_go_back`, `browser_tab_*` are absent in current version.
 
-### Not Built Yet
-- [ ] **Orchestrator HTTP API** — FastAPI service (Phase 3)
-- [ ] **Docker bridge network** — hawkeye-net with container DNS (Phase 3)
-- [ ] **Reverse proxy** — Nginx routing noVNC by run ID
-- [ ] **Container pool** — Pre-warmed containers
-- [ ] **Frontend ↔ backend wiring** — All pages use mock data; no real API calls (Phase 4)
-- [ ] **WebSocket live trace streaming** — real-time agent trace in Live Execution page (Phase 3)
-- [ ] **CI/CD integration** — GitHub Actions webhook (Phase 4)
-- [ ] **Billing** — Stripe integration (Phase 4)
-- [ ] **a11y + performance assertion types** — Phase 3
-- [ ] **Eval observability** — MLflow / Arize Phoenix trace instrumentation (Phase 4.5)
-- [ ] **Eval dataset** — Curated traces from past runs with ground-truth labels (Phase 4.5)
-- [ ] **Prompt tuning pipeline** — Versioned system instructions with eval-gated regression checks (Phase 4.5)
-- [ ] **Benchmark suite** — Automated eval loop with goal completion rate, cost, hallucination metrics (Phase 4.5)
+### Not Built Yet (Phase 5 scope)
+- [ ] **Test case CRUD via UI** — users create/edit tests from browser, not hardcoded YAML (Phase 5A)
+- [ ] **PostgreSQL entity store** — projects, test_cases, suites, users tables; Redis is runtime-only (Phase 5A)
+- [ ] **Artifact Store** — `GET /api/runs/{id}/artifacts` + `LocalArtifactStore`; fix broken `output_dir` local path (Phase 5F)
+- [ ] **Test suites** — group test cases, batch run, aggregate results, schedule via cron (Phase 5B)
+- [ ] **Environments** — run same test against staging/production without duplicating test cases (Phase 5C)
+- [ ] **Vault** — AES-256-GCM encrypted secrets, `{{ vault.KEY }}` refs in test cases (Phase 5C)
+- [ ] **Scheduling** — Celery Beat fires suite runs at cron time (Phase 5D)
+- [ ] **CI/CD integration** — GitHub App webhook, Check Run status, PR comment (Phase 5D)
+- [ ] **Multi-tenancy & Auth** — JWT middleware, organizations, memberships, row-level auth (Phase 5E)
+- [ ] **Billing** — Stripe checkout/portal, usage metering, plan enforcement (Phase 5G)
+- [ ] **Visual baseline approval UI** — side-by-side diff viewer, approve/reject queue (Phase 5F)
+- [ ] **Eval observability** — MLflow / Arize Phoenix trace instrumentation (Phase 6)
 
 ---
 
@@ -299,7 +298,7 @@ step_screenshots: list[bytes]          # all step screenshots (for Pass 2)
 - `reporting/report_generator.py`: per-step screenshots embedded inline in HTML report
 - `reason_node` reliability: context trimming (24K char limit, keep last 3 pairs), exponential backoff for 429/5xx, emergency trim + retry on 413 context overflow, fast-fail on auth/billing errors
 
-### Phase 3 — Multi-Browser & API 🔧 IN PROGRESS
+### Phase 3 — Multi-Browser & API ✓ COMPLETE
 
 **What was built:**
 - FastAPI REST API at `Backend/api/` — `POST /api/runs`, `GET /api/runs`, `GET /api/runs/{id}`, `DELETE /api/runs/{id}`
@@ -324,42 +323,62 @@ step_screenshots: list[bytes]          # all step screenshots (for Pass 2)
 - Redis service + `hawkeye-worker` Celery service added to docker-compose
 - **Tested:** persistence survives API restart; 2 parallel runs confirmed running simultaneously
 
-### Phase 4 — Dashboard Integration & Polish
+### Phase 4 — Frontend ↔ Backend Wiring ✓ COMPLETE
 
-- Wire Next.js frontend to FastAPI (replace all mock data)
-- Real-time noVNC + agent trace in Live Execution page
-- CI/CD webhook integration (GitHub Actions)
-- Visual baseline management with approval workflow (uses Pass 2 diff)
-- Vault secrets injection into test runs
-- Billing/usage metering
-- Suite-level orchestration: parallel runs, dependency chains
-- Cross-run analytics dashboard
+**What was built:**
+- API client layer (`src/lib/api/client.ts`, `hooks.ts`) — typed fetch wrappers + React polling hooks
+- WebSocket hook (`useRunTraceStream`) — StrictMode-safe, defers close on CONNECTING state
+- Dashboard page wired to `useRuns()` — live KPIs, pass rate, active run count
+- New Run page wired to `useTestCases()` + `useCreateRun()` — real test case picker
+- Live Execution page — WebSocket trace stream + noVNC iframe (`resize=scale&autoconnect=1`)
+- Run Report page — `useRun()` + `useRunTraces()`, assertion table, step trace accordion
+- `novnc_url` propagation: `TraceCollector.on_sandbox_ready()` → `ws_emitter` → Redis → frontend poll
+- Redis deduplication fix in `list_runs()` (seen-set dedupe)
+- Full SaaS platform architecture designed in `Docs/workflow.md`
 
-### Phase 4.5 — Agent Evaluation & Benchmarking (parallel to Phase 4)
+### Phase 5 — SaaS Platform 🔧 NEXT
 
-**Goal:** Systematically measure and improve agent quality by building an eval pipeline around real test traces.
+Full design spec: `Docs/workflow.md` (layer diagram, PostgreSQL DDL, complete API reference, ADRs)
 
-#### Observability instrumentation
-- Integrate **MLflow** or **Arize Phoenix** for trace logging — instrument `TraceCollector` to emit per-step spans (tool call, LLM latency, token count, screenshot, assertion result) to the chosen backend
-- Log full agent runs as MLflow experiments or Phoenix traces; tag by test case, model, and pass/fail outcome
-- Dashboard: step latency distribution, tool call frequency, goal completion rate per test case
+#### Phase 5A — Project & Test Case Management
+*Unlocks: users create tests from UI — no hardcoded YAML required*
+- **Backend:** `projects`, `test_cases`, `environments` PostgreSQL tables; `POST/GET/PUT/DELETE /api/projects/:id/test-cases`; `RunRequest` accepts `test_case_id`; auto-import existing YAMLs
+- **Frontend:** test case library page, 5-step creation wizard (goal → checkpoints → assertions → constraints → auth), test case detail with run history
 
-#### Dataset curation
-- Collect agent traces from past runs (PostgreSQL `agent_traces` table + HTML/MD artifacts) into a structured eval dataset
-- Each dataset record: `{ goal, step_observations, actions_taken, final_outcome, assertion_results, screenshots }`
-- Annotate with ground-truth labels: `pass`, `fail`, `blocked`, `hallucinated_action`
-- Target diversity: ≥5 different sites, ≥3 failure modes (bot detection, login wall, element not found), ≥2 models
+#### Phase 5B — Test Suites
+*Unlocks: run groups of tests together, see aggregate results*
+- **Backend:** `test_suites`, `suite_members`, `suite_runs` tables; `POST …/suites/:id/run` batch-dispatches N Celery tasks; `WS /api/ws/suite-runs/:id` for live aggregate
+- **Frontend:** suite library, drag-reorder members, suite run grid (live status per test case)
 
-#### System instruction tuning
-- Systematically vary `prompt_builder.py` system prompt sections (tool conventions, checkpoint rules, goal-check criteria) and measure outcome delta
-- Track prompt version alongside each eval run so changes are attributable
-- Identify failure patterns from trace logs (e.g. agent clicks wrong element, misses `<GOAL_COMPLETE>`) and add targeted prompt rules
+#### Phase 5C — Environments & Vault
+*Unlocks: run same test against staging/prod; inject secrets without hardcoding*
+- **Backend:** `environments` table (base URL override at run time); `vault_secrets` table (AES-256-GCM); `{{ vault.KEY }}` refs resolved by RunManager before agent start
+- **Frontend:** vault CRUD page, environment selector in project settings
 
-#### Evaluation & optimization loop
-- Define eval metrics: **goal completion rate**, **steps-to-completion**, **cost per run**, **hallucination rate** (tool args referencing non-existent refs), **false GOAL_COMPLETE rate**
-- Run evals via MLflow `mlflow.evaluate()` or Arize Phoenix `run_evals()` against the curated dataset
-- Regression gate: block prompt changes that drop completion rate > 5% or increase cost > 20%
-- Publish eval reports to `artifacts/evals/` alongside existing run artifacts
+#### Phase 5D — Scheduling & CI/CD
+*Unlocks: automated regression runs on commit/PR*
+- **Backend:** Celery Beat fires suite runs from `suite_schedules`; `POST /api/webhooks/:token/trigger`; GitHub Check Run API; Slack failure notifications
+
+#### Phase 5E — Multi-tenancy & Auth
+*Unlocks: team accounts, role-based access*
+- **Backend:** `organizations`, `memberships` tables; JWT middleware; row-level auth on all endpoints; invitation email flow
+- **Frontend:** org settings, member management, role-based UI gating
+
+#### Phase 5F — Artifact Store
+*Unlocks: downloadable reports, video playback, visual baseline screenshots — fixes broken `output_dir`*
+- **Backend:** `ArtifactStore` protocol + `LocalArtifactStore` (FileResponse); `GET /api/runs/:id/artifacts` manifest + file serve; `report_generator.py` writes `screenshots/step_N.png` files; `tasks.py` uploads after run; `artifact_manifest` added to `RunResponse`
+- **Frontend:** download buttons (HTML/video/JSON), screenshot gallery, diff three-panel viewer
+
+#### Phase 5G — Billing & Usage Metering
+*Unlocks: SaaS monetization*
+- **Backend:** usage counter per org/month; plan limit enforcement on `POST /api/runs`; Stripe checkout + portal + webhook
+- **Frontend:** billing page, usage meter, upgrade prompts
+
+#### Phase 6 — Agent Evaluation & Benchmarking
+- MLflow / Arize Phoenix trace instrumentation in `TraceCollector`
+- Curated eval dataset from past run traces with ground-truth labels
+- Eval metrics: goal completion rate, steps-to-completion, cost per run, hallucination rate
+- Regression gate: block prompt changes that drop completion rate >5% or raise cost >20%
 
 ---
 

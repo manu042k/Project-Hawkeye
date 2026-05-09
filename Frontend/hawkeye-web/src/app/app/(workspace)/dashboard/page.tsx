@@ -5,8 +5,7 @@ import Link from "next/link";
 import { MoreVertical, Plus, Search } from "lucide-react";
 
 import { AppTopbar } from "@/components/app/app-topbar";
-import { Badge } from "@/components/ui/badge";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   DropdownMenu,
@@ -18,11 +17,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
-import { dashboardMetrics, recentActivity, type ActivityStatus } from "@/lib/mock-data/dashboard";
 import { useProjectStore } from "@/lib/project/store";
+import { useRuns, useDeleteRun } from "@/lib/api/hooks";
+import { type RunStatus, type RunSummary } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 
-function StatusPill({ status }: { status: ActivityStatus }) {
+function StatusPill({ status }: { status: RunStatus }) {
   const cfg = useMemo(() => {
     switch (status) {
       case "passed":
@@ -48,21 +48,52 @@ function StatusPill({ status }: { status: ActivityStatus }) {
   );
 }
 
+function formatDuration(s: number | null) {
+  if (s == null) return "—";
+  return `${s.toFixed(1)}s`;
+}
+
+function formatDate(iso: string) {
+  const d = new Date(iso);
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return "Just now";
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffH = Math.floor(diffMin / 60);
+  if (diffH < 24) return `${diffH}h ago`;
+  return d.toLocaleDateString();
+}
+
 export default function DashboardPage() {
   const project = useProjectStore((s) => s.currentProject);
   const [activityFilter, setActivityFilter] = useState("");
+  const { data: runs, loading, error } = useRuns();
+  const { deleteRun } = useDeleteRun();
+
+  const metrics = useMemo(() => {
+    if (!runs) return null;
+    const total = runs.length;
+    const passed = runs.filter((r) => r.status === "passed").length;
+    const active = runs.filter((r) => r.status === "running" || r.status === "queued").length;
+    const passRate = total > 0 ? `${Math.round((passed / total) * 100)}%` : "—";
+    return [
+      { label: "Total Runs", value: String(total), delta: `${passed} passed`, tone: "primary" as const },
+      { label: "Pass Rate", value: passRate, delta: `${passed} / ${total}`, tone: "success" as const },
+      { label: "Active Runs", value: String(active), delta: active > 0 ? "In progress" : "Idle", tone: "warning" as const },
+    ];
+  }, [runs]);
 
   const filteredActivity = useMemo(() => {
     const q = activityFilter.trim().toLowerCase();
-    if (!q) return recentActivity;
-    return recentActivity.filter(
+    const list = runs ?? [];
+    if (!q) return list;
+    return list.filter(
       (row) =>
-        row.runId.toLowerCase().includes(q) ||
-        row.testName.toLowerCase().includes(q) ||
-        row.targetUrl.toLowerCase().includes(q) ||
-        row.dateLabel.toLowerCase().includes(q)
+        row.run_id.toLowerCase().includes(q) ||
+        (row.test_name ?? "").toLowerCase().includes(q)
     );
-  }, [activityFilter]);
+  }, [activityFilter, runs]);
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
@@ -80,15 +111,24 @@ export default function DashboardPage() {
             </Link>
           </div>
 
+          {error && (
+            <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-400">
+              Failed to load runs: {error}
+            </div>
+          )}
+
           <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-            {dashboardMetrics.map((m) => {
+            {(metrics ?? [
+              { label: "Total Runs", value: "—", delta: loading ? "Loading…" : "No data", tone: "primary" as const },
+              { label: "Pass Rate", value: "—", delta: loading ? "Loading…" : "No data", tone: "success" as const },
+              { label: "Active Runs", value: "—", delta: loading ? "Loading…" : "Idle", tone: "warning" as const },
+            ]).map((m) => {
               const tone =
                 m.tone === "success"
                   ? "text-emerald-400"
                   : m.tone === "warning"
                     ? "text-amber-400"
                     : "text-foreground";
-
               return (
                 <Card key={m.label} className="border-border/60 bg-card/60">
                   <CardHeader className="pb-2">
@@ -106,9 +146,6 @@ export default function DashboardPage() {
           <Card className="border-border/60 bg-card/60">
             <CardHeader className="flex flex-row items-center justify-between gap-4">
               <CardTitle className="text-lg">Recent Activity</CardTitle>
-              <Link className={cn(buttonVariants({ variant: "link" }), "px-0 text-primary")} href="/app/runs/live">
-                View All
-              </Link>
             </CardHeader>
 
             <CardContent className="space-y-4">
@@ -123,9 +160,6 @@ export default function DashboardPage() {
                     aria-label="Filter recent activity"
                   />
                 </div>
-                <Badge variant="secondary" className="hidden sm:inline-flex">
-                  Demo data
-                </Badge>
               </div>
 
               <div className="overflow-x-auto">
@@ -135,34 +169,40 @@ export default function DashboardPage() {
                       <TableHead>Status</TableHead>
                       <TableHead>Run ID</TableHead>
                       <TableHead>Test Name</TableHead>
-                      <TableHead>Target URL</TableHead>
-                      <TableHead>Browser</TableHead>
+                      <TableHead>Steps</TableHead>
+                      <TableHead>Cost</TableHead>
                       <TableHead>Duration</TableHead>
                       <TableHead>Date</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredActivity.length === 0 ? (
+                    {loading ? (
                       <TableRow>
                         <TableCell colSpan={8} className="h-24 text-center text-sm text-muted-foreground">
-                          No runs match your filter.
+                          Loading runs…
+                        </TableCell>
+                      </TableRow>
+                    ) : filteredActivity.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={8} className="h-24 text-center text-sm text-muted-foreground">
+                          {activityFilter ? "No runs match your filter." : "No runs yet. Start a new test run."}
                         </TableCell>
                       </TableRow>
                     ) : (
-                      filteredActivity.map((row) => (
-                        <TableRow key={row.id}>
+                      filteredActivity.map((row: RunSummary) => (
+                        <TableRow key={row.run_id}>
                           <TableCell>
                             <StatusPill status={row.status} />
                           </TableCell>
-                          <TableCell className="font-mono text-xs text-muted-foreground">{row.runId}</TableCell>
-                          <TableCell className="font-medium">{row.testName}</TableCell>
-                          <TableCell className="font-mono text-sm text-primary">
-                            <span className="cursor-pointer hover:underline">{row.targetUrl}</span>
+                          <TableCell className="font-mono text-xs text-muted-foreground">{row.run_id}</TableCell>
+                          <TableCell className="font-medium">{row.test_name ?? "—"}</TableCell>
+                          <TableCell className="font-mono text-sm text-muted-foreground">{row.total_steps ?? "—"}</TableCell>
+                          <TableCell className="font-mono text-sm text-muted-foreground">
+                            {row.estimated_cost_usd != null ? `$${row.estimated_cost_usd.toFixed(4)}` : "—"}
                           </TableCell>
-                          <TableCell className="font-mono text-xs">{row.browser}</TableCell>
-                          <TableCell className="font-mono text-sm text-muted-foreground">{row.duration}</TableCell>
-                          <TableCell className="text-muted-foreground">{row.dateLabel}</TableCell>
+                          <TableCell className="font-mono text-sm text-muted-foreground">{formatDuration(row.duration_s)}</TableCell>
+                          <TableCell className="text-muted-foreground">{formatDate(row.created_at)}</TableCell>
                           <TableCell className="text-right">
                             <DropdownMenu>
                               <DropdownMenuTrigger
@@ -172,14 +212,18 @@ export default function DashboardPage() {
                                 <MoreVertical className="size-4" aria-hidden="true" />
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
-                                <DropdownMenuItem>
-                                  <Link className="w-full" href="/app/runs/live">
-                                    Open run
+                                <DropdownMenuItem asChild>
+                                  <Link href={`/app/runs/live?id=${row.run_id}`}>
+                                    {row.status === "running" ? "Watch live" : "View report"}
                                   </Link>
                                 </DropdownMenuItem>
-                                <DropdownMenuItem>Re-run</DropdownMenuItem>
                                 <DropdownMenuSeparator />
-                                <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
+                                <DropdownMenuItem
+                                  className="text-destructive"
+                                  onClick={() => deleteRun(row.run_id)}
+                                >
+                                  Cancel / Delete
+                                </DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>
                           </TableCell>

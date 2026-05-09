@@ -3,6 +3,7 @@ import asyncio
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from api.job_queue import job_queue
+from api.redis_store import get_traces as _get_traces
 from api.schemas import RunListResponse, RunRequest, RunResponse
 
 router = APIRouter(prefix="/runs", tags=["runs"])
@@ -23,6 +24,11 @@ def _record_to_response(record: dict) -> RunResponse:
         novnc_url=record.get("novnc_url"),
         assertion_results=record.get("assertion_results"),
         error_message=record.get("error_message"),
+        steps_completed=record.get("steps_completed"),
+        total_input_tokens=record.get("total_input_tokens"),
+        total_output_tokens=record.get("total_output_tokens"),
+        error_count=record.get("error_count"),
+        tool_call_count=record.get("tool_call_count"),
     )
 
 
@@ -60,6 +66,15 @@ async def get_run(run_id: str) -> RunResponse:
 async def cancel_run(run_id: str) -> dict:
     cancelled = await job_queue.cancel(run_id)
     return {"cancelled": cancelled}
+
+
+@router.get("/{run_id}/traces")
+async def get_run_traces(run_id: str) -> dict:
+    record = await job_queue.get_run(run_id)
+    if record is None:
+        raise HTTPException(404, f"Run {run_id!r} not found")
+    traces = await _get_traces(run_id)
+    return {"run_id": run_id, "traces": traces}
 
 
 @router.get("/{run_id}/observe")

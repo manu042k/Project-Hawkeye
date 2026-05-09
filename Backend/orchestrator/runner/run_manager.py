@@ -69,6 +69,7 @@ class RunManager:
         self._figma_token = figma_token
         self._ws_emitter = ws_emitter
         self._prewarmed_handle = None
+        self._collector: TraceCollector | None = None
 
     async def run(
         self,
@@ -113,6 +114,7 @@ class RunManager:
             db_run_id=run_id if db_enabled() else None,
             ws_emitter=self._ws_emitter,
         )
+        self._collector = collector
         collector.on_run_start()
 
         mcp_client: PlaywrightMcpClient | None = None
