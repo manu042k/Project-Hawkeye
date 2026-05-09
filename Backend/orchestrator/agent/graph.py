@@ -12,6 +12,7 @@ from orchestrator.agent.edges.route_after_error import route_after_error
 from orchestrator.agent.edges.route_after_goal_check import route_after_goal_check
 from orchestrator.agent.edges.route_after_guard_rails import route_after_guard_rails
 from orchestrator.agent.edges.route_after_reason import route_after_reason
+from orchestrator.agent.edges.route_after_observe import route_after_observe
 from orchestrator.models.run_state import AgentState
 
 if TYPE_CHECKING:
@@ -35,6 +36,7 @@ def build_graph(
     custom_tools: list,
     model_name: str,
     output_dir: Path,
+    figma_token: str | None = None,
 ):
     """Build and compile the agent StateGraph.
 
@@ -82,6 +84,7 @@ def build_graph(
         cdp_session=cdp_session,
         collector=collector,
         output_dir=output_dir,
+        figma_token=figma_token,
     )
 
     builder = StateGraph(AgentState)
@@ -95,7 +98,11 @@ def build_graph(
     builder.add_node("finalize",       finalize)
 
     builder.add_edge(START, "observe")
-    builder.add_edge("observe", "reason")
+    builder.add_conditional_edges(
+        "observe",
+        route_after_observe,
+        {"reason": "reason", "finalize": "finalize"},
+    )
 
     builder.add_conditional_edges(
         "reason",

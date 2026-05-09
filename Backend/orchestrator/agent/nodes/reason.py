@@ -41,12 +41,15 @@ async def reason_node(
     """
     from orchestrator.models.run_state import ErrorInfo, compute_step_cost
 
+    from orchestrator.llm.provider import is_vision_capable
+
     all_tools = mcp_tools + custom_tools
     messages = list(state["messages"])
 
     # Inject current page state as the latest user observation.
     observation = _build_observation(state)
-    messages = messages + [HumanMessage(content=observation)]
+    obs_message = _build_observation_message(state, observation, model_name)
+    messages = messages + [obs_message]
 
     # Context window management: trim history if too long.
     total_chars = sum(len(str(m.content)) for m in messages)
@@ -97,7 +100,20 @@ async def reason_node(
                     ),
                 }
 
-            # Auth / access errors: do not retry.
+            # Auth / access / billing errors: do not retry.
+            if any(k in exc_str for k in ("402",)) or any(k in exc_str.lower() for k in ("insufficient", "not enough credits", "requires more credits")):
+                logger.error("REASON: insufficient credits (402) — terminating: %s", exc_str)
+                return {
+                    "status": "errored",
+                    "goal_complete": True,
+                    "termination_reason": f"LLM billing error (402): {exc_str[:200]}",
+                    "last_error": ErrorInfo(
+                        error_type="llm_auth_error",
+                        message=exc_str[:200],
+                        step_number=state["step_number"],
+                        recoverable=False,
+                    ),
+                }
             if any(k in exc_str.lower() for k in ("401", "403", "unauthorized", "invalid api key", "blocked at", "forbidden", "not allowed", "access denied")):
                 logger.error("REASON: auth/access error — terminating: %s", exc_str)
                 return {
@@ -225,11 +241,37 @@ async def reason_node(
     )
 
     return {
-        "messages": [HumanMessage(content=observation), ai_message],
+        "messages": [obs_message, ai_message],
         "last_tool_name": None,
         "last_tool_result": None,
         "last_error": None,
     }
+
+
+def _build_observation_message(
+    state: AgentState,
+    text_part: str,
+    model_name: str,
+) -> HumanMessage:
+    """Build a HumanMessage for the observation turn.
+
+    If a screenshot is available and the model is vision-capable, returns a
+    multimodal message with both the accessibility-tree text and the PNG image.
+    Otherwise returns a plain text HumanMessage.
+    """
+    from orchestrator.llm.provider import is_vision_capable
+
+    screenshot_b64: str | None = state.get("screenshot_b64")
+    if screenshot_b64 and is_vision_capable(model_name):
+        content = [
+            {"type": "text", "text": text_part},
+            {
+                "type": "image_url",
+                "image_url": {"url": f"data:image/png;base64,{screenshot_b64}"},
+            },
+        ]
+        return HumanMessage(content=content)
+    return HumanMessage(content=text_part)
 
 
 def _build_observation(state: AgentState) -> str:

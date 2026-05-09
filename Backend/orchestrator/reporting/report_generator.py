@@ -46,7 +46,7 @@ def generate_markdown_report(result: RunResult, traces: list, output_dir: Path) 
         lines += ["", "## Termination", "", result.termination_reason]
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    path = output_dir / f"{result.run_id}_report.md"
+    path = output_dir / "report.md"
     path.write_text("\n".join(lines), encoding="utf-8")
     return path
 
@@ -73,9 +73,17 @@ def generate_html_report(result: RunResult, traces: list, output_dir: Path) -> P
         latency = f"{t.tool_execution_latency_ms:.0f}ms"
         tokens = t.input_tokens + t.output_tokens
         cost = f"${t.estimated_cost_usd:.4f}"
+        img_html = ""
+        if getattr(t, "screenshot_b64", None):
+            img_html = (
+                f'<br><img src="data:image/png;base64,{t.screenshot_b64}" '
+                f'style="max-width:100%;border-radius:6px;margin-top:6px;border:1px solid #e5e7eb" '
+                f'loading="lazy">'
+            )
         step_rows += (
             f"<tr><td>{t.step_number}</td><td>{tool}</td>"
-            f"<td>{latency}</td><td>{tokens:,}</td><td>{cost}</td></tr>\n"
+            f"<td>{latency}</td><td>{tokens:,}</td><td>{cost}</td>"
+            f"<td>{img_html}</td></tr>\n"
         )
 
     total_tokens = result.total_input_tokens + result.total_output_tokens
@@ -121,7 +129,7 @@ def generate_html_report(result: RunResult, traces: list, output_dir: Path) -> P
 
 <h2>Step Timeline</h2>
 <table>
-<thead><tr><th>Step</th><th>Tool</th><th>Latency</th><th>Tokens</th><th>Cost</th></tr></thead>
+<thead><tr><th>Step</th><th>Tool</th><th>Latency</th><th>Tokens</th><th>Cost</th><th>Screenshot</th></tr></thead>
 <tbody>{step_rows}</tbody>
 </table>
 {termination_section}
@@ -129,6 +137,6 @@ def generate_html_report(result: RunResult, traces: list, output_dir: Path) -> P
 </html>"""
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    path = output_dir / f"{result.run_id}_report.html"
+    path = output_dir / "report.html"
     path.write_text(html, encoding="utf-8")
     return path

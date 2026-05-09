@@ -44,6 +44,10 @@ if str(_BACKEND) not in sys.path:
               help="Record the browser session to MP4 in the output directory.")
 @click.option("--db-url", default=None, envvar="HAWKEYE_DB_URL",
               help="PostgreSQL DSN for persistence (postgres://user:pass@host/db). Also reads HAWKEYE_DB_URL env var.")
+@click.option("--figma-url", default=None, envvar="FIGMA_URL",
+              help="Figma file URL for visual design diff (Pass 2).")
+@click.option("--figma-token", default=None, envvar="FIGMA_TOKEN",
+              help="Figma personal access token.")
 def run(
     test_path: str,
     model: str,
@@ -57,6 +61,8 @@ def run(
     verbose: bool,
     record: bool,
     db_url: str | None,
+    figma_url: str | None,
+    figma_token: str | None,
 ) -> None:
     """Run a single test case."""
     from orchestrator.loader.yaml_loader import load_test_case
@@ -67,6 +73,10 @@ def run(
 
     if db_url:
         os.environ["HAWKEYE_DB_URL"] = db_url
+    if figma_token:
+        os.environ["FIGMA_TOKEN"] = figma_token
+    if figma_url:
+        os.environ["FIGMA_URL"] = figma_url
 
     # Load and validate test case.
     try:
@@ -95,6 +105,8 @@ def run(
         model_name=model,
         verbose=verbose,
         record=record,
+        figma_url=figma_url,
+        figma_token=figma_token,
     )
 
     result = asyncio.run(

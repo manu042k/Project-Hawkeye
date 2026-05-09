@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -18,7 +19,7 @@ from orchestrator.models.results import AssertionResult
 
 logger = logging.getLogger(__name__)
 
-_SUPPORTED_TYPES = frozenset({"content", "console", "network", "state"})
+_SUPPORTED_TYPES = frozenset({"content", "console", "network", "state", "visual_design"})
 _PHASE2_TYPES = frozenset({"visual", "accessibility", "performance"})
 
 
@@ -34,6 +35,9 @@ class AssertionEngine:
         *,
         page_snapshot: str,
         cdp_session: CdpSession | None,
+        figma_token: str | None = None,
+        final_screenshot: bytes | None = None,
+        output_dir: "Path | None" = None,
     ) -> list[AssertionResult]:
         """Evaluate all assertions. Each is wrapped in try/except —
         one buggy assertion never fails the whole run.
@@ -41,7 +45,14 @@ class AssertionEngine:
         results: list[AssertionResult] = []
         for assertion in assertions:
             try:
-                result = await self._evaluate_one(assertion, page_snapshot=page_snapshot, cdp_session=cdp_session)
+                result = await self._evaluate_one(
+                    assertion,
+                    page_snapshot=page_snapshot,
+                    cdp_session=cdp_session,
+                    figma_token=figma_token,
+                    final_screenshot=final_screenshot,
+                    output_dir=output_dir,
+                )
             except Exception as exc:
                 logger.error("Assertion %s raised unexpectedly: %s", assertion.id, exc)
                 result = AssertionResult(
@@ -61,6 +72,9 @@ class AssertionEngine:
         *,
         page_snapshot: str,
         cdp_session: CdpSession | None,
+        figma_token: str | None = None,
+        final_screenshot: bytes | None = None,
+        output_dir: "Path | None" = None,
     ) -> AssertionResult:
         if assertion.type in _PHASE2_TYPES:
             logger.warning(
@@ -89,6 +103,14 @@ class AssertionEngine:
 
         if assertion.type == "state":
             return await self._evaluate_state(assertion, cdp_session)
+
+        if assertion.type == "visual_design":
+            return await self._evaluate_visual_design(
+                assertion,
+                figma_token=figma_token,
+                final_screenshot=final_screenshot,
+                output_dir=output_dir or Path("artifacts"),
+            )
 
         # Completely unknown type — skip with a warning.
         logger.warning("Unknown assertion type %r (assertion %s) — skipped", assertion.type, assertion.id)
@@ -251,4 +273,44 @@ class AssertionEngine:
             passed=True,
             status="skipped",
             details=f"Screenshot captured ({len(screenshot)} bytes); no baseline for comparison — skipped",
+        )
+
+    async def _evaluate_visual_design(
+        self,
+        assertion: Assertion,
+        *,
+        figma_token: str | None,
+        final_screenshot: bytes | None,
+        output_dir: Path,
+    ) -> AssertionResult:
+        if figma_token is None:
+            logger.warning(
+                "Assertion %s type='visual_design' skipped: no Figma token provided",
+                assertion.id,
+            )
+            return AssertionResult(
+                assertion_id=assertion.id,
+                type="visual_design",
+                description=assertion.description,
+                passed=True,
+                status="skipped",
+                details="visual_design assertion skipped: FIGMA_TOKEN not provided",
+            )
+        if not final_screenshot:
+            return AssertionResult(
+                assertion_id=assertion.id,
+                type="visual_design",
+                description=assertion.description,
+                passed=True,
+                status="skipped",
+                details="visual_design assertion skipped: no screenshot captured during run",
+            )
+        from orchestrator.vision.visual_assertions import run_visual_assertion
+        return await run_visual_assertion(
+            assertion_id=assertion.id,
+            description=assertion.description,
+            params=assertion.params,
+            actual_screenshot=final_screenshot,
+            figma_token=figma_token,
+            output_dir=output_dir,
         )

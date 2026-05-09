@@ -21,6 +21,7 @@ async def finalize_node(
     cdp_session: CdpSession | None,
     collector: TraceCollector,
     output_dir: Path,
+    figma_token: str | None = None,
 ) -> dict:
     """FINALIZE: evaluate assertions, print summary, persist trace.
 
@@ -33,10 +34,15 @@ async def finalize_node(
     assertion_results = []
     if state["test_case"].assertions:
         try:
+            step_screenshots: list[bytes] = state.get("step_screenshots", [])
+            final_screenshot = step_screenshots[-1] if step_screenshots else None
             assertion_results = await assertion_engine.evaluate(
                 state["test_case"].assertions,
                 page_snapshot=state.get("page_snapshot", ""),
                 cdp_session=cdp_session,
+                figma_token=figma_token,
+                final_screenshot=final_screenshot,
+                output_dir=output_dir,
             )
         except Exception as exc:
             logger.error("finalize: assertion engine raised unexpectedly: %s", exc)

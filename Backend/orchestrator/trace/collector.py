@@ -113,9 +113,12 @@ class TraceCollector:
         title: str,
         wait_ms: int,
         snapshot_chars: int,
+        screenshot_b64: str | None = None,
     ) -> None:
         if self._traces:
             self._traces[-1].page_url = url
+            if screenshot_b64:
+                self._traces[-1].screenshot_b64 = screenshot_b64
             self._traces[-1].page_title = title
             self._traces[-1].wait_for_stable_ms = wait_ms
         _console.print(
@@ -286,10 +289,9 @@ class TraceCollector:
         _console.print(Rule(style="blue"))
 
     def write_json(self, output_dir: Path, *, status: str = "unknown") -> Path:
-        """Write full trace JSON to ``output_dir/<run_id>/trace.json``."""
-        run_dir = output_dir / self._run_id
-        run_dir.mkdir(parents=True, exist_ok=True)
-        trace_path = run_dir / "trace.json"
+        """Write full trace JSON to ``output_dir/trace.json``."""
+        output_dir.mkdir(parents=True, exist_ok=True)
+        trace_path = output_dir / "trace.json"
 
         payload = {
             "run_id": self._run_id,

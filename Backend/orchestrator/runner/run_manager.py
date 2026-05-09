@@ -55,6 +55,8 @@ class RunManager:
         model_name: str = "ollama:qwen3.5:2b",
         verbose: bool = False,
         record: bool = False,
+        figma_url: str | None = None,
+        figma_token: str | None = None,
     ) -> None:
         self._llm = llm
         self._sandbox_manager = sandbox_manager or SandboxManager()
@@ -62,6 +64,8 @@ class RunManager:
         self._model_name = model_name
         self._verbose = verbose
         self._record = record
+        self._figma_url = figma_url
+        self._figma_token = figma_token
 
     async def run(
         self,
@@ -78,7 +82,7 @@ class RunManager:
         Returns RunResult regardless of outcome — never propagates exceptions.
         """
         run_id = f"run-{uuid.uuid4().hex[:8]}"
-        output_dir = (output_dir or _DEFAULT_OUTPUT_DIR).resolve()
+        output_dir = (output_dir or _DEFAULT_OUTPUT_DIR).resolve() / run_id
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Apply CLI overrides to the test case constraints.
@@ -211,6 +215,7 @@ class RunManager:
                 custom_tools=custom_tools,
                 model_name=self._model_name,
                 output_dir=output_dir,
+                figma_token=self._figma_token,
             )
 
             # --- Build initial state ---
@@ -245,13 +250,19 @@ class RunManager:
                 "termination_reason": None,
                 "guard_blocked": False,
                 "run_start_time": start_time,
+                "current_screenshot": None,
+                "screenshot_b64": None,
+                "step_screenshots": [],
             }
 
             # --- Run graph ---
             # Use ainvoke() because all graph nodes are async functions.
             final_state = await graph.ainvoke(initial_state)
 
-            return _build_run_result(run_id, test_case, final_state, collector, output_dir)
+            return _build_run_result(
+                run_id, test_case, final_state, collector, output_dir,
+                figma_token=self._figma_token,
+            )
 
         except Exception as exc:
             logger.exception("RunManager: unhandled exception for run %s: %s", run_id, exc)
@@ -303,7 +314,7 @@ class RunManager:
             if sandbox_handle and self._record and sandbox_handle.recording_container_path:
                 try:
                     self._sandbox_manager.stop_recording(sandbox_handle)
-                    mp4_path = output_dir / f"{run_id}.mp4"
+                    mp4_path = output_dir / "recording.mp4"
                     self._sandbox_manager.fetch_recording(sandbox_handle, host_path=str(mp4_path))
                     print(f"[recording] {mp4_path}")
                 except Exception as exc:
@@ -321,8 +332,11 @@ def _build_run_result(
     final_state: dict,
     collector: TraceCollector,
     output_dir: Path,
+    *,
+    figma_token: str | None = None,
 ) -> RunResult:
     """Convert the final graph state into a RunResult."""
+    import asyncio
     from orchestrator.reporting.report_generator import generate_markdown_report, generate_html_report
     summary = collector.get_summary(run_id=run_id, status=final_state.get("status", "errored"))
     try:

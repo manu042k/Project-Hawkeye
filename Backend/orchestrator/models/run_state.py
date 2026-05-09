@@ -53,6 +53,7 @@ class StepTrace:
     # Page context at time of step
     page_url: str = ""
     page_title: str = ""
+    screenshot_b64: str | None = None  # base64 PNG captured at observe time
     # Timing breakdown (ms)
     wait_for_stable_ms: int = 0
     tool_execution_latency_ms: int = 0
@@ -154,3 +155,8 @@ class AgentState(TypedDict):
 
     # Wall-clock start time for timeout checks
     run_start_time: float
+
+    # Screenshot state — updated each OBSERVE cycle.
+    current_screenshot: bytes | None
+    screenshot_b64: str | None
+    step_screenshots: list[bytes]
