@@ -80,6 +80,21 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
 
+  hawkeye-beat:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile.api
+    command: celery -A api.celery_app beat --loglevel=info --scheduler celery.beat:PersistentScheduler
+    env_file:
+      - Backend/.env
+    environment:
+      REDIS_URL: "redis://redis:6379/0"
+    networks:
+      - hawkeye-net
+    depends_on:
+      - redis
+    restart: unless-stopped
+
   hawkeye-nginx:
     image: nginx:alpine
     ports:

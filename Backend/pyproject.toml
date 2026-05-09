@@ -29,6 +29,8 @@ dependencies = [
     "arize-phoenix-otel>=0.16.1",
     "openinference-instrumentation-langchain>=0.1.63",
     "cryptography>=42.0.0",
+    "croniter>=2.0.0",
+    "python-dateutil>=2.9.0",
 ]
 
 [project.optional-dependencies]
