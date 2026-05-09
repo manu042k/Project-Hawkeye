@@ -318,9 +318,11 @@ step_screenshots: list[bytes]          # all step screenshots (for Pass 2)
 - `GET /api/runs/{run_id}/observe` endpoint returns live noVNC URL for a run
 - Nginx reverse proxy (`nginx/nginx.conf`): proxies `/api/` + WebSocket upgrade to `hawkeye-api:8000`; `hawkeye-nginx` service added to docker-compose on port 80
 
-**Still to build in Phase 3:**
-- Job queue persistence (Redis/Celery) for multi-instance deployments
-- Celery worker for parallel runs
+- Celery + Redis job queue (`api/celery_app.py`, `api/tasks.py`, `api/redis_store.py`): persistent runs (survive API restart), parallel execution via `--concurrency N` worker
+- Redis pub/sub for WebSocket streaming across worker/API process boundary
+- `cancel()` revokes Celery task by stored `celery_task_id`
+- Redis service + `hawkeye-worker` Celery service added to docker-compose
+- **Tested:** persistence survives API restart; 2 parallel runs confirmed running simultaneously
 
 ### Phase 4 — Dashboard Integration & Polish
 

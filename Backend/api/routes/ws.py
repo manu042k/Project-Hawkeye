@@ -1,39 +1,50 @@
 from __future__ import annotations
-
 import asyncio
-
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-
+import api.redis_store as redis_store
 from api.job_queue import job_queue
-from api.ws_manager import ws_manager
 
 router = APIRouter(tags=["websocket"])
 
-_PING_INTERVAL_S = 20
+_TERMINAL = {"passed", "failed", "errored", "timed_out", "blocked", "cancelled"}
+_PING_INTERVAL_S = 20.0
 
 
 @router.websocket("/ws/runs/{run_id}/trace")
-async def run_trace(websocket: WebSocket, run_id: str) -> None:
+async def trace_ws(websocket: WebSocket, run_id: str) -> None:
     await websocket.accept()
-    ws_manager.connect(run_id, websocket)
+    try:
+        record = await job_queue.get_run(run_id)
+        if record:
+            await websocket.send_json({"event_type": "current_state", "run_id": run_id, "data": record})
 
-    record = job_queue.get_run(run_id)
-    if record is not None:
-        await websocket.send_json({
-            "event_type": "run_status",
-            "run_id": run_id,
-            "data": {"status": record.status},
-            "timestamp": "",
-        })
+        if record and record["status"] in _TERMINAL:
+            await websocket.close()
+            return
 
+        ping_task = asyncio.create_task(_ping_loop(websocket))
+        try:
+            async for event in redis_store.subscribe_run(run_id):
+                await websocket.send_json(event)
+                if event.get("event_type") in ("complete", "error") or \
+                   event.get("data", {}).get("status") in _TERMINAL:
+                    break
+        finally:
+            ping_task.cancel()
+
+    except (WebSocketDisconnect, Exception):
+        pass
+    finally:
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+
+
+async def _ping_loop(ws: WebSocket) -> None:
     try:
         while True:
             await asyncio.sleep(_PING_INTERVAL_S)
-            try:
-                await websocket.send_json({"event_type": "ping", "run_id": run_id, "data": {}, "timestamp": ""})
-            except Exception:
-                break
-    except (WebSocketDisconnect, asyncio.CancelledError):
+            await ws.send_json({"event_type": "ping"})
+    except (asyncio.CancelledError, Exception):
         pass
-    finally:
-        ws_manager.disconnect(run_id, websocket)
