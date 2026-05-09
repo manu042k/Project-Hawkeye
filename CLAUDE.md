@@ -69,7 +69,7 @@ Project-Hawkeye/
 │   │   │   ├── launch_browser.py
 │   │   │   └── supervisord.conf
 │   │   └── examples/              # Example scripts
-│   ├── orchestrator/              # Phase 1 agent harness (CLI-only, no API yet)
+│   ├── orchestrator/              # Agent harness (CLI-only, no API yet)
 │   │   ├── agent/                 # LangGraph StateGraph (nodes, edges, graph, prompt_builder)
 │   │   ├── models/                # TestCase, AgentState, StepTrace, RunResult dataclasses
 │   │   ├── runner/                # RunManager — full test lifecycle orchestration
@@ -77,11 +77,14 @@ Project-Hawkeye/
 │   │   ├── mcp/                   # PlaywrightMcpClient (stdio transport)
 │   │   ├── cdp/                   # Chrome DevTools Protocol session
 │   │   ├── trace/                 # Per-step trace collector (tokens, latency, cost)
-│   │   ├── assertions/            # AssertionEngine (content + console types)
-│   │   ├── llm/                   # LLM provider factory (Ollama / Groq)
+│   │   ├── assertions/            # AssertionEngine (content + console + network + state + visual_design)
+│   │   ├── llm/                   # LLM provider factory (Ollama / Groq / OpenRouter / NVIDIA NIM)
+│   │   ├── vision/                # Visual QA: figma_client.py, pixel_diff.py, visual_assertions.py
+│   │   ├── reporting/             # HTML + Markdown report generator
+│   │   ├── db/                    # asyncpg DB layer + schema.sql (gated by HAWKEYE_DB_URL)
 │   │   ├── loader/                # YAML test case loader
 │   │   ├── cli/                   # Click CLI entry point
-│   │   └── test_cases/            # wikipedia_search.yaml (TC-001), amazon_add_to_cart.yaml (TC-002)
+│   │   └── test_cases/            # wikipedia_search.yaml (TC-001), saucedemo_cart.yaml (TC-002b)
 │   └── pyproject.toml             # uv / pyproject config
 │
 ├── Docs/                          # Architecture & design docs
@@ -128,7 +131,7 @@ Observe step
 
 ### Pass 2 — Design diff (opt-in, requires Figma file)
 
-Triggered only when user provides `--figma-file` (Figma URL + access token). Runs after Pass 1 completes.
+Triggered only when user provides `--figma-url` + `--figma-token`. Runs after Pass 1 completes.
 
 | Step | What happens |
 |------|--------------|
@@ -137,7 +140,7 @@ Triggered only when user provides `--figma-file` (Figma URL + access token). Run
 | Diff | Pixelmatch (Pillow-based) — actual vs Figma frame |
 | Report | Diff % + highlighted diff image appended to HTML report |
 
-**Design diff YAML schema** (future):
+**Design diff YAML schema:**
 ```yaml
 assertions:
   - id: "V1"
@@ -149,7 +152,7 @@ assertions:
       viewport: { width: 1280, height: 720 }
 ```
 
-### AgentState additions
+### AgentState fields added in Phase 2.5
 
 ```python
 current_screenshot: bytes | None       # raw PNG from CDP
@@ -187,10 +190,9 @@ step_screenshots: list[bytes]          # all step screenshots (for Pass 2)
 - [x] **Assertion engine** — Content + console assertion types in `Backend/orchestrator/assertions/`
 - [x] **Phase 1 smoke test cases** — `wikipedia_search.yaml` (TC-001) and `saucedemo_cart.yaml` (TC-002b) — both PASS with `--record`
 - [x] **Phase 2 observability** — DB layer, guard-rails node, 3 new tools, HTML+MD reports, `--record` flag, OpenRouter support
+- [x] **Phase 2.5 visual QA agent** — screenshot capture in `observe_node`, multimodal LLM messages in `reason_node`, `is_vision_capable()` helper, NVIDIA NIM provider, Figma design diff pipeline (`vision/` package), `--figma-url`/`--figma-token` CLI flags, per-step screenshots embedded in HTML report, context trimming + rate-limit backoff in reason node
 
 ### Not Built Yet
-- [ ] **Visual QA agent (Pass 1)** — screenshot capture in observe node, multimodal LLM message in reason node
-- [ ] **Design diff (Pass 2)** — Figma API export + pixelmatch against actual screenshots (opt-in)
 - [ ] **Orchestrator HTTP API** — FastAPI service (Phase 3)
 - [ ] **Docker bridge network** — hawkeye-net with container DNS (Phase 3)
 - [ ] **Reverse proxy** — Nginx routing noVNC by run ID
@@ -231,35 +233,18 @@ step_screenshots: list[bytes]          # all step screenshots (for Pass 2)
 - CLI: `--record` MP4 capture, `--db-url`, `init-db` command
 - LLM provider: `openrouter:` prefix routes to OpenRouter API
 
-### Phase 2.5 — Visual QA Agent 🔜 NEXT
+### Phase 2.5 — Visual QA Agent ✓ COMPLETE
 
-**Goal:** Transform the agent into a true visual QA agent — sees the page via screenshot, not just accessibility tree.
-
-**Pass 1 — Vision reasoning (always on):**
-- `observe_node`: capture screenshot via `cdp_session.take_screenshot()` every step
-- Store as `current_screenshot` + `screenshot_b64` in `AgentState`
-- `reason_node`: build multimodal `HumanMessage` with image + truncated accessibility tree
-- Vision LLM understands visual intent; tree provides element refs for tool calls
-- Fallback: text-only models skip screenshot, use tree only (no crash)
-- `AgentState` gains: `current_screenshot`, `screenshot_b64`, `step_screenshots`
-
-**Pass 2 — Design diff (opt-in, requires Figma):**
-- CLI flag: `--figma-url <url> --figma-token <token>`
-- After Pass 1: export Figma frames via Figma API → pixelmatch vs actual screenshots
-- Output: diff % + highlighted diff PNG appended to HTML report
-- YAML assertion type: `visual_design` with `figma_frame` + `threshold` params
-- Only runs when `--figma-url` is provided
-
-**Implementation plan:**
-1. `AgentState` — add `current_screenshot`, `screenshot_b64`, `step_screenshots` fields
-2. `observe_node` — call `cdp_session.take_screenshot()` after `browser_snapshot`; store both
-3. `reason_node` — detect vision-capable model; build multimodal message if screenshot present
-4. `llm/provider.py` — add `is_vision_capable(model: str) -> bool` helper
-5. `models/test_case.py` — add `visual_design` assertion type + `figma_frame`/`threshold` params
-6. `orchestrator/vision/` — new package: `figma_client.py`, `pixel_diff.py`, `visual_assertions.py`
-7. `assertions/engine.py` — wire `visual_design` type through vision package
-8. `cli/main.py` — add `--figma-url`, `--figma-token` flags
-9. `reporting/report_generator.py` — embed diff images in HTML report
+**What was built:**
+- `observe_node`: captures screenshot via `cdp_session.take_screenshot()` at every step; non-fatal on failure
+- `reason_node`: detects vision-capable model via `is_vision_capable()`; sends multimodal `HumanMessage` (image + accessibility tree) to vision LLMs; text-only models receive tree only (no crash)
+- `llm/provider.py`: `is_vision_capable(model)` helper + NVIDIA NIM provider (`nvidia:<name>`, requires `NVIDIA_API_KEY`)
+- `AgentState`: new fields `current_screenshot`, `screenshot_b64`, `step_screenshots`
+- `orchestrator/vision/`: `figma_client.py` (Figma API export), `pixel_diff.py` (Pillow/numpy pixelmatch), `visual_assertions.py` (runs `visual_design` assertion type)
+- `assertions/engine.py`: `visual_design` type wired through vision package
+- `cli/main.py`: `--figma-url` + `--figma-token` flags (also read from `FIGMA_URL`/`FIGMA_TOKEN` env vars)
+- `reporting/report_generator.py`: per-step screenshots embedded inline in HTML report
+- `reason_node` reliability: context trimming (24K char limit, keep last 3 pairs), exponential backoff for 429/5xx, emergency trim + retry on 413 context overflow, fast-fail on auth/billing errors
 
 ### Phase 3 — Multi-Browser & API
 
