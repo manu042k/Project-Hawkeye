@@ -53,12 +53,14 @@ class RunManager:
         sandbox_image: str = _DEFAULT_IMAGE,
         model_name: str = "ollama:qwen3.5:2b",
         verbose: bool = False,
+        record: bool = False,
     ) -> None:
         self._llm = llm
         self._sandbox_manager = sandbox_manager or SandboxManager()
         self._sandbox_image = sandbox_image
         self._model_name = model_name
         self._verbose = verbose
+        self._record = record
 
     async def run(
         self,
@@ -123,6 +125,16 @@ class RunManager:
                 sandbox_handle = self._sandbox_manager.spawn(cfg)
                 cdp_url = sandbox_handle.cdp_url or ""
                 novnc_url = sandbox_handle.novnc_url
+                # Start recording before browser loads if requested.
+                if self._record:
+                    container_path = f"/tmp/hawkeye-{run_id}.mp4"
+                    sandbox_handle = self._sandbox_manager.start_recording(
+                        sandbox_handle,
+                        width=cfg.width,
+                        height=cfg.height,
+                        container_path=container_path,
+                    )
+                    logger.info("Recording started: %s", container_path)
                 # Wait for browser to fully start.
                 await asyncio.sleep(_BROWSER_STARTUP_WAIT_S)
 
@@ -146,6 +158,11 @@ class RunManager:
                     "No CDP URL available. Use a chromium-family browser "
                     "or provide --cdp-url."
                 )
+            # Ensure exactly one tab is open before MCP connects.
+            # The persistent browser profile can restore previous session tabs,
+            # and launch_browser.py calls new_page() unconditionally — together
+            # they can produce 2+ tabs. Close all but the target-URL tab here.
+            await _ensure_single_tab(cdp_url, test_case.target.url)
             mcp_client = PlaywrightMcpClient(cdp_url)
             await mcp_client.initialize()
             mcp_schemas = await mcp_client.list_tools()
@@ -224,6 +241,7 @@ class RunManager:
                 "status": "running",
                 "goal_complete": False,
                 "termination_reason": None,
+                "page_scroll_count": 0,
                 "run_start_time": start_time,
             }
 
@@ -262,6 +280,15 @@ class RunManager:
                 except Exception:
                     pass
             if sandbox_handle:
+                # Fetch recording before stopping the container.
+                if self._record and getattr(sandbox_handle, "recording_container_path", None):
+                    try:
+                        self._sandbox_manager.stop_recording(sandbox_handle)
+                        rec_host_path = str(output_dir / f"{run_id}.mp4")
+                        self._sandbox_manager.fetch_recording(sandbox_handle, host_path=rec_host_path)
+                        print(f"[recording] Saved to {rec_host_path}")
+                    except Exception as exc:
+                        logger.warning("Failed to fetch recording for %s: %s", run_id, exc)
                 try:
                     self._sandbox_manager.stop(sandbox_handle)
                 except Exception as exc:
@@ -298,6 +325,43 @@ def _build_run_result(
         error_count=summary.error_count,
         tool_call_count=summary.mcp_tool_calls + summary.custom_tool_calls,
     )
+
+
+async def _ensure_single_tab(cdp_http_url: str, target_url: str) -> None:
+    """Close all browser tabs except one, preferring the tab at target_url.
+
+    The persistent Chrome profile restores previous sessions, and
+    launch_browser.py calls new_page() unconditionally, so 2+ tabs can
+    exist before the agent starts. This trims them to exactly one.
+    """
+    try:
+        import httpx
+        base = cdp_http_url.rstrip("/")
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{base}/json/list")
+            all_targets = [t for t in resp.json() if t.get("type") == "page"]
+
+        if len(all_targets) <= 1:
+            return  # Nothing to do
+
+        # Prefer to keep the tab already at the target URL.
+        target_prefix = target_url.rstrip("/")
+        at_target = [t for t in all_targets if t.get("url", "").startswith(target_prefix)]
+        others = [t for t in all_targets if not t.get("url", "").startswith(target_prefix)]
+
+        # Build close list: close all extras, always keep exactly 1 tab alive.
+        keep = (at_target or others)[0]
+        to_close = [t for t in all_targets if t["id"] != keep["id"]]
+
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            for t in to_close:
+                try:
+                    await client.get(f"{base}/json/close/{t['id']}")
+                    logger.debug("Closed extra tab: %s (%s)", t['id'], t.get('url', ''))
+                except Exception:
+                    pass
+    except Exception as exc:
+        logger.debug("_ensure_single_tab failed (non-fatal): %s", exc)
 
 
 def _build_custom_langchain_tools(

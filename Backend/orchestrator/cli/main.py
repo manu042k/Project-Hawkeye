@@ -23,7 +23,7 @@ def cli() -> None:
 @click.option("--test", "test_path", required=True, type=click.Path(exists=True),
               help="Path to YAML or JSON test case file.")
 @click.option("--model", default="ollama:qwen3.5:2b", show_default=True,
-              help="LLM model: 'ollama:<name>' or 'groq:<name>'.")
+              help="LLM model: 'ollama:<name>', 'groq:<name>', or 'openrouter:<provider/model>'.")
 @click.option("--ollama-host", default="http://localhost:11434", show_default=True,
               envvar="OLLAMA_HOST", help="Ollama base URL.")
 @click.option("--browser", default=None,
@@ -40,6 +40,8 @@ def cli() -> None:
               help="Directory for trace output and evidence.")
 @click.option("--verbose", "-v", is_flag=True, default=False,
               help="Enable verbose output (show LLM reasoning, full snapshots).")
+@click.option("--record", is_flag=True, default=False,
+              help="Record the browser session to MP4 in the output directory.")
 def run(
     test_path: str,
     model: str,
@@ -51,6 +53,7 @@ def run(
     no_sandbox: bool,
     output_dir: str,
     verbose: bool,
+    record: bool,
 ) -> None:
     """Run a single test case."""
     from orchestrator.loader.yaml_loader import load_test_case
@@ -72,7 +75,13 @@ def run(
     # Build LLM.
     try:
         groq_key = os.environ.get("GROQ_API_KEY")
-        llm = get_llm(model, ollama_host=ollama_host, groq_api_key=groq_key)
+        openrouter_key = os.environ.get("OPENROUTER_API_KEY")
+        llm = get_llm(
+            model,
+            ollama_host=ollama_host,
+            groq_api_key=groq_key,
+            openrouter_api_key=openrouter_key,
+        )
     except ValueError as exc:
         click.echo(f"[error] {exc}", err=True)
         sys.exit(3)
@@ -85,6 +94,7 @@ def run(
         sandbox_image=sandbox_image,
         model_name=model,
         verbose=verbose,
+        record=record,
     )
 
     result = asyncio.run(

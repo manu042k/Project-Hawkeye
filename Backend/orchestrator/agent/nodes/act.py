@@ -17,7 +17,32 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_REPETITION_WINDOW = 5    # number of recent steps to check for identical tool calls
+_REPETITION_WINDOW = 5
+
+
+def _sanitize_tool_args(args: dict) -> dict:
+    """Normalize tool arguments to be compatible with Playwright MCP.
+
+    Different LLMs format optional parameters differently:
+    - Some pass ``null`` / ``None`` for unset optional fields — MCP rejects these.
+    - LLMs copy the exact text from the snapshot, producing targets like
+      ``'[ref=e52]'`` (with brackets) or ``'ref=e52'`` (with prefix only).
+      MCP expects the bare ID: ``'e52'``.
+    """
+    cleaned = {k: v for k, v in args.items() if v is not None}
+    if "target" in cleaned and isinstance(cleaned["target"], str):
+        t = cleaned["target"]
+        # Strip surrounding brackets: [ref=e52] → ref=e52
+        if t.startswith("[") and t.endswith("]"):
+            t = t[1:-1]
+        # Strip ref= prefix: ref=e52 → e52
+        if t.startswith("ref="):
+            t = t[len("ref="):]
+        cleaned["target"] = t
+    return cleaned
+
+
+# number of recent steps to check for identical tool calls
 _REPETITION_META_LIMIT = 3  # after this many injected meta-prompts → GOAL_BLOCKED
 
 
@@ -51,7 +76,7 @@ async def act_node(
 
     tool_call = last_ai.tool_calls[0]  # Process one tool call per step
     tool_name = tool_call["name"]
-    tool_args = tool_call.get("args", {}) or {}
+    tool_args = _sanitize_tool_args(tool_call.get("args", {}) or {})
     tool_call_id = tool_call.get("id", "call-0")
 
     # --- Repetition detection ---
@@ -151,12 +176,20 @@ async def act_node(
             recoverable=consecutive_errors < 3,
         )
 
+    # Increment scroll counter when the agent presses a scroll key.
+    scroll_count = state.get("page_scroll_count", 0)
+    if tool_name == "browser_press_key":
+        key = tool_args.get("key", "")
+        if any(k in key for k in ("PageDown", "PageUp", "Space", "ArrowDown", "ArrowUp")):
+            scroll_count += 1
+
     result_dict: dict = {
         "messages": [tool_message],
         "last_tool_name": tool_name,
         "last_tool_result": output,
         "last_tool_success": success,
         "consecutive_errors": consecutive_errors,
+        "page_scroll_count": scroll_count,
     }
     if last_error:
         result_dict["last_error"] = last_error
