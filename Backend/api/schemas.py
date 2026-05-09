@@ -16,7 +16,8 @@ _MODEL_HELP = (
 
 
 class RunRequest(BaseModel):
-    test_case_path: str = Field(description="Filename under orchestrator/test_cases/ or absolute path.")
+    test_case_path: str = Field(default="", description="Filename under orchestrator/test_cases/ or absolute path.")
+    test_case_id: str | None = Field(default=None, description="DB test case ID (Phase 5A). Takes precedence over test_case_path.")
     model: str = Field(default="nvidia:moonshotai/kimi-k2.6", description=_MODEL_HELP)
     browser: str | None = Field(default=None, description="Override browser: chromium | firefox | webkit.")
     record: bool = Field(default=False, description="Record MP4 of the browser session.")
@@ -44,6 +45,7 @@ class RunResponse(BaseModel):
     total_output_tokens: int | None = None
     error_count: int | None = None
     tool_call_count: int | None = None
+    artifact_manifest: list[dict] | None = None
 
 
 class RunListResponse(BaseModel):

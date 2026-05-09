@@ -125,7 +125,30 @@ async def _execute(celery_task_id: str, run_id: str, request_dict: dict) -> dict
         if manager._collector and manager._collector.traces:
             from dataclasses import asdict
             from api.redis_store import save_traces as _save_traces
-            await _save_traces(run_id, [asdict(t) for t in manager._collector.traces])
+            traces = manager._collector.traces
+            await _save_traces(run_id, [asdict(t) for t in traces])
+
+            # Write individual screenshot files then upload all artifacts.
+            if result.trace_path:
+                from orchestrator.reporting.report_generator import write_screenshot_files
+                from api.artifact_store import get_store
+                artifact_dir = result.trace_path.parent
+                write_screenshot_files(traces, artifact_dir)
+                store = get_store()
+                manifest: list[dict] = []
+                for path in sorted(artifact_dir.rglob("*")):
+                    if path.is_file():
+                        rel = str(path.relative_to(artifact_dir))
+                        meta = store.save(run_id, rel, path.read_bytes())
+                        manifest.append({
+                            "name": meta.name,
+                            "type": meta.type,
+                            "url": meta.url,
+                            "size_bytes": meta.size_bytes,
+                            **(({"step": meta.step}) if meta.step is not None else {}),
+                            **(({"assertion_id": meta.assertion_id}) if meta.assertion_id else {}),
+                        })
+                result_dict["artifact_manifest"] = manifest
 
         await _update_record({**result_dict, "completed_at": _utcnow()})
         await _publish("complete", {"status": result.status})

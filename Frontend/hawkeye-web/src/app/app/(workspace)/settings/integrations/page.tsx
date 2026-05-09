@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Eye, EyeOff, Save } from "lucide-react";
 
 import { AppTopbar } from "@/components/app/app-topbar";
@@ -23,7 +23,9 @@ export default function IntegrationsPage() {
   const [slackEnabled, setSlackEnabled] = useState(true);
   const [jiraEnabled, setJiraEnabled] = useState(false);
 
-  const connected = useMemo(() => endpoint.startsWith("wss://"), [endpoint]);
+  const connected = endpoint.startsWith("wss://");
+  const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+  const webhookUrl = `${API_URL}/api/webhook/github`;
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
@@ -115,6 +117,27 @@ export default function IntegrationsPage() {
               <p className="text-sm text-muted-foreground">
                 The WebSocket endpoint for Model Context Protocol communication.
               </p>
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/60 bg-card/60">
+            <CardHeader>
+              <CardTitle>GitHub Actions Webhook</CardTitle>
+              <CardDescription>Trigger suite runs on push events from your CI/CD pipeline.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="space-y-1.5">
+                <Label>Webhook URL</Label>
+                <div className="flex items-center gap-2">
+                  <Input className="h-10 font-mono text-sm" value={webhookUrl} readOnly />
+                  <Button variant="outline" size="sm" onClick={() => { navigator.clipboard.writeText(webhookUrl); toast.success("Copied!"); }}>
+                    Copy
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Set <code className="font-mono bg-muted px-1 rounded">GITHUB_WEBHOOK_SECRET</code> env var on the API server to enable signature verification.
+                </p>
+              </div>
             </CardContent>
           </Card>
 

@@ -23,7 +23,7 @@ import { type RunStatus, type RunSummary } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 
 function StatusPill({ status }: { status: RunStatus }) {
-  const cfg = useMemo(() => {
+  const cfg = useMemo<{ label: string; className: string }>(() => {
     switch (status) {
       case "passed":
         return { label: "Passed",    className: "border-emerald-500/30 bg-emerald-500/15 text-emerald-400" };
@@ -37,6 +37,8 @@ function StatusPill({ status }: { status: RunStatus }) {
         return { label: "Timed out", className: "border-orange-500/30 bg-orange-500/15 text-orange-400" };
       case "blocked":
         return { label: "Blocked",   className: "border-violet-500/30 bg-violet-500/15 text-violet-400" };
+      default:
+        return { label: status,      className: "border-border/60 bg-muted/30 text-muted-foreground" };
     }
   }, [status]);
 
@@ -212,10 +214,8 @@ export default function DashboardPage() {
                                 <MoreVertical className="size-4" aria-hidden="true" />
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
-                                <DropdownMenuItem asChild>
-                                  <Link href={`/app/runs/live?id=${row.run_id}`}>
-                                    {row.status === "running" ? "Watch live" : "View report"}
-                                  </Link>
+                                <DropdownMenuItem onClick={() => window.location.href = `/app/runs/live?id=${row.run_id}`}>
+                                  {row.status === "running" ? "Watch live" : "View report"}
                                 </DropdownMenuItem>
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem

@@ -29,17 +29,36 @@ def _record_to_response(record: dict) -> RunResponse:
         total_output_tokens=record.get("total_output_tokens"),
         error_count=record.get("error_count"),
         tool_call_count=record.get("tool_call_count"),
+        artifact_manifest=record.get("artifact_manifest"),
     )
 
 
 @router.post("", response_model=RunResponse)
 async def submit_run(request: RunRequest) -> RunResponse:
-    path = Path(request.test_case_path)
-    if not path.is_absolute():
-        path = _TEST_CASES_DIR / request.test_case_path
-    if not path.exists():
-        raise HTTPException(422, f"Test case not found: {path}")
-    request = request.model_copy(update={"test_case_path": str(path)})
+    # Phase 5A: resolve test_case_id from in-memory store -> write tmp yaml path
+    if request.test_case_id:
+        from api.routes.test_cases_crud import _store
+        record = next(
+            (tc for proj in _store.values() for tc in proj.values() if tc["id"] == request.test_case_id),
+            None,
+        )
+        if not record:
+            raise HTTPException(404, f"Test case {request.test_case_id!r} not found")
+        import json, tempfile, os
+        spec = record["spec"]
+        # Write spec as a temp YAML-compatible JSON file the loader can parse
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            import yaml as _yaml
+            _yaml.dump(spec, f, allow_unicode=True)
+            tmp_path = f.name
+        request = request.model_copy(update={"test_case_path": tmp_path})
+    else:
+        path = Path(request.test_case_path)
+        if not path.is_absolute():
+            path = _TEST_CASES_DIR / request.test_case_path
+        if not path.exists():
+            raise HTTPException(422, f"Test case not found: {path}")
+        request = request.model_copy(update={"test_case_path": str(path)})
     run_id = job_queue.submit(request)
     await asyncio.sleep(0.05)
     record = await job_queue.get_run(run_id)

@@ -1,7 +1,21 @@
 """Generate Markdown and HTML run reports from RunResult + traces."""
 from __future__ import annotations
+import base64
 from pathlib import Path
 from orchestrator.models.results import RunResult
+
+
+def write_screenshot_files(traces: list, output_dir: Path) -> None:
+    """Write per-step screenshots as individual PNG files under screenshots/."""
+    screenshots_dir = output_dir / "screenshots"
+    for t in traces:
+        b64 = getattr(t, "screenshot_b64", None)
+        if not b64:
+            continue
+        screenshots_dir.mkdir(parents=True, exist_ok=True)
+        step = getattr(t, "step_number", 0)
+        dest = screenshots_dir / f"step_{step:02d}.png"
+        dest.write_bytes(base64.b64decode(b64))
 
 
 def generate_markdown_report(result: RunResult, traces: list, output_dir: Path) -> Path:

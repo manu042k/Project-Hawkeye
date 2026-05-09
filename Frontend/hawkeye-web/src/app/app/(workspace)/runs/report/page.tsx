@@ -2,15 +2,62 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { CheckCircle2, FileJson, XCircle } from "lucide-react";
+import { CheckCircle2, Download, FileJson, Film, ImageIcon, XCircle } from "lucide-react";
+import { useState } from "react";
 
 import { AppTopbar } from "@/components/app/app-topbar";
 import { Badge } from "@/components/ui/badge";
-import { buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { useRun, useRunTraces } from "@/lib/api/hooks";
 import { type RunStatus } from "@/lib/api/client";
+
+const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
+
+type ArtifactMeta = {
+  name: string;
+  type: string;
+  url: string;
+  size_bytes: number;
+  step?: number;
+  assertion_id?: string;
+};
+
+function ScreenshotGallery({ screenshots }: { screenshots: ArtifactMeta[] }) {
+  const [lightbox, setLightbox] = useState<string | null>(null);
+  return (
+    <>
+      <div className="flex flex-wrap gap-3">
+        {screenshots.map((s) => (
+          <button
+            key={s.name}
+            onClick={() => setLightbox(`${API_URL}${s.url}`)}
+            className="group relative overflow-hidden rounded-lg border border-border/60 bg-muted/30 hover:border-primary/50 transition-colors"
+          >
+            <img
+              src={`${API_URL}${s.url}`}
+              alt={`Step ${s.step}`}
+              className="h-24 w-40 object-cover object-top"
+              loading="lazy"
+            />
+            <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white font-mono">
+              #{s.step}
+            </span>
+          </button>
+        ))}
+      </div>
+      {lightbox && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
+          onClick={() => setLightbox(null)}
+        >
+          <img src={lightbox} alt="Screenshot" className="max-h-[90vh] max-w-[90vw] rounded-lg border border-border" />
+        </div>
+      )}
+    </>
+  );
+}
 
 function StatusPill({ status }: { status: RunStatus }) {
   const cfg: Record<RunStatus, { label: string; className: string }> = {
@@ -77,6 +124,11 @@ export default function RunReportPage() {
 
   const assertions = run.assertion_results ?? [];
   const passedCount = assertions.filter((a) => a.passed).length;
+  const manifest: ArtifactMeta[] = (run as any).artifact_manifest ?? [];
+  const screenshots = manifest.filter((a) => a.type === "screenshot").sort((a, b) => (a.step ?? 0) - (b.step ?? 0));
+  const reportArtifact = manifest.find((a) => a.name === "report.html");
+  const videoArtifact = manifest.find((a) => a.name === "video.mp4");
+  const traceArtifact = manifest.find((a) => a.name === "trace.json");
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
@@ -97,14 +149,61 @@ export default function RunReportPage() {
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
+            {reportArtifact && (
+              <a
+                href={`${API_URL}${reportArtifact.url}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cn(buttonVariants({ variant: "outline" }), "h-9 gap-2")}
+              >
+                <Download className="size-3.5" />
+                HTML Report
+              </a>
+            )}
+            {videoArtifact && (
+              <a
+                href={`${API_URL}${videoArtifact.url}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cn(buttonVariants({ variant: "outline" }), "h-9 gap-2")}
+              >
+                <Film className="size-3.5" />
+                Video
+              </a>
+            )}
+            {traceArtifact && (
+              <a
+                href={`${API_URL}${traceArtifact.url}`}
+                download={`trace-${runId}.json`}
+                className={cn(buttonVariants({ variant: "outline" }), "h-9 gap-2")}
+              >
+                <FileJson className="size-3.5" />
+                Trace JSON
+              </a>
+            )}
             <Link href={`/app/runs/live?id=${runId}`} className={cn(buttonVariants({ variant: "outline" }), "h-9")}>
-              Back to live run
+              Back to live
             </Link>
             <Link href="/app/runs/new" className={cn(buttonVariants({ variant: "default" }), "h-9")}>
               New test
             </Link>
           </div>
         </div>
+
+        {screenshots.length > 0 && (
+          <Card className="border-border/60 bg-card/50">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <ImageIcon className="size-4 text-primary" />
+                Screenshots
+              </CardTitle>
+              <CardDescription>{screenshots.length} step screenshots</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ScreenshotGallery screenshots={screenshots} />
+            </CardContent>
+          </Card>
+        )}
 
         <Card className="border-border/60 bg-card/50">
           <CardHeader>

@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
+import { setAuthUser } from "@/lib/api/client";
 import {
   Activity,
   Bell,
@@ -139,7 +140,11 @@ const billingAnchors: Array<{ href: string; label: string; icon: ComponentType<{
 export function UnifiedSidebar({ className }: { className?: string }) {
   const pathname = usePathname();
   const hash = useHash();
-  const { status } = useSession();
+  const { data: session, status } = useSession();
+
+  useEffect(() => {
+    setAuthUser(session?.user?.email ?? null);
+  }, [session?.user?.email]);
   const currentProject = useProjectStore((s) => s.currentProject);
   const hub = isGlobalHubPath(pathname);
 
@@ -268,6 +273,22 @@ export function UnifiedSidebar({ className }: { className?: string }) {
         </div>
 
         <div className="mt-3 border-t border-border/60 pt-3">
+          {status === "authenticated" && session?.user && (
+            <div className="mb-2 flex items-center gap-2.5 rounded-lg px-3 py-2">
+              {session.user.image ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={session.user.image} alt="" className="size-7 rounded-full ring-1 ring-border/60" />
+              ) : (
+                <div className="flex size-7 items-center justify-center rounded-full bg-primary/20 text-xs font-semibold text-primary">
+                  {(session.user.name ?? session.user.email ?? "?")[0].toUpperCase()}
+                </div>
+              )}
+              <div className="min-w-0">
+                <p className="truncate text-xs font-medium text-foreground">{session.user.name ?? "User"}</p>
+                <p className="truncate text-[10px] text-muted-foreground">{session.user.email}</p>
+              </div>
+            </div>
+          )}
           {status === "authenticated" ? (
             <button
               type="button"
