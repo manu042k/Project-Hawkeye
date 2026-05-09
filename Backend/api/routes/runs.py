@@ -24,6 +24,7 @@ def _record_to_response(record) -> RunResponse:
         estimated_cost_usd=result.estimated_cost_usd if result else None,
         termination_reason=result.termination_reason if result else None,
         output_dir=str(result.trace_path.parent) if result and result.trace_path else None,
+        novnc_url=record.novnc_url,
         assertion_results=[
             {
                 "id": ar.assertion_id,
@@ -72,3 +73,16 @@ async def get_run(run_id: str) -> RunResponse:
 async def cancel_run(run_id: str) -> dict:
     cancelled = job_queue.cancel(run_id)
     return {"cancelled": cancelled}
+
+
+@router.get("/{run_id}/observe")
+async def observe_run(run_id: str) -> dict:
+    record = job_queue.get_run(run_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"Run {run_id!r} not found")
+    if not record.novnc_url:
+        raise HTTPException(
+            status_code=404,
+            detail="No noVNC URL available (run not yet started or not using pool)",
+        )
+    return {"run_id": run_id, "novnc_url": record.novnc_url}

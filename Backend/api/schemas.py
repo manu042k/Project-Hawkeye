@@ -24,6 +24,7 @@ class RunResponse(BaseModel):
     estimated_cost_usd: float | None = None
     termination_reason: str | None = None
     output_dir: str | None = None
+    novnc_url: str | None = None
     assertion_results: list[dict] | None = None
 
 

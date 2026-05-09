@@ -308,11 +308,15 @@ step_screenshots: list[bytes]          # all step screenshots (for Pass 2)
 - `docker-compose.yml` updated: `hawkeye-net` bridge network, `hawkeye-api` service on port 8000
 - `pyproject.toml`: added `fastapi`, `uvicorn[standard]`, `python-multipart`; `hawkeye-api` script entry point
 
-**Still to build:**
-- WebKit + Firefox browser support
-- Container pool with pre-warming
-- Nginx reverse proxy routing noVNC by run ID (`/observe/:run_id`)
+- Firefox/WebKit support: `PlaywrightMcpClient` now accepts `browser` param; uses `--browser firefox/webkit` (MCP launches headless browser) when CDP URL is absent
+- Container pool (`api/container_pool.py`): `ContainerPool` pre-warms N chromium containers; `acquire()`/`release()` used by job queue; controlled by `HAWKEYE_POOL_SIZE` env var (default 0 = disabled)
+- `RunManager` accepts `_prewarmed_handle`: skips spawn (1s settle vs 6s), releases back to pool after run
+- `GET /api/runs/{run_id}/observe` endpoint returns live noVNC URL for a run
+- Nginx reverse proxy (`nginx/nginx.conf`): proxies `/api/` + WebSocket upgrade to `hawkeye-api:8000`; `hawkeye-nginx` service added to docker-compose on port 80
+
+**Still to build in Phase 3:**
 - Job queue persistence (Redis/Celery) for multi-instance deployments
+- Celery worker for parallel runs
 
 ### Phase 4 — Dashboard Integration & Polish
 

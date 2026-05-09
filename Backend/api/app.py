@@ -5,15 +5,23 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+import os
+
+from api.container_pool import container_pool
 from api.job_queue import job_queue
 from api.routes import runs, test_cases, ws
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    pool_size = int(os.environ.get("HAWKEYE_POOL_SIZE", "0"))
+    if pool_size > 0:
+        await container_pool.start()
     job_queue.start()
     yield
     await job_queue.stop()
+    if pool_size > 0:
+        await container_pool.stop()
 
 
 app = FastAPI(

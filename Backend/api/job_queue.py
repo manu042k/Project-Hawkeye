@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import sys
 import uuid
 from dataclasses import dataclass, field
@@ -20,6 +21,8 @@ from orchestrator.models.results import RunResult
 from api.schemas import RunRequest
 from api.ws_manager import ws_manager
 
+logger = logging.getLogger(__name__)
+
 _MAX_HISTORY = 100
 _OUTPUT_DIR = Path("artifacts")
 
@@ -34,6 +37,7 @@ class RunRecord:
     status: str
     request: RunRequest
     result: RunResult | None = None
+    novnc_url: str | None = None
     created_at: str = field(default_factory=_utcnow)
     started_at: str | None = None
     completed_at: str | None = None
@@ -76,6 +80,9 @@ class JobQueue:
             })
 
             try:
+                import os as _os
+                from api.container_pool import container_pool as _pool
+
                 test_case = load_test_case(req.test_case_path)
                 llm = get_llm(req.model)
 
@@ -95,6 +102,15 @@ class JobQueue:
                     figma_token=req.figma_token,
                     ws_emitter=_ws_emitter,
                 )
+
+                pool_size = int(_os.environ.get("HAWKEYE_POOL_SIZE", "0"))
+                if pool_size > 0 and _pool.available_count > 0:
+                    try:
+                        sandbox_handle = await _pool.acquire(url=test_case.target.url)
+                        manager._prewarmed_handle = sandbox_handle
+                        record.novnc_url = sandbox_handle.novnc_url
+                    except Exception as exc:
+                        logger.warning("Pool acquire failed, will spawn fresh: %s", exc)
 
                 result = await manager.run(
                     test_case,
