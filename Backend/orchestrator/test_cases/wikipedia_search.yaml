@@ -16,20 +16,7 @@ goal: |
   "artificial intelligence", open the article, and scroll
   through the article content to read multiple sections.
 
-steps:
-  mode: "guided"
-  checkpoints:
-    - id: "S1"
-      description: "Locate the search box and type 'artificial intelligence'"
-      success_signal: "Search results page or the AI article is visible"
-
-    - id: "S2"
-      description: "Open the 'Artificial intelligence' article"
-      success_signal: "Full article page with title and sections is displayed"
-
-    - id: "S3"
-      description: "Scroll through the article content"
-      success_signal: "Multiple sections (History, Applications, etc.) are visible after scrolling"
+steps: null
 
 assertions:
   - id: "A1"
@@ -65,3 +52,4 @@ context:
     - "After typing, press Enter to search or click the search button"
     - "If auto-redirected to the article, proceed directly to scrolling"
     - "After searching, click the article link in results if not auto-redirected"
+    - "Once you are on the Artificial Intelligence article page, press PageDown 3 times to scroll through content, then immediately emit <GOAL_COMPLETE> — do NOT keep scrolling indefinitely"

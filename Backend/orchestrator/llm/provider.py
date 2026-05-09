@@ -1,7 +1,8 @@
 """LLM provider factory — returns a LangChain BaseChatModel.
 
-Primary:  Ollama  (local, free)  — model string: "ollama:<name>" or bare "<name>:<tag>"
-Fallback: Groq    (cloud API)   — model string: "groq:<name>",  requires GROQ_API_KEY
+Primary:  Ollama      (local, free)  — model string: "ollama:<name>" or bare "<name>:<tag>"
+Fallback: Groq        (cloud API)   — model string: "groq:<name>",       requires GROQ_API_KEY
+         OpenRouter   (cloud API)   — model string: "openrouter:<name>", requires OPENROUTER_API_KEY
 """
 from __future__ import annotations
 
@@ -12,6 +13,7 @@ from langchain_core.language_models import BaseChatModel
 _DEFAULT_MODEL = "ollama:qwen3.5:2b"
 _DEFAULT_OLLAMA_HOST = "http://localhost:11434"
 _GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 
 def get_llm(
@@ -36,6 +38,10 @@ def get_llm(
     if model.startswith("groq:"):
         model_name = model.removeprefix("groq:")
         return _make_groq(model_name, api_key=groq_api_key)
+
+    if model.startswith("openrouter:"):
+        model_name = model.removeprefix("openrouter:")
+        return _make_openrouter(model_name)
 
     # Bare "name:tag" format (e.g. "qwen3.5:2b") — treat as Ollama.
     if ":" in model and "/" not in model:
@@ -68,5 +74,21 @@ def _make_groq(model_name: str, *, api_key: str | None) -> BaseChatModel:
         model=model_name,
         base_url=_GROQ_BASE_URL,
         api_key=resolved_key,
+        temperature=0,
+    )
+
+
+def _make_openrouter(model_name: str) -> BaseChatModel:
+    from langchain_openai import ChatOpenAI
+    api_key = os.environ.get("OPENROUTER_API_KEY") or ""
+    if not api_key:
+        raise ValueError(
+            "OPENROUTER_API_KEY environment variable is not set. "
+            f"Required to use OpenRouter model {model_name!r}."
+        )
+    return ChatOpenAI(
+        model=model_name,
+        base_url=_OPENROUTER_BASE_URL,
+        api_key=api_key,
         temperature=0,
     )

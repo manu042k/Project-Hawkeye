@@ -13,6 +13,19 @@ from websockets.exceptions import ConnectionClosed
 logger = logging.getLogger(__name__)
 
 _MAX_RECONNECT_ATTEMPTS = 3
+
+
+@dataclass
+class NetworkRequest:
+    request_id: str
+    method: str
+    url: str
+    status: int = 0
+    request_headers: dict = field(default_factory=dict)
+    response_headers: dict = field(default_factory=dict)
+    started_at: float = 0.0
+    finished_at: float = 0.0
+    failed: bool = False
 _RECONNECT_DELAY_S = 1.0
 
 
@@ -53,6 +66,8 @@ class CdpSession:
 
         # Network domain state
         self._pending_requests: set[str] = set()  # requestIds in flight
+        self._network_log: list[NetworkRequest] = []
+        self._network_log_max = 5000
 
         # Console domain state
         self._console_messages: list[ConsoleMessage] = []
@@ -125,6 +140,11 @@ class CdpSession:
         await self._send("Runtime.enable", {})
         logger.debug("CDP Log/Runtime domains enabled")
 
+    async def enable_page_capture(self) -> None:
+        """Enable CDP Page domain."""
+        await self._send("Page.enable", {})
+        logger.debug("CDP Page domain enabled")
+
     # ------------------------------------------------------------------
     # Readable state
     # ------------------------------------------------------------------
@@ -138,6 +158,41 @@ class CdpSession:
     def console_messages(self) -> list[ConsoleMessage]:
         """All captured console messages since session start."""
         return list(self._console_messages)
+
+    def get_network_requests(
+        self,
+        *,
+        url_pattern: str | None = None,
+        method: str | None = None,
+        status_gte: int | None = None,
+        status_lte: int | None = None,
+    ) -> list[NetworkRequest]:
+        """Return filtered network requests from the buffer."""
+        import fnmatch
+        results = list(self._network_log)
+        if url_pattern:
+            results = [
+                r for r in results
+                if fnmatch.fnmatch(r.url, url_pattern) or url_pattern in r.url
+            ]
+        if method:
+            results = [r for r in results if r.method.upper() == method.upper()]
+        if status_gte is not None:
+            results = [r for r in results if r.status >= status_gte]
+        if status_lte is not None:
+            results = [r for r in results if r.status <= status_lte]
+        return results
+
+    async def take_screenshot(self) -> bytes:
+        """Capture the current page as PNG bytes via CDP."""
+        import base64
+        try:
+            result = await self._send("Page.captureScreenshot", {"format": "png"})
+            data = result.get("data", "")
+            return base64.b64decode(data) if data else b""
+        except Exception as exc:
+            logger.warning("take_screenshot failed: %s", exc)
+            return b""
 
     # ------------------------------------------------------------------
     # JS evaluation
@@ -235,10 +290,45 @@ class CdpSession:
     def _dispatch_event(self, method: str, params: dict) -> None:
         """Handle CDP events for tracked domains."""
         if method == "Network.requestWillBeSent":
-            self._pending_requests.add(params.get("requestId", ""))
-        elif method in ("Network.responseReceived", "Network.loadingFinished",
-                        "Network.loadingFailed"):
-            self._pending_requests.discard(params.get("requestId", ""))
+            request_id = params.get("requestId", "")
+            self._pending_requests.add(request_id)
+            req_info = params.get("request", {})
+            nr = NetworkRequest(
+                request_id=request_id,
+                method=req_info.get("method", "GET"),
+                url=req_info.get("url", ""),
+                request_headers=req_info.get("headers", {}),
+                started_at=params.get("timestamp", 0.0),
+            )
+            self._network_log.append(nr)
+            if len(self._network_log) > self._network_log_max:
+                self._network_log = self._network_log[-self._network_log_max:]
+        elif method == "Network.responseReceived":
+            request_id = params.get("requestId", "")
+            self._pending_requests.discard(request_id)
+            response = params.get("response", {})
+            for nr in reversed(self._network_log):
+                if nr.request_id == request_id:
+                    nr.status = response.get("status", 0)
+                    nr.response_headers = response.get("headers", {})
+                    break
+        elif method == "Network.loadingFinished":
+            import time as _time
+            request_id = params.get("requestId", "")
+            self._pending_requests.discard(request_id)
+            for nr in reversed(self._network_log):
+                if nr.request_id == request_id:
+                    nr.finished_at = _time.time()
+                    break
+        elif method == "Network.loadingFailed":
+            import time as _time
+            request_id = params.get("requestId", "")
+            self._pending_requests.discard(request_id)
+            for nr in reversed(self._network_log):
+                if nr.request_id == request_id:
+                    nr.failed = True
+                    nr.finished_at = _time.time()
+                    break
         elif method == "Log.entryAdded":
             entry = params.get("entry", {})
             level = entry.get("level", "log")

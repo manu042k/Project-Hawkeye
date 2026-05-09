@@ -149,5 +149,8 @@ class AgentState(TypedDict):
     goal_complete: bool
     termination_reason: Optional[str]
 
+    # Guard-rails state
+    guard_blocked: bool
+
     # Wall-clock start time for timeout checks
     run_start_time: float

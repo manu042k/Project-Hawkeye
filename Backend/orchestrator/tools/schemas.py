@@ -110,10 +110,57 @@ REPORT_STEP_RESULT_SCHEMA: dict[str, Any] = {
     },
 }
 
+GET_NETWORK_LOG_SCHEMA: dict[str, Any] = {
+    "name": "get_network_log",
+    "description": "Return buffered HTTP/XHR network requests captured since the test started. Filter by URL pattern, method, or status code range.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "url_pattern": {"type": "string", "description": "Substring or glob pattern to match request URLs."},
+            "method": {"type": "string", "description": "HTTP method filter (GET, POST, etc.)"},
+            "status_gte": {"type": "integer", "description": "Minimum HTTP status code."},
+            "status_lte": {"type": "integer", "description": "Maximum HTTP status code."},
+            "limit": {"type": "integer", "description": "Max requests to return (default 50)."},
+        },
+    },
+}
+
+ASSERT_NETWORK_REQUEST_SCHEMA: dict[str, Any] = {
+    "name": "assert_network_request",
+    "description": "Assert that a network request matching url_pattern was made during the test. Optionally filter by method and expected HTTP status.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "url_pattern": {"type": "string", "description": "URL substring or glob pattern to match."},
+            "method": {"type": "string", "description": "Expected HTTP method."},
+            "expected_status": {"type": "integer", "description": "Expected HTTP status code."},
+            "min_count": {"type": "integer", "description": "Minimum number of matching requests required (default 1)."},
+        },
+        "required": ["url_pattern"],
+    },
+}
+
+ASSERT_ELEMENT_STATE_SCHEMA: dict[str, Any] = {
+    "name": "assert_element_state",
+    "description": "Assert the state of a DOM element using a CSS selector. Checks: visible, enabled, checked, text_equals, value_equals.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "selector": {"type": "string", "description": "CSS selector for the element."},
+            "check": {"type": "string", "description": "Check type: visible | enabled | checked | text_equals | value_equals"},
+            "expected": {"type": "string", "description": "Expected value for text_equals and value_equals checks."},
+        },
+        "required": ["selector", "check"],
+    },
+}
+
 # All custom tool schemas in one list — used by the REASON node.
 ALL_CUSTOM_SCHEMAS: list[dict[str, Any]] = [
     WAIT_FOR_STABLE_SCHEMA,
     ASSERT_TEXT_PRESENT_SCHEMA,
     GET_CONSOLE_ERRORS_SCHEMA,
     REPORT_STEP_RESULT_SCHEMA,
+    GET_NETWORK_LOG_SCHEMA,
+    ASSERT_NETWORK_REQUEST_SCHEMA,
+    ASSERT_ELEMENT_STATE_SCHEMA,
 ]

@@ -22,6 +22,7 @@ if str(_BACKEND) not in sys.path:
 from hawkeye_sandbox import SandboxConfig, SandboxManager  # noqa: E402
 
 from orchestrator.assertions.engine import AssertionEngine
+from orchestrator.db.connection import db_enabled
 from orchestrator.loader.yaml_loader import load_test_case
 from orchestrator.mcp.client import PlaywrightMcpClient
 from orchestrator.mcp.tool_adapter import mcp_tools_to_langchain
@@ -53,12 +54,14 @@ class RunManager:
         sandbox_image: str = _DEFAULT_IMAGE,
         model_name: str = "ollama:qwen3.5:2b",
         verbose: bool = False,
+        record: bool = False,
     ) -> None:
         self._llm = llm
         self._sandbox_manager = sandbox_manager or SandboxManager()
         self._sandbox_image = sandbox_image
         self._model_name = model_name
         self._verbose = verbose
+        self._record = record
 
     async def run(
         self,
@@ -100,6 +103,7 @@ class RunManager:
             model=self._model_name,
             browser=browser,
             verbose=self._verbose,
+            db_run_id=run_id if db_enabled() else None,
         )
         collector.on_run_start()
 
@@ -125,8 +129,23 @@ class RunManager:
                 novnc_url = sandbox_handle.novnc_url
                 # Wait for browser to fully start.
                 await asyncio.sleep(_BROWSER_STARTUP_WAIT_S)
+                if self._record and sandbox_handle:
+                    try:
+                        sandbox_handle = self._sandbox_manager.start_recording(sandbox_handle)
+                    except Exception as exc:
+                        logger.warning("Recording start failed (non-fatal): %s", exc)
 
             collector.on_sandbox_ready(novnc_url, cdp_url)
+
+            # --- DB: record test case and create run row ---
+            if db_enabled():
+                from orchestrator.db import store
+                container_name = getattr(sandbox_handle, "container_name", "") if sandbox_handle else ""
+                await store.upsert_test_case(test_case)
+                await store.create_run(
+                    run_id, test_case.id, browser, self._model_name,
+                    novnc_url, container_name,
+                )
 
             # --- CDP session ---
             if cdp_url:
@@ -179,7 +198,7 @@ class RunManager:
             await asyncio.sleep(2.0)
 
             # --- Compile graph ---
-            assertion_engine = AssertionEngine()
+            assertion_engine = AssertionEngine(cdp_session=cdp_session)
             from orchestrator.agent.graph import build_graph
             graph = build_graph(
                 llm=self._llm,
@@ -224,6 +243,7 @@ class RunManager:
                 "status": "running",
                 "goal_complete": False,
                 "termination_reason": None,
+                "guard_blocked": False,
                 "run_start_time": start_time,
             }
 
@@ -250,6 +270,25 @@ class RunManager:
                 termination_reason=f"Unhandled exception: {exc}",
             )
         finally:
+            # --- DB: finalize run ---
+            if db_enabled():
+                from orchestrator.db import store as _store
+                try:
+                    summary = collector.get_summary(run_id=run_id, status="errored")
+                    await _store.update_run_status(
+                        run_id, summary.status,
+                        int(summary.duration_s * 1000),
+                        summary.total_steps,
+                        summary.total_input_tokens + summary.total_output_tokens,
+                        summary.mcp_tool_calls + summary.custom_tool_calls,
+                        summary.total_cost_usd,
+                        summary.steps_completed,
+                        None,
+                    )
+                    await _store.insert_assertion_results(run_id, summary.assertion_results)
+                    await _store.insert_run_summary(run_id, summary)
+                except Exception as _db_exc:
+                    logger.warning("DB finalization failed (non-fatal): %s", _db_exc)
             # Always clean up resources.
             if mcp_client:
                 try:
@@ -261,6 +300,14 @@ class RunManager:
                     await cdp_session.close()
                 except Exception:
                     pass
+            if sandbox_handle and self._record and sandbox_handle.recording_container_path:
+                try:
+                    self._sandbox_manager.stop_recording(sandbox_handle)
+                    mp4_path = output_dir / f"{run_id}.mp4"
+                    self._sandbox_manager.fetch_recording(sandbox_handle, host_path=str(mp4_path))
+                    print(f"[recording] {mp4_path}")
+                except Exception as exc:
+                    logger.warning("Recording fetch failed (non-fatal): %s", exc)
             if sandbox_handle:
                 try:
                     self._sandbox_manager.stop(sandbox_handle)
@@ -276,12 +323,13 @@ def _build_run_result(
     output_dir: Path,
 ) -> RunResult:
     """Convert the final graph state into a RunResult."""
+    from orchestrator.reporting.report_generator import generate_markdown_report, generate_html_report
     summary = collector.get_summary(run_id=run_id, status=final_state.get("status", "errored"))
     try:
         trace_path = collector.write_json(output_dir, status=summary.status)
     except Exception:
         trace_path = None
-    return RunResult(
+    run_result = RunResult(
         run_id=run_id,
         test_id=test_case.id,
         test_name=test_case.name,
@@ -298,6 +346,14 @@ def _build_run_result(
         error_count=summary.error_count,
         tool_call_count=summary.mcp_tool_calls + summary.custom_tool_calls,
     )
+    try:
+        md_path = generate_markdown_report(run_result, collector.traces, output_dir)
+        html_path = generate_html_report(run_result, collector.traces, output_dir)
+        print(f"[report]    {md_path}")
+        print(f"[report]    {html_path}")
+    except Exception as _rep_exc:
+        logger.warning("Report generation failed (non-fatal): %s", _rep_exc)
+    return run_result
 
 
 def _build_custom_langchain_tools(

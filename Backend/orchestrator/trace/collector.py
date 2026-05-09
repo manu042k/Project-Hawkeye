@@ -58,6 +58,7 @@ class TraceCollector:
         model: str,
         browser: str,
         verbose: bool = False,
+        db_run_id: str | None = None,
     ) -> None:
         self._run_id = run_id
         self._test_id = test_id
@@ -65,9 +66,15 @@ class TraceCollector:
         self._model = model
         self._browser = browser
         self._verbose = verbose
+        self._db_run_id = db_run_id
         self._traces: list[StepTrace] = []
         self._start_time = time.time()
         self._assertion_results: list[AssertionResult] = []
+
+    @property
+    def traces(self) -> list[StepTrace]:
+        """All accumulated step traces."""
+        return self._traces
 
     # ------------------------------------------------------------------
     # Callback API (called by graph nodes)
@@ -167,6 +174,14 @@ class TraceCollector:
             t.tool_success = success
             t.tool_error = error
             t.tool_retries = retries
+            # Fire-and-forget DB persistence per step
+            if self._db_run_id:
+                import asyncio
+                from orchestrator.db import store as _db_store
+                try:
+                    asyncio.create_task(_db_store.insert_step_trace(self._db_run_id, t))
+                except RuntimeError:
+                    pass  # No event loop in sync context — skip
 
         status_str = "[green]OK[/green]" if success else "[red]ERR[/red]"
         input_preview = _compact(tool_input)

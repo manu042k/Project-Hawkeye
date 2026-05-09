@@ -1,0 +1,56 @@
+id: "TC-002b"
+name: "SauceDemo: add product to cart and verify"
+suite: "phase1-smoke"
+priority: "P1"
+tags: ["e-commerce", "cart", "login"]
+
+target:
+  url: "https://www.saucedemo.com"
+  browser: "chromium"
+  viewport:
+    width: 1280
+    height: 720
+
+goal: |
+  Log in to SauceDemo with username 'standard_user' and password 'secret_sauce'.
+  Add exactly ONE product to the cart, then navigate to the cart and confirm
+  the product is listed there.
+
+steps: null
+
+assertions:
+  - id: "A1"
+    type: "content"
+    description: "Cart page shows at least one item"
+    params:
+      check: "text_present"
+      text: "Your Cart"
+
+  - id: "A2"
+    type: "console"
+    description: "No critical JS errors"
+    params:
+      level: "error"
+      max_count: 5
+      ignore_patterns:
+        - "favicon"
+        - "analytics"
+        - "401"
+        - "Unauthorized"
+        - "Failed to load resource"
+
+constraints:
+  max_steps: 20
+  timeout_seconds: 300
+  navigation_policy: "explicit_urls_allowed"
+  forbidden_actions:
+    - "navigate to any domain other than saucedemo.com"
+
+context:
+  page_type: "spa"
+  app_description: "SauceDemo — a fake e-commerce site for testing. Credentials: standard_user / secret_sauce."
+  hints:
+    - "Login with username 'standard_user' and password 'secret_sauce'"
+    - "Click ONE product name or image, then IMMEDIATELY click the cart icon in the top-right"
+    - "Do NOT add multiple products — one is sufficient"
+    - "The cart icon is in the top-right corner and shows a badge count"

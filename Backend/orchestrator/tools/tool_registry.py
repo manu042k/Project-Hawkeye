@@ -125,8 +125,54 @@ def build_default_registry(
             evidence=tool_input.get("evidence"),
         )
 
+    from orchestrator.tools.get_network_log import get_network_log
+    from orchestrator.tools.assert_network_request import assert_network_request
+    from orchestrator.tools.assert_element_state import assert_element_state
+
+    async def _get_network_log(tool_input: dict, cdp_session: CdpSession, state: AgentState) -> str:
+        result = await get_network_log(
+            cdp_session=cdp_session,
+            url_pattern=tool_input.get("url_pattern"),
+            method=tool_input.get("method"),
+            status_gte=tool_input.get("status_gte"),
+            status_lte=tool_input.get("status_lte"),
+            limit=tool_input.get("limit", 50),
+        )
+        if result.count == 0:
+            return "No network requests captured."
+        header = f"{result.count} request(s)" + (" (filtered)" if result.filtered else "") + ":"
+        rows = "\n".join(
+            f"  {r['method']} {r['status']} {r['url'][:120]}" + (" [FAILED]" if r["failed"] else "")
+            for r in result.requests
+        )
+        return f"{header}\n{rows}"
+
+    async def _assert_network_request(tool_input: dict, cdp_session: CdpSession, state: AgentState) -> str:
+        result = await assert_network_request(
+            cdp_session=cdp_session,
+            url_pattern=tool_input.get("url_pattern", ""),
+            method=tool_input.get("method"),
+            expected_status=tool_input.get("expected_status"),
+            min_count=tool_input.get("min_count", 1),
+        )
+        status = "PASSED" if result.passed else "FAILED"
+        return f"Assertion {status}: {result.details}"
+
+    async def _assert_element_state(tool_input: dict, cdp_session: CdpSession, state: AgentState) -> str:
+        result = await assert_element_state(
+            cdp_session=cdp_session,
+            selector=tool_input.get("selector", ""),
+            check=tool_input.get("check", ""),
+            expected=tool_input.get("expected"),
+        )
+        status = "PASSED" if result.passed else "FAILED"
+        return f"Assertion {status}: {result.details}"
+
     registry.register("wait_for_stable", _wait_for_stable)
     registry.register("assert_text_present", _assert_text)
     registry.register("get_console_errors", _get_console_errors)
     registry.register("report_step_result", _report_step)
+    registry.register("get_network_log", _get_network_log)
+    registry.register("assert_network_request", _assert_network_request)
+    registry.register("assert_element_state", _assert_element_state)
     return registry
