@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CircleCheck, Link2, Mail, MoreVertical, Pencil, ShieldCheck, User, UserPlus, XCircle } from "lucide-react";
 import { useSession } from "next-auth/react";
 
@@ -31,8 +31,10 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 
-import { teamMembers } from "@/lib/mock-data/billing";
+import { apiClient } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
+
+type Member = { id: string; email: string; name: string; avatar_url?: string; role: string; joined_at: string };
 
 type ConnectedProvider = {
   id: "google" | "github";
@@ -53,6 +55,34 @@ export default function AccountPage() {
   const [securityAlerts, setSecurityAlerts] = useState(true);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState("developer");
+  const [members, setMembers] = useState<Member[]>([]);
+
+  useEffect(() => {
+    apiClient.listMembers("default").then((res) => setMembers(res.members)).catch(() => {});
+  }, []);
+
+  async function handleInvite() {
+    if (!inviteEmail) return;
+    try {
+      await apiClient.inviteMember("default", { email: inviteEmail, role: inviteRole });
+      toast.success("Invitation sent", { description: inviteEmail });
+      setInviteEmail("");
+      setInviteOpen(false);
+    } catch {
+      toast.error("Failed to send invitation");
+    }
+  }
+
+  async function handleRemove(userId: string) {
+    try {
+      await apiClient.removeMember("default", userId);
+      setMembers((prev) => prev.filter((m) => m.id !== userId));
+      toast.success("Member removed");
+    } catch {
+      toast.error("Failed to remove member");
+    }
+  }
 
   const providers = useMemo<ConnectedProvider[]>(
     () => [
@@ -245,7 +275,7 @@ export default function AccountPage() {
                 <DialogContent>
                   <DialogHeader>
                     <DialogTitle>Invite a teammate</DialogTitle>
-                    <DialogDescription>Static UI demo. Invites are not actually sent.</DialogDescription>
+                    <DialogDescription>Send an invitation to join your organization.</DialogDescription>
                   </DialogHeader>
                   <div className="space-y-2">
                     <Label>Email</Label>
@@ -256,11 +286,8 @@ export default function AccountPage() {
                       Cancel
                     </Button>
                     <Button
-                      onClick={() => {
-                        toast.success("Invite queued", { description: inviteEmail || "Invite created." });
-                        setInviteEmail("");
-                        setInviteOpen(false);
-                      }}
+                      onClick={handleInvite}
+                      disabled={!inviteEmail}
                     >
                       Send invite
                     </Button>
@@ -270,17 +297,16 @@ export default function AccountPage() {
             </CardHeader>
             <CardContent className="p-0">
               <ul className="divide-y divide-border/60">
-                {teamMembers.map((m) => (
+                {members.length === 0 && (
+                  <li className="px-6 py-4 text-sm text-muted-foreground">No members yet.</li>
+                )}
+                {members.map((m) => (
                   <li key={m.id} className="flex items-center justify-between gap-4 px-6 py-4 transition-colors hover:bg-muted/20">
                     <div className="flex min-w-0 items-center gap-3">
                       <Avatar className="size-8 border border-border/60">
-                        {m.avatarUrl ? <AvatarImage alt={m.name} src={m.avatarUrl} /> : null}
+                        {m.avatar_url ? <AvatarImage alt={m.name} src={m.avatar_url} /> : null}
                         <AvatarFallback className="bg-primary/15 font-semibold text-primary">
-                          {m.initials ?? m.name
-                            .split(" ")
-                            .map((p) => p[0])
-                            .slice(0, 2)
-                            .join("")}
+                          {m.name.split(" ").map((p) => p[0]).slice(0, 2).join("")}
                         </AvatarFallback>
                       </Avatar>
                       <div className="min-w-0">
@@ -299,12 +325,12 @@ export default function AccountPage() {
                           <MoreVertical className="size-4" aria-hidden="true" />
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => toast.message("Action", { description: "Role editing disabled in demo." })}>
+                          <DropdownMenuItem onClick={() => toast.message("Change role", { description: "Role editing via API coming in Phase 7." })}>
                             Change role
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             className="text-destructive"
-                            onClick={() => toast.message("Action", { description: "Removal disabled in demo." })}
+                            onClick={() => handleRemove(m.id)}
                           >
                             Remove
                           </DropdownMenuItem>

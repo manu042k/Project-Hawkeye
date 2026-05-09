@@ -277,6 +277,21 @@ export const apiClient = {
   createBillingPortal: (body: { org_id: string }) =>
     apiFetch<{ portal_url: string; stub?: boolean }>("/api/billing/portal", { method: "POST", body: JSON.stringify(body) }),
 
+  // Orgs + members (Phase 6F)
+  getOrg: (orgId: string) => apiFetch<{ id: string; name: string; slug: string; plan: string; billing_email: string | null; created_at: string }>(`/api/orgs/${orgId}`),
+  updateOrg: (orgId: string, body: { name?: string; billing_email?: string }) =>
+    apiFetch<{ id: string; name: string }>(`/api/orgs/${orgId}`, { method: "PATCH", body: JSON.stringify(body) }),
+  listMembers: (orgId: string) => apiFetch<{ members: Array<{ id: string; email: string; name: string; avatar_url?: string; role: string; joined_at: string }>; total: number }>(`/api/orgs/${orgId}/members`),
+  updateMemberRole: (orgId: string, userId: string, role: string) =>
+    apiFetch<{ updated: boolean }>(`/api/orgs/${orgId}/members/${userId}`, { method: "PATCH", body: JSON.stringify({ role }) }),
+  removeMember: (orgId: string, userId: string) =>
+    apiFetch<{ removed: boolean }>(`/api/orgs/${orgId}/members/${userId}`, { method: "DELETE" }),
+  inviteMember: (orgId: string, body: { email: string; role: string }) =>
+    apiFetch<{ id: string; email: string; role: string; status: string }>(`/api/orgs/${orgId}/invitations`, { method: "POST", body: JSON.stringify(body) }),
+  listInvitations: (orgId: string) => apiFetch<{ invitations: Array<{ id: string; email: string; role: string; status: string }> }>(`/api/orgs/${orgId}/invitations`),
+  revokeInvitation: (orgId: string, invId: string) =>
+    apiFetch<{ revoked: boolean }>(`/api/orgs/${orgId}/invitations/${invId}`, { method: "DELETE" }),
+
   // Identity
   getMe: () => apiFetch<{ email: string; authenticated: boolean; role: string }>("/api/me"),
 };
