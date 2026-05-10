@@ -19,12 +19,14 @@ class SuiteCreate(BaseModel):
     name: str
     description: str = ""
     test_case_ids: list[str] = []
+    group: str | None = None
 
 
 class SuiteUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
     test_case_ids: list[str] | None = None
+    group: str | None = None
 
 
 def _project_suites(project_id: str) -> dict[str, dict[str, Any]]:
@@ -41,6 +43,7 @@ def _to_summary(s: dict[str, Any]) -> dict[str, Any]:
         "pass_rate": s.get("pass_rate", 0.0),
         "last_run_at": s.get("last_run_at"),
         "created_at": s["created_at"],
+        "group": s.get("group"),
     }
 
 
@@ -71,6 +74,7 @@ async def create_suite(project_id: str, body: SuiteCreate) -> dict:
     suite = {
         "id": suite_id, "project_id": project_id, "name": body.name,
         "description": body.description, "test_case_ids": body.test_case_ids,
+        "group": body.group,
         "pass_rate": 0.0, "last_run_at": None, "created_at": now, "updated_at": now,
     }
     _project_suites(project_id)[suite_id] = suite
@@ -110,6 +114,7 @@ async def update_suite(project_id: str, suite_id: str, body: SuiteUpdate) -> dic
     if body.name is not None: suite["name"] = body.name
     if body.description is not None: suite["description"] = body.description
     if body.test_case_ids is not None: suite["test_case_ids"] = body.test_case_ids
+    if body.group is not None: suite["group"] = body.group if body.group else None
     suite["updated_at"] = datetime.now(timezone.utc).isoformat()
     return _to_summary(suite)
 
@@ -126,6 +131,13 @@ async def delete_suite(project_id: str, suite_id: str) -> dict:
         raise HTTPException(status_code=404, detail="Suite not found")
     del suites[suite_id]
     return {"deleted": True}
+
+
+@router.get("/projects/{project_id}/suite-groups")
+async def list_suite_groups(project_id: str) -> dict:
+    suites = list(_project_suites(project_id).values())
+    groups = sorted({s.get("group") for s in suites if s.get("group")})
+    return {"groups": groups}
 
 
 @router.post("/projects/{project_id}/suites/{suite_id}/run", status_code=202)

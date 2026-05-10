@@ -145,6 +145,7 @@ export type SuiteSummary = {
   pass_rate: number;
   last_run_at: string | null;
   created_at: string;
+  group?: string | null;
 };
 
 export type ProjectSummary = {
@@ -236,7 +237,7 @@ export const apiClient = {
   // Test suites (Phase 5B)
   listSuites: (projectId: string) =>
     apiFetch<{ suites: SuiteSummary[]; total: number }>(`/api/projects/${projectId}/suites`),
-  createSuite: (projectId: string, body: { name: string; description?: string; test_case_ids?: string[] }) =>
+  createSuite: (projectId: string, body: { name: string; description?: string; test_case_ids?: string[]; group?: string }) =>
     apiFetch<SuiteSummary>(`/api/projects/${projectId}/suites`, { method: "POST", body: JSON.stringify(body) }),
   getSuite: (projectId: string, suiteId: string) =>
     apiFetch<SuiteSummary>(`/api/projects/${projectId}/suites/${suiteId}`),
@@ -244,6 +245,13 @@ export const apiClient = {
     apiFetch<SuiteSummary>(`/api/projects/${projectId}/suites/${suiteId}`, { method: "PUT", body: JSON.stringify(body) }),
   deleteSuite: (projectId: string, suiteId: string) =>
     apiFetch<{ deleted: boolean }>(`/api/projects/${projectId}/suites/${suiteId}`, { method: "DELETE" }),
+  getSuiteGroups: (projectId: string) =>
+    apiFetch<{ groups: string[] }>(`/api/projects/${projectId}/suite-groups`),
+  updateSuiteGroup: (projectId: string, suiteId: string, group: string | null) =>
+    apiFetch<SuiteSummary>(`/api/projects/${projectId}/suites/${suiteId}`, {
+      method: "PUT",
+      body: JSON.stringify({ group }),
+    }),
   runSuite: (projectId: string, suiteId: string) =>
     apiFetch<{ suite_id: string; test_case_ids: string[]; message: string }>(`/api/projects/${projectId}/suites/${suiteId}/run`, { method: "POST" }),
 

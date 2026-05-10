@@ -1,12 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
 import { MoreVertical, Plus, Search } from "lucide-react";
 
 import { AppTopbar } from "@/components/app/app-topbar";
-import { buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { NewRunModal } from "@/components/app/new-run-modal";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,6 +21,7 @@ import { useProjectStore } from "@/lib/project/store";
 import { useRuns, useDeleteRun } from "@/lib/api/hooks";
 import { type RunStatus, type RunSummary } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
+// Link import removed — "New test run" now opens NewRunModal
 
 function StatusPill({ status }: { status: RunStatus }) {
   const cfg = useMemo<{ label: string; className: string }>(() => {
@@ -72,6 +73,7 @@ export default function DashboardPage() {
   const [activityFilter, setActivityFilter] = useState("");
   const { data: runs, loading, error } = useRuns();
   const { deleteRun } = useDeleteRun();
+  const [runModalOpen, setRunModalOpen] = useState(false);
 
   const metrics = useMemo(() => {
     if (!runs) return null;
@@ -107,10 +109,10 @@ export default function DashboardPage() {
       <main className="flex-1 min-h-0 overflow-y-auto px-6 py-8">
         <div className="mx-auto max-w-[1600px] space-y-8">
           <div className="flex justify-end">
-            <Link href="/app/runs/new" className={cn(buttonVariants({ variant: "default" }), "inline-flex")}>
+            <Button onClick={() => setRunModalOpen(true)}>
               <Plus className="size-4" aria-hidden="true" />
               New test run
-            </Link>
+            </Button>
           </div>
 
           {error && (
@@ -214,6 +216,10 @@ export default function DashboardPage() {
                                 <MoreVertical className="size-4" aria-hidden="true" />
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => setRunModalOpen(true)}>
+                                  Re-run
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
                                 <DropdownMenuItem onClick={() => window.location.href = `/app/runs/live?id=${row.run_id}`}>
                                   {row.status === "running" ? "Watch live" : "View report"}
                                 </DropdownMenuItem>
@@ -237,6 +243,8 @@ export default function DashboardPage() {
           </Card>
         </div>
       </main>
+
+      <NewRunModal open={runModalOpen} onClose={() => setRunModalOpen(false)} />
     </div>
   );
 }
