@@ -59,13 +59,15 @@ export default function AccountPage() {
   const [members, setMembers] = useState<Member[]>([]);
 
   useEffect(() => {
-    apiClient.listMembers("default").then((res) => setMembers(res.members)).catch(() => {});
+    apiClient.listMembers("me").then((res) => setMembers(res.members)).catch(() => {
+      toast.error("Failed to load team members");
+    });
   }, []);
 
   async function handleInvite() {
     if (!inviteEmail) return;
     try {
-      await apiClient.inviteMember("default", { email: inviteEmail, role: inviteRole });
+      await apiClient.inviteMember("me", { email: inviteEmail, role: inviteRole });
       toast.success("Invitation sent", { description: inviteEmail });
       setInviteEmail("");
       setInviteOpen(false);
@@ -76,7 +78,7 @@ export default function AccountPage() {
 
   async function handleRemove(userId: string) {
     try {
-      await apiClient.removeMember("default", userId);
+      await apiClient.removeMember("me", userId);
       setMembers((prev) => prev.filter((m) => m.id !== userId));
       toast.success("Member removed");
     } catch {
