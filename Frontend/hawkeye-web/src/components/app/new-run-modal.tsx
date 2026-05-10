@@ -22,8 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-import { apiClient } from "@/lib/api/client";
-import { useTestCases } from "@/lib/api/hooks";
+import { apiClient, type TestCaseSummary } from "@/lib/api/client";
 
 const MODEL_OPTIONS = [
   { value: "openrouter:openai/gpt-4o", label: "GPT-4o" },
@@ -44,15 +43,26 @@ interface NewRunModalProps {
   initialTestCaseId?: string;
 }
 
+const DEFAULT_PROJECT = "default";
+
 export function NewRunModal({ open, onClose, initialTestCaseId }: NewRunModalProps) {
   const router = useRouter();
-  const { data: testCases, loading: tcLoading } = useTestCases();
+  const [testCases, setTestCases] = useState<TestCaseSummary[]>([]);
+  const [tcLoading, setTcLoading] = useState(true);
 
   const [testCaseId, setTestCaseId] = useState("");
   const [model, setModel] = useState(MODEL_OPTIONS[0].value);
   const [browser, setBrowser] = useState("chromium");
   const [record, setRecord] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    apiClient
+      .listProjectTestCases(DEFAULT_PROJECT, { status: "active" })
+      .then((res) => setTestCases(res.test_cases))
+      .catch(() => {})
+      .finally(() => setTcLoading(false));
+  }, []);
 
   useEffect(() => {
     if (initialTestCaseId) setTestCaseId(initialTestCaseId);
