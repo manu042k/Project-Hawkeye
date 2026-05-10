@@ -164,13 +164,21 @@ export type TraceEvent = {
   timestamp: string;
 };
 
-// Module-level session state — set by the sidebar via setAuthUser()
+// Module-level session state — set by the sidebar on session change
 let _authEmail: string | null = null;
+let _authToken: string | null = null;
+
 export function setAuthUser(email: string | null) { _authEmail = email; }
+export function setAuthToken(token: string | null) { _authToken = token; }
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const authHeaders: Record<string, string> = {};
-  if (_authEmail) authHeaders["X-User-Email"] = _authEmail;
+  if (_authToken) {
+    authHeaders["Authorization"] = `Bearer ${_authToken}`;
+  } else if (_authEmail) {
+    // Dev fallback when backend has no HAWKEYE_AUTH_SECRET configured
+    authHeaders["X-User-Email"] = _authEmail;
+  }
   const res = await fetch(`${API_URL}${path}`, {
     headers: { "Content-Type": "application/json", ...authHeaders, ...init?.headers },
     ...init,

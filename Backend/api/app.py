@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.job_queue import job_queue
 from api.routes import (runs, test_cases, ws, artifacts, projects, test_cases_crud,
                         suites, vault, schedules, me, usage, billing, orgs,
-                        environments, baselines, integrations, webhooks)
+                        environments, baselines, integrations, webhooks, auth)
 
 
 @asynccontextmanager
@@ -60,6 +60,7 @@ app.include_router(me.router, prefix="/api")
 app.include_router(usage.router, prefix="/api")
 app.include_router(billing.router, prefix="/api")
 app.include_router(orgs.router, prefix="/api")
+app.include_router(auth.router, prefix="/api")
 app.include_router(environments.router, prefix="/api")
 app.include_router(baselines.router, prefix="/api")
 app.include_router(integrations.router, prefix="/api")

@@ -21,7 +21,8 @@ CREATE TABLE IF NOT EXISTS users (
   email         TEXT UNIQUE NOT NULL,
   name          TEXT,
   avatar_url    TEXT,
-  auth_provider TEXT NOT NULL DEFAULT 'google',
+  auth_provider TEXT NOT NULL DEFAULT 'oauth',
+  pw_hash       TEXT,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
