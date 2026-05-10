@@ -12,11 +12,7 @@ logger = logging.getLogger(__name__)
 
 try:
     from opentelemetry import trace as otel_trace
-    from opentelemetry.sdk.trace import TracerProvider
-    from opentelemetry.sdk.trace.export import BatchSpanProcessor
-    from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-    from opentelemetry.sdk.resources import Resource
-    from opentelemetry.trace import SpanKind, Status, StatusCode, NonRecordingSpan
+    from opentelemetry.trace import SpanKind, Status, StatusCode
     from openinference.semconv.trace import SpanAttributes
     _OTEL_AVAILABLE = True
 except ImportError:
@@ -89,21 +85,23 @@ class PhoenixTracer:
             return
         if not _OTEL_AVAILABLE:
             warnings.warn(
-                "PHOENIX_COLLECTOR_ENDPOINT is set but opentelemetry/openinference packages "
-                "are not installed. Install with: uv pip install 'project-hawkeye[eval]'",
+                "PHOENIX_COLLECTOR_ENDPOINT is set but otel/openinference packages are not installed. "
+                "Install with: uv pip install 'project-hawkeye[eval]'",
                 stacklevel=2,
             )
             return
-
         try:
-            resource = Resource(attributes={"service.name": "hawkeye-orchestrator"})
-            exporter = OTLPSpanExporter(endpoint=f"{endpoint.rstrip('/')}/v1/traces")
-            processor = BatchSpanProcessor(exporter)
-            self._provider = TracerProvider(resource=resource)
-            self._provider.add_span_processor(processor)
+            from phoenix.otel import register
+            self._provider = register(project_name="hawkeye", auto_instrument=True)
             self._tracer = self._provider.get_tracer("hawkeye")
             self._enabled = True
             logger.info("PhoenixTracer: connected to %s", endpoint)
+        except ImportError:
+            warnings.warn(
+                "PHOENIX_COLLECTOR_ENDPOINT is set but arize-phoenix-otel is not installed. "
+                "Install with: uv pip install 'project-hawkeye[eval]'",
+                stacklevel=2,
+            )
         except Exception as exc:
             logger.warning("PhoenixTracer: init failed (tracing disabled): %s", exc)
 
