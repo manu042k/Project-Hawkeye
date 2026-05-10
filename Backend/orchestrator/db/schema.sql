@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS vault_secrets (
   description      TEXT,
   created_by       UUID REFERENCES users(id),
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (project_id, key)
 );
 

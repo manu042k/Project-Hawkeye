@@ -75,7 +75,7 @@ def _row_to_dict(row: dict, reveal: bool = False) -> dict:
         "type": row.get("secret_type") or "API Key",
         "masked_value": "•" * 16,
         "value": value,
-        "updated_at": str(row["created_at"]),
+        "updated_at": str(row.get("updated_at") or row["created_at"]),
         "created_at": str(row["created_at"]),
     }
 
@@ -169,6 +169,7 @@ async def update_secret(project_id: str, secret_id: str, body: SecretUpdate) -> 
         if not updates:
             row = await fetchrow("SELECT * FROM vault_secrets WHERE id=$1 AND project_id=$2", secret_id, project_id)
         else:
+            updates.append("updated_at=now()")
             sql = f"UPDATE vault_secrets SET {', '.join(updates)} WHERE id=${idx} AND project_id=${idx+1} RETURNING *"
             args += [secret_id, project_id]
             row = await fetchrow(sql, *args)

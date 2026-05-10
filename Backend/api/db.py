@@ -23,7 +23,7 @@ _DB_URL: str = os.environ.get("HAWKEYE_DB_URL", "")
 
 
 def db_enabled() -> bool:
-    return bool(_DB_URL)
+    return bool(_DB_URL) and asyncpg is not None
 
 
 async def init_pool() -> None:

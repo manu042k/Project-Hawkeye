@@ -109,8 +109,11 @@ async def _fire_suite(suite_id: str, project_id: str, branch: str) -> list[str]:
         tc_ids = suite.get("test_case_ids", [])
 
     for tc_id in tc_ids:
+        from api.tasks import run_test_case
+        import uuid as _uuid
+        run_id = str(_uuid.uuid4())
         req = RunRequest(test_case_id=tc_id)
-        run_id = job_queue.submit(req)
+        run_test_case.delay(run_id, req.model_dump())
         run_ids.append(run_id)
         logger.info("Beat: dispatched run %s for tc %s (suite %s)", run_id, tc_id, suite_id)
 

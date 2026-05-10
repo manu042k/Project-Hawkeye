@@ -88,7 +88,7 @@ def notify_run_passed(
     report_url = f"{_APP_URL}/app/runs/report?id={run_id}"
     dur = f"{duration_s:.1f}s" if duration_s else "—"
     payload = {
-        "text": f":white_check_mark: *{test_name}* passed in {dur} (‚{steps or 0} steps) — <{report_url}|View Report>"
+        "text": f":white_check_mark: *{test_name}* passed in {dur} ({steps or 0} steps) — <{report_url}|View Report>"
     }
     try:
         httpx.post(_WEBHOOK_URL, json=payload, timeout=8).raise_for_status()
