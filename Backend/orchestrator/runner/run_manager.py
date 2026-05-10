@@ -104,6 +104,9 @@ class RunManager:
             )
         browser = browser_override or test_case.target.browser
 
+        from orchestrator.trace.phoenix import PhoenixTracer
+        phoenix_tracer = PhoenixTracer()
+
         collector = TraceCollector(
             run_id=run_id,
             test_id=test_case.id,
@@ -113,6 +116,7 @@ class RunManager:
             verbose=self._verbose,
             db_run_id=run_id if db_enabled() else None,
             ws_emitter=self._ws_emitter,
+            phoenix_tracer=phoenix_tracer,
         )
         self._collector = collector
         collector.on_run_start()

@@ -51,6 +51,12 @@ if str(_BACKEND) not in sys.path:
               help="Figma file URL for visual design diff (Pass 2).")
 @click.option("--figma-token", default=None, envvar="FIGMA_TOKEN",
               help="Figma personal access token.")
+@click.option("--phoenix-endpoint", default=None, envvar="PHOENIX_COLLECTOR_ENDPOINT",
+              help=(
+                  "Arize Phoenix OTLP collector URL (e.g. http://localhost:6006). "
+                  "Set PHOENIX_COLLECTOR_ENDPOINT env var to enable tracing. "
+                  "Requires: uv pip install 'project-hawkeye[eval]'"
+              ))
 def run(
     test_path: str,
     model: str,
@@ -66,6 +72,7 @@ def run(
     db_url: str | None,
     figma_url: str | None,
     figma_token: str | None,
+    phoenix_endpoint: str | None,
 ) -> None:
     """Run a single test case."""
     from orchestrator.loader.yaml_loader import load_test_case
@@ -80,6 +87,8 @@ def run(
         os.environ["FIGMA_TOKEN"] = figma_token
     if figma_url:
         os.environ["FIGMA_URL"] = figma_url
+    if phoenix_endpoint:
+        os.environ["PHOENIX_COLLECTOR_ENDPOINT"] = phoenix_endpoint
 
     # Load and validate test case.
     try:

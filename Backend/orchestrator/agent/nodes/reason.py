@@ -66,6 +66,7 @@ async def reason_node(
 
     # Invoke with retry for rate limits.
     start_ms = time.monotonic()
+    start_ns = time.time_ns()
     ai_message: AIMessage | None = None
     last_error: ErrorInfo | None = None
 
@@ -80,6 +81,7 @@ async def reason_node(
             # Use ainvoke() — both ChatOllama and ChatOpenAI support async.
             response = await llm_with_tools.ainvoke(messages)
             ai_message = response
+            end_ns = time.time_ns()
             break
         except Exception as exc:
             exc_str = str(exc)
@@ -254,6 +256,7 @@ async def reason_node(
             }
 
     latency_ms = int((time.monotonic() - start_ms) * 1000)
+    end_ns = locals().get("end_ns") or time.time_ns()
     cost = compute_step_cost(model_name, usage)
 
     stop_reason = "tool_use" if ai_message.tool_calls else "end_turn"
@@ -270,6 +273,11 @@ async def reason_node(
         ]
         agent_text = " ".join(t for t in texts if t) or None
 
+    tool_calls: list[dict] | None = (
+        [{"name": tc.get("name", ""), "args": tc.get("args", {})} for tc in ai_message.tool_calls]
+        if ai_message.tool_calls else None
+    )
+
     collector.on_reason(
         model=model_name,
         input_tokens=usage.get("input_tokens", 0),
@@ -278,6 +286,10 @@ async def reason_node(
         stop_reason=stop_reason,
         agent_text=agent_text,
         cost_usd=cost,
+        input_messages=messages,
+        tool_calls=tool_calls,
+        llm_start_ns=start_ns,
+        llm_end_ns=end_ns,
     )
 
     return {

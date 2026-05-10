@@ -114,6 +114,7 @@ async def act_node(
 
     # --- Execute the tool ---
     start_ms = time.monotonic()
+    act_start_ns = time.time_ns()
     success = False
     output: str = ""
     error_msg: str | None = None
@@ -139,6 +140,7 @@ async def act_node(
         error_msg = f"{type(exc).__name__}: {exc}"
         logger.warning("ACT: tool '%s' exception: %s", tool_name, error_msg)
 
+    act_end_ns = time.time_ns()
     latency_ms = int((time.monotonic() - start_ms) * 1000)
 
     collector.on_act(
@@ -150,6 +152,8 @@ async def act_node(
         success=success,
         error=error_msg,
         retries=0,
+        act_start_ns=act_start_ns,
+        act_end_ns=act_end_ns,
     )
 
     # Build the ToolMessage for the conversation history.

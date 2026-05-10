@@ -13,6 +13,7 @@ from rich.rule import Rule
 
 from orchestrator.models.results import AssertionResult
 from orchestrator.models.run_state import StepTrace, compute_step_cost
+from orchestrator.trace.phoenix import PhoenixTracer
 
 # legacy_windows=False: use ANSI codes instead of the CP1252-limited legacy
 # Windows console renderer — required for box-drawing characters on Windows.
@@ -60,6 +61,7 @@ class TraceCollector:
         verbose: bool = False,
         db_run_id: str | None = None,
         ws_emitter=None,  # Callable[[str, dict], Awaitable[None]] | None
+        phoenix_tracer: PhoenixTracer | None = None,
     ) -> None:
         self._run_id = run_id
         self._test_id = test_id
@@ -69,6 +71,7 @@ class TraceCollector:
         self._verbose = verbose
         self._db_run_id = db_run_id
         self._ws_emitter = ws_emitter
+        self._phoenix = phoenix_tracer
         self._traces: list[StepTrace] = []
         self._start_time = time.time()
         self._assertion_results: list[AssertionResult] = []
@@ -102,6 +105,11 @@ class TraceCollector:
             f"  Browser: {self._browser}   Run ID: {self._run_id}"
         )
         _console.print(Rule(style="blue"))
+        if self._phoenix:
+            self._phoenix.start_run(
+                self._run_id, self._test_id, self._test_name,
+                self._model, self._browser,
+            )
 
     def on_sandbox_ready(self, novnc_url: str, cdp_url: str | None) -> None:
         _console.print(f"{_tag('sandbox')} Spawning container...  noVNC: [cyan]{novnc_url}[/cyan]")
@@ -121,6 +129,8 @@ class TraceCollector:
         if checkpoint_id and self._verbose:
             _console.print(f"{_tag('observe')} checkpoint={checkpoint_id}")
         self._emit("step_start", {"step_number": step_number, "checkpoint_id": checkpoint_id})
+        if self._phoenix:
+            self._phoenix.start_step(step_number)
 
     def on_observe(
         self,
@@ -141,6 +151,9 @@ class TraceCollector:
             f"URL: {_esc(url)}  snapshot: {snapshot_chars} chars"
         )
         self._emit("observe", {"url": url, "title": title, "wait_ms": wait_ms, "snapshot_chars": snapshot_chars})
+        if self._phoenix:
+            self._phoenix.start_observe(url, title)
+            self._phoenix.end_observe(wait_ms, snapshot_chars)
 
     def on_reason(
         self,
@@ -152,6 +165,10 @@ class TraceCollector:
         stop_reason: str,
         agent_text: str | None,
         cost_usd: float,
+        input_messages: list | None = None,
+        tool_calls: list[dict] | None = None,
+        llm_start_ns: int = 0,
+        llm_end_ns: int = 0,
     ) -> None:
         if self._traces:
             t = self._traces[-1]
@@ -178,6 +195,20 @@ class TraceCollector:
             "cost_usd": cost_usd,
             "stop_reason": stop_reason,
         })
+        if self._phoenix:
+            end_ns = llm_end_ns or time.time_ns()
+            start_ns = llm_start_ns or (end_ns - latency_ms * 1_000_000)
+            self._phoenix.start_reason(model, start_time_ns=start_ns)
+            self._phoenix.end_reason(
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                latency_ms=latency_ms,
+                cost_usd=cost_usd,
+                agent_text=agent_text,
+                input_messages=input_messages,
+                tool_calls=tool_calls,
+                end_time_ns=end_ns,
+            )
 
     def on_act(
         self,
@@ -190,6 +221,8 @@ class TraceCollector:
         success: bool,
         error: str | None,
         retries: int,
+        act_start_ns: int = 0,
+        act_end_ns: int = 0,
     ) -> None:
         if self._traces:
             t = self._traces[-1]
@@ -225,6 +258,17 @@ class TraceCollector:
             "success": success,
             "error": error,
         })
+        if self._phoenix:
+            end_ns = act_end_ns or time.time_ns()
+            start_ns = act_start_ns or (end_ns - latency_ms * 1_000_000)
+            self._phoenix.start_act(tool_name, tool_source, tool_input, start_time_ns=start_ns)
+            self._phoenix.end_act(
+                success=success,
+                latency_ms=latency_ms,
+                error=error,
+                tool_output=str(tool_output)[:2000] if tool_output else None,
+                end_time_ns=end_ns,
+            )
 
     def on_goal_check(
         self, *, completed_checkpoints: list[str], goal_complete: bool
@@ -237,6 +281,8 @@ class TraceCollector:
         if completed_checkpoints:
             chk = ", ".join(completed_checkpoints)
             _console.print(f"{_tag('check')}   [green]Completed: {_esc(str(completed_checkpoints))}[/green]")
+        if self._phoenix:
+            self._phoenix.end_step()
 
     def on_error(self, *, error_type: str, message: str, recoverable: bool) -> None:
         color = "yellow" if recoverable else "red"
@@ -251,6 +297,8 @@ class TraceCollector:
             "total_steps": len(self._traces),
             "assertion_count": len(assertion_results),
         })
+        if self._phoenix:
+            self._phoenix.end_run("running", total_steps=len(self._traces))
 
     # ------------------------------------------------------------------
     # Summary
@@ -323,6 +371,10 @@ class TraceCollector:
             f"Cost: [dim]${summary.total_cost_usd:.4f}[/dim]"
         )
         _console.print(Rule(style="blue"))
+        if self._phoenix:
+            self._phoenix.end_run(
+                status, total_steps=summary.total_steps, total_cost_usd=summary.total_cost_usd
+            )
 
     def write_json(self, output_dir: Path, *, status: str = "unknown") -> Path:
         """Write full trace JSON to ``output_dir/trace.json``."""

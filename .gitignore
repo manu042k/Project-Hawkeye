@@ -225,6 +225,9 @@ __marimo__/
 # Cursor IDE local config (keep repo-agnostic)
 .cursor/
 
+# Ruflo artifacts
+ruvector.db
+
 # Claude Code local config
 .claude/settings.local.json
 artifacts/
