@@ -217,3 +217,65 @@ def _stripe_plan_from_items(subscription_obj: dict) -> str:
 
 def get_plan_limits(plan: str) -> dict[str, int]:
     return PLAN_LIMITS.get(plan, PLAN_LIMITS["free"])
+
+
+# ---------------------------------------------------------------------------
+# Billing usage + subscription detail
+# ---------------------------------------------------------------------------
+
+@router.get("/billing/usage")
+async def get_billing_usage(org_id: str = "default") -> dict:
+    """Detailed billing usage for the org — run count, cost, limits."""
+    from api.redis_store import list_runs
+    from api.routes.vault import _store as vault_store
+
+    plan = "free"
+    if db_enabled():
+        row = await fetchrow("SELECT plan FROM organizations WHERE id=$1", org_id)
+        if row:
+            plan = row["plan"]
+    limits = PLAN_LIMITS.get(plan, PLAN_LIMITS["free"])
+
+    runs = await list_runs()
+    runs_used = len(runs)
+    cost_usd = sum(r.get("estimated_cost_usd") or 0.0 for r in runs)
+    vault_count = sum(len(v) for v in vault_store.values())
+
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    period_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    return {
+        "org_id": org_id,
+        "plan": plan,
+        "period_start": period_start.isoformat(),
+        "period_end": None,
+        "runs_used": runs_used,
+        "runs_limit": limits["runs"],
+        "parallel_used": 1,
+        "parallel_limit": limits["parallel"],
+        "secrets_used": vault_count,
+        "secrets_limit": limits["secrets"],
+        "cost_usd": round(cost_usd, 4),
+    }
+
+
+@router.get("/billing/subscription")
+async def get_subscription(org_id: str = "default") -> dict:
+    """Current subscription plan + renewal info for the org."""
+    plan = "free"
+    stripe_customer_id = None
+    if db_enabled():
+        row = await fetchrow("SELECT plan, stripe_customer_id FROM organizations WHERE id=$1", org_id)
+        if row:
+            plan = row["plan"]
+            stripe_customer_id = row.get("stripe_customer_id")
+    return {
+        "org_id": org_id,
+        "plan": plan,
+        "price_monthly": PLAN_PRICES_MONTHLY.get(plan, 0),
+        "stripe_customer_id": stripe_customer_id,
+        "status": "active" if plan != "free" else "free",
+        "next_billing_date": None,
+        "cancel_at_period_end": False,
+    }

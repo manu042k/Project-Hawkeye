@@ -301,6 +301,21 @@ async def import_yaml(project_id: str, body: dict) -> dict:
     return _to_summary(record)
 
 
+@router.get("/{project_id}/test-cases/{tc_id}/runs")
+async def get_test_case_runs(project_id: str, tc_id: str, limit: int = 20, page: int = 1) -> dict:
+    """Return run history for a specific test case (from Redis store)."""
+    from api.redis_store import list_runs
+    all_runs = list_runs()
+    matched = [
+        r for r in all_runs
+        if r.get("test_case_id") == tc_id or r.get("test_name") == tc_id
+    ]
+    matched.sort(key=lambda r: r.get("created_at", ""), reverse=True)
+    start = (page - 1) * limit
+    page_items = matched[start: start + limit]
+    return {"runs": page_items, "total": len(matched), "page": page, "limit": limit}
+
+
 def seed_from_yaml_dir(project_id: str = "default") -> None:
     """Import all YAML test cases from orchestrator/test_cases/ into the default project."""
     for yaml_path in sorted(_TEST_CASES_DIR.glob("*.yaml")):

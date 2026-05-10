@@ -130,13 +130,144 @@ async def delete_suite(project_id: str, suite_id: str) -> dict:
 
 @router.post("/projects/{project_id}/suites/{suite_id}/run", status_code=202)
 async def run_suite(project_id: str, suite_id: str) -> dict:
+    from api.tasks import run_test_case
+    from api.schemas import RunRequest
+    import uuid as _uuid
     if db_enabled():
         row = await fetchrow("SELECT test_case_ids FROM test_suites WHERE id=$1 AND project_id=$2", suite_id, project_id)
         if not row:
             raise HTTPException(status_code=404, detail="Suite not found")
         ids = json.loads(row["test_case_ids"]) if isinstance(row["test_case_ids"], str) else (row["test_case_ids"] or [])
-        return {"suite_id": suite_id, "test_case_ids": ids, "message": "Dispatch individual runs for each test case."}
+    else:
+        suite = _project_suites(project_id).get(suite_id)
+        if not suite:
+            raise HTTPException(status_code=404, detail="Suite not found")
+        ids = suite["test_case_ids"]
+    run_ids: list[str] = []
+    for tc_id in ids:
+        run_id = str(_uuid.uuid4())
+        req = RunRequest(test_case_id=tc_id)
+        run_test_case.delay(run_id, req.model_dump())
+        run_ids.append(run_id)
+    return {"suite_id": suite_id, "dispatched_run_ids": run_ids, "total": len(run_ids)}
+
+
+# ── Suite members (test cases inside a suite) ────────────────────────────────
+
+class MemberAdd(BaseModel):
+    test_case_id: str
+    position: int = -1  # -1 = append
+
+
+@router.post("/projects/{project_id}/suites/{suite_id}/members", status_code=201)
+async def add_suite_member(project_id: str, suite_id: str, body: MemberAdd) -> dict:
     suite = _project_suites(project_id).get(suite_id)
     if not suite:
-        raise HTTPException(status_code=404, detail="Suite not found")
-    return {"suite_id": suite_id, "test_case_ids": suite["test_case_ids"], "message": "Dispatch individual runs for each test case."}
+        raise HTTPException(404, "Suite not found")
+    ids: list[str] = list(suite["test_case_ids"])
+    if body.test_case_id in ids:
+        raise HTTPException(409, "Test case already in suite")
+    if body.position < 0 or body.position >= len(ids):
+        ids.append(body.test_case_id)
+    else:
+        ids.insert(body.position, body.test_case_id)
+    suite["test_case_ids"] = ids
+    if db_enabled():
+        await execute(
+            "UPDATE test_suites SET test_case_ids=$2::jsonb,updated_at=now() WHERE id=$1",
+            suite_id, json.dumps(ids),
+        )
+    return {"suite_id": suite_id, "test_case_ids": ids}
+
+
+@router.delete("/projects/{project_id}/suites/{suite_id}/members/{tc_id}")
+async def remove_suite_member(project_id: str, suite_id: str, tc_id: str) -> dict:
+    suite = _project_suites(project_id).get(suite_id)
+    if not suite:
+        raise HTTPException(404, "Suite not found")
+    ids: list[str] = [i for i in suite["test_case_ids"] if i != tc_id]
+    suite["test_case_ids"] = ids
+    if db_enabled():
+        await execute(
+            "UPDATE test_suites SET test_case_ids=$2::jsonb,updated_at=now() WHERE id=$1",
+            suite_id, json.dumps(ids),
+        )
+    return {"removed": True, "test_case_ids": ids}
+
+
+class ReorderBody(BaseModel):
+    order: list[str]
+
+
+@router.put("/projects/{project_id}/suites/{suite_id}/members/reorder")
+async def reorder_suite_members(project_id: str, suite_id: str, body: ReorderBody) -> dict:
+    suite = _project_suites(project_id).get(suite_id)
+    if not suite:
+        raise HTTPException(404, "Suite not found")
+    suite["test_case_ids"] = body.order
+    if db_enabled():
+        await execute(
+            "UPDATE test_suites SET test_case_ids=$2::jsonb,updated_at=now() WHERE id=$1",
+            suite_id, json.dumps(body.order),
+        )
+    return {"suite_id": suite_id, "test_case_ids": body.order}
+
+
+# ── Suite schedule (single schedule per suite, simpler than list) ─────────────
+
+_suite_schedules: dict[str, dict] = {}  # suite_id -> schedule
+
+
+class ScheduleBody(BaseModel):
+    cron_expr: str
+    timezone: str = "UTC"
+    enabled: bool = True
+    environment_id: str | None = None
+
+
+@router.get("/projects/{project_id}/suites/{suite_id}/schedule")
+async def get_suite_schedule(project_id: str, suite_id: str) -> dict:
+    sched = _suite_schedules.get(suite_id)
+    if not sched:
+        return {"cron_expr": None, "timezone": "UTC", "enabled": False, "next_run_at": None}
+    return sched
+
+
+@router.put("/projects/{project_id}/suites/{suite_id}/schedule")
+async def set_suite_schedule(project_id: str, suite_id: str, body: ScheduleBody) -> dict:
+    from datetime import timezone as _tz
+    try:
+        from croniter import croniter
+        import datetime as _dt
+        now = _dt.datetime.now(_tz.utc)
+        it = croniter(body.cron_expr, now)
+        next_run = it.get_next(_dt.datetime).isoformat()
+    except Exception:
+        next_run = None
+    sched = {
+        "suite_id": suite_id, "cron_expr": body.cron_expr,
+        "timezone": body.timezone, "enabled": body.enabled,
+        "environment_id": body.environment_id, "next_run_at": next_run,
+    }
+    _suite_schedules[suite_id] = sched
+    return sched
+
+
+# ── Suite run history ─────────────────────────────────────────────────────────
+
+_suite_runs: dict[str, list[dict]] = {}  # suite_id -> [suite_run]
+
+
+@router.get("/projects/{project_id}/suites/{suite_id}/runs")
+async def list_suite_runs(project_id: str, suite_id: str) -> dict:
+    from api.redis_store import get_run
+    runs = _suite_runs.get(suite_id, [])
+    return {"runs": runs, "total": len(runs)}
+
+
+@router.get("/projects/{project_id}/suites/{suite_id}/runs/{suite_run_id}")
+async def get_suite_run(project_id: str, suite_id: str, suite_run_id: str) -> dict:
+    for r in _suite_runs.get(suite_id, []):
+        if r["id"] == suite_run_id:
+            return r
+    raise HTTPException(404, "Suite run not found")
