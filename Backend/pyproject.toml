@@ -36,6 +36,11 @@ dev = [
     "pytest-timeout>=2.3.0",
     "freezegun>=1.4.0",
 ]
+eval = [
+    "opentelemetry-sdk>=1.24.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.24.0",
+    "openinference-semantic-conventions>=0.1.9",
+]
 
 [project.scripts]
 hawkeye = "orchestrator.cli.main:cli"
