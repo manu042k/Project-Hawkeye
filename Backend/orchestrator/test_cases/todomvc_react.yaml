@@ -1,0 +1,53 @@
+id: "TC-008"
+name: "TodoMVC React: add, complete, and filter to-do items"
+suite: "eval-dataset-v1"
+priority: "P1"
+tags: ["todo", "spa", "react", "form-input", "state", "filter"]
+
+target:
+  url: "https://demo.playwright.dev/todomvc"
+  browser: "chromium"
+  viewport:
+    width: 1280
+    height: 720
+
+goal: |
+  Using the TodoMVC React app, add two new to-do items: 'Buy groceries' and
+  'Read a book'. Mark 'Buy groceries' as complete by clicking its checkbox.
+  Then click the 'Active' filter link and verify only 'Read a book' remains
+  visible with the counter showing '1 item left'.
+
+assertions:
+  - id: "A1"
+    type: "content"
+    description: "Footer counter shows 1 active item remaining"
+    params:
+      check: "text_present"
+      text: "1 item left"
+
+  - id: "A2"
+    type: "console"
+    description: "No critical JS errors"
+    params:
+      level: "error"
+      max_count: 5
+      ignore_patterns:
+        - "favicon"
+
+constraints:
+  max_steps: 20
+  timeout_seconds: 120
+  navigation_policy: "interact_only"
+  forbidden_actions:
+    - "navigate to any other domain"
+
+context:
+  page_type: "spa"
+  app_description: "TodoMVC React — the canonical React to-do app implementation. Items are added via the top input and stored in component state. No backend or persistence."
+  hints:
+    - "Click the large input field at the top labeled 'What needs to be done?' and type 'Buy groceries', then press Enter"
+    - "Type 'Read a book' in the same input field and press Enter to add the second item"
+    - "Each item has a circular checkbox on its left — click the checkbox for 'Buy groceries' to mark it complete (it gets a strikethrough)"
+    - "At the bottom of the list there are three filter links: 'All', 'Active', 'Completed' — click 'Active'"
+    - "After clicking Active, only 'Read a book' should be visible and the footer should say '1 item left'"
+    - "Once you see '1 item left', emit <GOAL_COMPLETE>"

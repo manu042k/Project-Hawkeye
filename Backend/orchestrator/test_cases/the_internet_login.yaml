@@ -1,0 +1,56 @@
+id: "TC-007"
+name: "The-Internet: login form with known credentials"
+suite: "eval-dataset-v1"
+priority: "P1"
+tags: ["auth", "form", "login", "ssr", "herokuapp"]
+
+target:
+  url: "https://the-internet.herokuapp.com/login"
+  browser: "chromium"
+  viewport:
+    width: 1280
+    height: 720
+
+goal: |
+  Fill in the login form with username 'tomsmith' and password
+  'SuperSecretPassword!', submit the form, and verify that the secure
+  area page loads with a success flash message.
+
+assertions:
+  - id: "A1"
+    type: "content"
+    description: "Success flash message confirms login"
+    params:
+      check: "text_present"
+      text: "You logged into a secure area"
+
+  - id: "A2"
+    type: "console"
+    description: "No critical JS errors"
+    params:
+      level: "error"
+      max_count: 20
+      ignore_patterns:
+        - "favicon"
+        - "ERR_NAME_NOT_RESOLVED"
+        - "Failed to load resource"
+        - "404"
+        - "analytics"
+
+constraints:
+  max_steps: 10
+  timeout_seconds: 300
+  navigation_policy: "explicit_urls_allowed"
+  forbidden_actions:
+    - "navigate to any domain other than the-internet.herokuapp.com"
+
+context:
+  page_type: "ssr"
+  app_description: "The Internet (Heroku) — a practice web automation site. The /login page has a simple username/password form with known test credentials."
+  hints:
+    - "Click the Username field and type 'tomsmith'"
+    - "Click the Password field and type 'SuperSecretPassword!' — include the exclamation mark"
+    - "Click the 'Login' button to submit the form"
+    - "After successful login, a green flash message appears at the top: 'You logged into a secure area!'"
+    - "Once you see the success message, emit <GOAL_COMPLETE>"
+    - "If login fails (red flash message), check credentials and retry — they are: tomsmith / SuperSecretPassword!"

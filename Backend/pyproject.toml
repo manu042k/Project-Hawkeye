@@ -44,6 +44,9 @@ eval = [
     "arize-phoenix-otel>=0.6.0",
     "openinference-instrumentation-langchain>=0.1.0",
 ]
+benchmark = [
+    "datasets>=2.20.0",  # HuggingFace datasets library for Mind2Web
+]
 
 [project.scripts]
 hawkeye = "orchestrator.cli.main:cli"

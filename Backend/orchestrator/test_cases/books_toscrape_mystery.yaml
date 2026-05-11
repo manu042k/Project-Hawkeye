@@ -1,0 +1,58 @@
+id: "TC-005"
+name: "Books.toscrape: find cheapest book in Mystery category"
+suite: "eval-dataset-v1"
+priority: "P1"
+tags: ["books", "e-commerce", "navigation", "static", "price-comparison"]
+
+target:
+  url: "http://books.toscrape.com"
+  browser: "chromium"
+  viewport:
+    width: 1280
+    height: 720
+
+goal: |
+  Navigate to the Mystery genre category on Books to Scrape. Look at the prices
+  of books listed on the first page and identify the cheapest one. Click on that
+  book to open its detail page and verify the availability status.
+
+assertions:
+  - id: "A1"
+    type: "content"
+    description: "Book detail page shows availability"
+    params:
+      check: "text_present"
+      text: "In stock"
+
+  - id: "A2"
+    type: "content"
+    description: "Book detail page shows a price in GBP"
+    params:
+      check: "text_matches"
+      pattern: "£[0-9]+\\.[0-9]{2}"
+
+  - id: "A3"
+    type: "console"
+    description: "No critical JS errors"
+    params:
+      level: "error"
+      max_count: 5
+      ignore_patterns:
+        - "favicon"
+
+constraints:
+  max_steps: 20
+  timeout_seconds: 120
+  navigation_policy: "explicit_urls_allowed"
+  forbidden_actions:
+    - "add to basket or proceed to checkout"
+
+context:
+  page_type: "static"
+  app_description: "Books to Scrape — a static demo bookstore built for web-scraping practice. Prices shown in £ GBP. Genre categories are listed in the left sidebar. No login or JavaScript required."
+  hints:
+    - "The left sidebar under 'Books' lists all genre categories — click 'Mystery'"
+    - "On the Mystery page, each book card shows a price like £10.99 below the thumbnail"
+    - "Scan all visible prices and click the title of the book with the lowest price"
+    - "The detail page has an 'Availability' section that shows 'In stock (N available)'"
+    - "Once on the detail page with price and availability visible, emit <GOAL_COMPLETE>"

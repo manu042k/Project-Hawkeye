@@ -1,0 +1,52 @@
+id: "TC-006"
+name: "Quotes.toscrape: navigate via tag to author bio"
+suite: "eval-dataset-v1"
+priority: "P1"
+tags: ["quotes", "navigation", "static", "multi-step", "content-extraction"]
+
+target:
+  url: "https://quotes.toscrape.com"
+  browser: "chromium"
+  viewport:
+    width: 1280
+    height: 720
+
+goal: |
+  Starting from the Quotes to Scrape homepage, click the 'inspirational' tag
+  to see quotes filtered by that tag. Then click the author name of the first
+  quote shown to open their biography page. Verify the bio page shows a born date.
+
+assertions:
+  - id: "A1"
+    type: "content"
+    description: "Author bio page shows born date label"
+    params:
+      check: "text_present"
+      text: "Born"
+
+  - id: "A2"
+    type: "console"
+    description: "No critical JS errors"
+    params:
+      level: "error"
+      max_count: 5
+      ignore_patterns:
+        - "favicon"
+
+constraints:
+  max_steps: 15
+  timeout_seconds: 120
+  navigation_policy: "explicit_urls_allowed"
+  forbidden_actions:
+    - "log in or register an account"
+
+context:
+  page_type: "static"
+  app_description: "Quotes to Scrape — a static HTML practice site with quotes, authors, and tags. No JavaScript required. All navigation is via standard anchor links."
+  hints:
+    - "The homepage shows quotes; each quote has colored tag bubbles at the bottom"
+    - "Find the 'inspirational' tag on any quote and click it"
+    - "The tag-filtered page shows quotes tagged 'inspirational' — each quote has a small '- Author Name' link below it"
+    - "Click the author's name link (e.g. '- Albert Einstein') to go to their biography page"
+    - "The biography page shows 'Born:' followed by a date and location"
+    - "Once you see the 'Born:' label with a date, emit <GOAL_COMPLETE>"

@@ -1,0 +1,60 @@
+id: "TC-009"
+name: "DemoBlaze: add phone to cart and verify"
+suite: "eval-dataset-v1"
+priority: "P1"
+tags: ["e-commerce", "cart", "spa", "ajax", "demoblaze"]
+
+target:
+  url: "https://www.demoblaze.com"
+  browser: "chromium"
+  viewport:
+    width: 1280
+    height: 720
+
+goal: |
+  Starting from the DemoBlaze homepage, click on the 'Phones' category link
+  in the sidebar. Click on the first phone listed to open its product page.
+  Click 'Add to cart' and dismiss the confirmation alert. Then navigate to
+  the Cart page and verify the phone appears with a Total shown.
+
+assertions:
+  - id: "A1"
+    type: "content"
+    description: "Cart page shows a Total row"
+    params:
+      check: "text_present"
+      text: "Total"
+
+  - id: "A2"
+    type: "console"
+    description: "No critical JS errors"
+    params:
+      level: "error"
+      max_count: 10
+      ignore_patterns:
+        - "favicon"
+        - "analytics"
+        - "ads"
+        - "400"
+        - "Failed to load resource"
+
+constraints:
+  max_steps: 20
+  timeout_seconds: 180
+  navigation_policy: "interact_only"
+  forbidden_actions:
+    - "proceed to checkout or place an order"
+    - "enter payment or personal information"
+
+context:
+  page_type: "spa"
+  app_description: "DemoBlaze — a demo e-commerce site for Selenium/Playwright automation practice. Products organized in three categories: Phones, Laptops, Monitors. Cart is AJAX-powered with no login required."
+  hints:
+    - "The left sidebar has three category links: 'Phones', 'Laptops', 'Monitors' — click 'Phones'"
+    - "Wait a moment for the product grid to load via AJAX, then click on the first phone thumbnail or title"
+    - "On the product detail page, click the 'Add to cart' button"
+    - "A browser JavaScript alert will appear saying 'Product added' — accept/dismiss it before continuing"
+    - "Click 'Cart' in the top navigation bar to open the shopping cart page"
+    - "The cart shows a table with product rows and a 'Total' label at the bottom right"
+    - "Once the cart page shows the phone item and a Total, emit <GOAL_COMPLETE>"
+    - "If any modal or popup appears at startup, close it before proceeding"

@@ -1,0 +1,53 @@
+id: "TC-004"
+name: "HackerNews: open top story comments thread"
+suite: "eval-dataset-v1"
+priority: "P1"
+tags: ["hackernews", "navigation", "ssr", "news"]
+
+target:
+  url: "https://news.ycombinator.com"
+  browser: "chromium"
+  viewport:
+    width: 1280
+    height: 720
+
+goal: |
+  Starting from the Hacker News homepage, find the top-ranked story (number 1)
+  and click its comments link to open the discussion thread. Scroll down once to
+  see a few comments, then emit GOAL_COMPLETE.
+
+assertions:
+  - id: "A1"
+    type: "content"
+    description: "Comments page shows 'points' indicating a valid HN story"
+    params:
+      check: "text_present"
+      text: "points"
+
+  - id: "A2"
+    type: "console"
+    description: "No critical JS errors"
+    params:
+      level: "error"
+      max_count: 5
+      ignore_patterns:
+        - "favicon"
+        - "analytics"
+
+constraints:
+  max_steps: 15
+  timeout_seconds: 120
+  navigation_policy: "explicit_urls_allowed"
+  forbidden_actions:
+    - "log in or create an account"
+    - "upvote, flag, or submit a post"
+
+context:
+  page_type: "ssr"
+  app_description: "Hacker News — a social news aggregator. Stories are ranked by votes. Each story has a comments link showing the discussion count. No login required to browse."
+  hints:
+    - "The homepage lists numbered stories. Story #1 is at the very top."
+    - "Below each story title is a subtext line with points, author, time, and a 'X comments' or 'discuss' link"
+    - "Click the 'N comments' link for story #1 — NOT the story title itself"
+    - "The comments page URL looks like news.ycombinator.com/item?id=XXXXXXX"
+    - "After the comments page loads and you can see the story with its point count, press PageDown once then emit <GOAL_COMPLETE>"

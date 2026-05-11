@@ -70,6 +70,11 @@ async def reason_node(
     ai_message: AIMessage | None = None
     last_error: ErrorInfo | None = None
 
+    # Proactive rate limiting — throttle before calling the API so we never
+    # exceed the provider's RPM limit (e.g. NVIDIA NIM: 40 RPM).
+    from orchestrator.llm.rate_limiter import get_limiter as _get_rate_limiter
+    _rate_limiter = _get_rate_limiter()
+
     _delays: list[float] = [0.0] + _BACKOFF_DELAYS
     attempt = 0
     while attempt < len(_delays):
@@ -77,6 +82,8 @@ async def reason_node(
         if delay > 0:
             logger.info("REASON: rate-limit backoff %.1fs (attempt %d)", delay, attempt)
             await asyncio.sleep(delay)
+        if _rate_limiter:
+            await _rate_limiter.acquire()
         try:
             # Use ainvoke() — both ChatOllama and ChatOpenAI support async.
             response = await llm_with_tools.ainvoke(messages)
@@ -163,9 +170,13 @@ async def reason_node(
                 )
                 break
 
-            # Upstream congestion on free-tier models (OpenRouter).
-            # Switch to longer delays and keep retrying.
-            if "temporarily rate-limited" in exc_str.lower() or "please retry shortly" in exc_str.lower():
+            # Upstream congestion — NVIDIA "Request waiting timeout" (503) and
+            # OpenRouter soft rate limit both need longer backoff than a standard 429.
+            if (
+                "temporarily rate-limited" in exc_str.lower()
+                or "please retry shortly" in exc_str.lower()
+                or "request waiting timeout" in exc_str.lower()
+            ):
                 if _delays == [0.0] + _BACKOFF_DELAYS:
                     _delays = [0.0] + _SOFT_RATE_LIMIT_DELAYS
                     attempt = 1  # restart with new delay schedule
