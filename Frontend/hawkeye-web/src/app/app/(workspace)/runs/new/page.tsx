@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { useTestCases, useCreateRun } from "@/lib/api/hooks";
 import { apiClient, type TestCaseInfo } from "@/lib/api/client";
@@ -23,7 +24,7 @@ const MODEL_PRESETS = [
   { value: "ollama:llama3.2", label: "Ollama – Llama 3.2 (local)" },
 ];
 
-export default function NewRunPage() {
+function NewRunPageInner() {
   const searchParams = useSearchParams();
   const preselectedTcId = searchParams.get("tc"); // from /test-cases/:id "Run" button
 
@@ -253,4 +254,8 @@ export default function NewRunPage() {
       </main>
     </div>
   );
+}
+
+export default function NewRunPage() {
+  return <Suspense><NewRunPageInner /></Suspense>;
 }

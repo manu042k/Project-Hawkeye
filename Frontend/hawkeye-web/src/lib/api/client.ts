@@ -99,18 +99,78 @@ export type TestCaseSummary = {
   updated_at: string;
 };
 
+export type AssertionType =
+  | "content" | "console" | "network" | "state" | "visual_design"
+  | "text_present" | "element_present" | "url_contains"
+  | "console_no_errors" | "network_request_made";
+
+export type Auth = {
+  method: "none" | "cookie_inject" | "login_flow" | "token_header";
+  credentials_ref: string | null;
+};
+
+export type AssertionSpec = {
+  id: string;
+  type: AssertionType | string;
+  description: string;
+  params: Record<string, unknown>;
+};
+
+export type Checkpoint = {
+  id: string;
+  description: string;
+  success_signal: string;
+  data?: Record<string, unknown> | null;
+};
+
 export type TestCaseSpec = TestCaseSummary & {
+  record: boolean;
   spec: {
     id: string;
     name: string;
     goal: string;
-    target: { url: string; browser: string; auth?: Record<string, unknown> | null };
+    suite: string | null;
     priority: string;
     tags: string[];
-    steps: { mode: string; checkpoints: Array<{ id: string; description: string; success_signal: string }> } | null;
-    assertions: Array<{ id: string; type: string; description: string; params: Record<string, unknown> }>;
-    constraints: { max_steps: number; timeout_seconds: number; navigation_policy: string; forbidden_actions: string[] };
-    context: { app_description: string | null; hints: string[]; page_type: string };
+    created_by: string | null;
+    record: boolean;
+    target: {
+      url: string;
+      browser: string;
+      viewport: { width: number; height: number; device_scale_factor: number } | null;
+      locale: string | null;
+      timezone: string | null;
+      auth: Auth | null;
+      extra_headers: Record<string, string> | null;
+      block_urls: string[];
+    };
+    steps: { mode: string; checkpoints: Checkpoint[] } | null;
+    assertions: AssertionSpec[];
+    constraints: {
+      max_steps: number;
+      timeout_seconds: number;
+      max_retries_per_action: number;
+      navigation_policy: string;
+      forbidden_actions: string[];
+      required_behaviors: string[];
+    };
+    context: {
+      app_description: string | null;
+      page_type: string;
+      hints: string[];
+      known_issues: string[];
+    };
+    on_failure: {
+      capture: {
+        screenshot: boolean;
+        dom_snapshot: boolean;
+        network_log: boolean;
+        console_log: boolean;
+        agent_trace: boolean;
+        video: boolean;
+      };
+      notify: Record<string, unknown>;
+    } | null;
   };
 };
 
@@ -221,6 +281,8 @@ export const apiClient = {
   },
   getProjectTestCase: (projectId: string, tcId: string) =>
     apiFetch<TestCaseSpec>(`/api/projects/${projectId}/test-cases/${tcId}`),
+  getTestCaseRuns: (projectId: string, tcId: string) =>
+    apiFetch<{ runs: RunSummary[]; total: number }>(`/api/projects/${projectId}/test-cases/${tcId}/runs`),
   createProjectTestCase: (projectId: string, body: unknown) =>
     apiFetch<TestCaseSummary>(`/api/projects/${projectId}/test-cases`, { method: "POST", body: JSON.stringify(body) }),
   updateProjectTestCase: (projectId: string, tcId: string, body: unknown) =>
@@ -245,6 +307,33 @@ export const apiClient = {
     apiFetch<SuiteSummary>(`/api/projects/${projectId}/suites/${suiteId}`, { method: "PUT", body: JSON.stringify(body) }),
   deleteSuite: (projectId: string, suiteId: string) =>
     apiFetch<{ deleted: boolean }>(`/api/projects/${projectId}/suites/${suiteId}`, { method: "DELETE" }),
+
+  addSuiteMember: (projectId: string, suiteId: string, testCaseId: string) =>
+    apiFetch<{ suite_id: string; test_case_ids: string[] }>(
+      `/api/projects/${projectId}/suites/${suiteId}/members`,
+      { method: "POST", body: JSON.stringify({ test_case_id: testCaseId }) },
+    ),
+
+  removeSuiteMember: (projectId: string, suiteId: string, tcId: string) =>
+    apiFetch<{ removed: boolean; test_case_ids: string[] }>(
+      `/api/projects/${projectId}/suites/${suiteId}/members/${tcId}`,
+      { method: "DELETE" },
+    ),
+
+  getSuiteSchedule: (projectId: string, suiteId: string) =>
+    apiFetch<{ cron_expr: string | null; timezone: string; enabled: boolean; next_run_at: string | null }>(
+      `/api/projects/${projectId}/suites/${suiteId}/schedule`,
+    ),
+
+  setSuiteSchedule: (projectId: string, suiteId: string, body: { cron_expr: string; timezone?: string; enabled?: boolean }) =>
+    apiFetch<{ cron_expr: string | null; timezone: string; enabled: boolean; next_run_at: string | null }>(
+      `/api/projects/${projectId}/suites/${suiteId}/schedule`,
+      { method: "PUT", body: JSON.stringify(body) },
+    ),
+
+  getSuiteRuns: (projectId: string, suiteId: string) =>
+    apiFetch<{ runs: RunSummary[]; total: number }>(`/api/projects/${projectId}/suites/${suiteId}/runs`),
+
   getSuiteGroups: (projectId: string) =>
     apiFetch<{ groups: string[] }>(`/api/projects/${projectId}/suite-groups`),
   updateSuiteGroup: (projectId: string, suiteId: string, group: string | null) =>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Calendar, ChevronDown, ChevronRight, Edit2, Folder, Play, Plus, Search, Trash2, X } from "lucide-react";
 
 import { AppTopbar } from "@/components/app/app-topbar";
@@ -53,7 +54,13 @@ function SuiteCard({
               <Folder className="size-5" aria-hidden="true" />
             </div>
             <div>
-              <CardTitle className="text-base">{s.name}</CardTitle>
+              <Link
+                href={`/app/suites/${s.id}`}
+                onClick={(e) => e.stopPropagation()}
+                className="text-base font-semibold hover:underline"
+              >
+                {s.name}
+              </Link>
               <CardDescription className="font-mono">{s.test_count} Test{s.test_count !== 1 ? "s" : ""}</CardDescription>
             </div>
           </div>

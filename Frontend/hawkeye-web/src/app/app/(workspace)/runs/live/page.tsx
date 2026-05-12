@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useRunTraceStream, useRun, useDeleteRun, useRuns } from "@/lib/api/hooks";
@@ -159,7 +160,7 @@ function RunDetailPanel({ runId }: { runId: string }) {
               )}
               {isDone && (
                 <Link
-                  href={`/app/runs/report?id=${runId}`}
+                  href={`/app/artifacts/${runId}`}
                   className={cn(buttonVariants({ variant: "default", size: "sm" }), "ml-auto")}
                 >
                   <CheckCircle2 className="size-4" />
@@ -334,22 +335,25 @@ function LiveExecutionInner() {
     router.replace(`/app/runs/live?id=${id}`);
   }
 
-  const sortedRuns = useMemo(() => {
+  const activeRuns = useMemo(() => {
     if (!runs) return [];
-    const active = runs.filter((r) => isActive(r.status));
-    const done = runs.filter((r) => !isActive(r.status));
-    active.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    done.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    return [...active, ...done];
+    return runs
+      .filter((r) => isActive(r.status))
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   }, [runs]);
 
-  const hasActive = sortedRuns.some((r) => isActive(r.status));
-  const activeRuns = sortedRuns.filter((r) => isActive(r.status));
-  const doneRuns = sortedRuns.filter((r) => !isActive(r.status));
+  const completedCount = runs ? runs.filter((r) => !isActive(r.status)).length : 0;
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <AppTopbar title="Live execution" subtitle="Executions &amp; live browser feed" />
+      <AppTopbar
+        title="Live"
+        subtitle={
+          activeRuns.length > 0
+            ? `${activeRuns.length} active run${activeRuns.length !== 1 ? "s" : ""}`
+            : "No active runs"
+        }
+      />
 
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Left panel */}
@@ -369,41 +373,38 @@ function LiveExecutionInner() {
 
           <ScrollArea className="flex-1">
             <div className="space-y-0.5 p-2">
-              {activeRuns.length > 0 && (
-                <>
-                  <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">
-                    Active
+              {activeRuns.length === 0 ? (
+                <div className="px-3 py-6 text-center space-y-2">
+                  <p className="text-xs text-muted-foreground">No active runs</p>
+                  <p className="text-[10px] text-muted-foreground/60">
+                    Start one from Test Cases
                   </p>
-                  {activeRuns.map((r) => (
-                    <RunListItem
-                      key={r.run_id}
-                      run={r}
-                      selected={r.run_id === selectedRunId}
-                      onClick={() => selectRun(r.run_id)}
-                      now={now}
-                    />
-                  ))}
-                  {doneRuns.length > 0 && (
-                    <div className="my-1 border-t border-border/40" />
-                  )}
-                </>
-              )}
-              {doneRuns.map((r) => (
-                <RunListItem
-                  key={r.run_id}
-                  run={r}
-                  selected={r.run_id === selectedRunId}
-                  onClick={() => selectRun(r.run_id)}
-                  now={now}
-                />
-              ))}
-              {sortedRuns.length === 0 && (
-                <p className="px-3 py-4 text-center text-xs text-muted-foreground">
-                  No runs yet.
-                </p>
+                </div>
+              ) : (
+                activeRuns.map((r) => (
+                  <RunListItem
+                    key={r.run_id}
+                    run={r}
+                    selected={r.run_id === selectedRunId}
+                    onClick={() => selectRun(r.run_id)}
+                    now={now}
+                  />
+                ))
               )}
             </div>
           </ScrollArea>
+
+          {completedCount > 0 && (
+            <>
+              <Separator />
+              <Link
+                href="/app/artifacts"
+                className="flex items-center justify-center gap-1.5 px-4 py-3 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {completedCount} completed run{completedCount !== 1 ? "s" : ""} in Artifacts →
+              </Link>
+            </>
+          )}
         </aside>
 
         {/* Right panel */}
@@ -412,10 +413,11 @@ function LiveExecutionInner() {
         ) : (
           <div className="flex flex-1 items-center justify-center">
             <div className="text-center space-y-2">
-              <p className="text-sm font-medium text-muted-foreground">Select a run to view details</p>
+              <p className="text-sm font-medium text-muted-foreground">Select a run to view its trace</p>
+              <p className="text-xs text-muted-foreground/60">Pick one from the left panel or start a new run</p>
               <Button variant="outline" size="sm" onClick={() => setNewRunOpen(true)}>
                 <Plus className="size-4" />
-                Start a new run
+                Start a run
               </Button>
             </div>
           </div>
