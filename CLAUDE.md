@@ -5,27 +5,42 @@ AI-powered pre-deployment testing platform where autonomous agents execute verif
 The agent is fundamentally a **visual QA agent**: it takes a screenshot at every step, sends it to a vision-capable LLM alongside the accessibility tree, and decides actions based on what it *sees*. An optional second pass diffs final screenshots against a provided Figma/design file to catch visual regressions.
 
 Spec document: `C:\Users\vjayr\Downloads\spec.md` (Hawkeye Implementation Specification v1.0)
+HLD/LLD reference: `Docs/HLD_LLD.md` (authoritative design document — API contracts, data models, Redis schema, run lifecycle)
 
 ---
 
 ## Architecture
 
 ```
-Client Layer (Dashboard / CLI / CI Plugin)
-        │
-        ▼
-Orchestration Layer (Python)
-  ├── Agent Loop Engine    — observe → reason → act cycle (LangGraph)
-  ├── Tool Router          — routes calls: Playwright MCP vs custom tools
-  ├── Sandbox Manager      — Docker container lifecycle
-  └── Trace Collector      — step-level logging
-        │
-        ▼
-Sandbox Containers (Docker, one per test run)
-  ├── Playwright + Browser (Chromium/Firefox/WebKit)
-  ├── Playwright MCP Server (:3100)
-  ├── Xvfb → x11vnc → websockify → noVNC (:6080)
-  └── CDP endpoint (:9222)
+┌────────────────────────────────────────────────────────────────┐
+│                        CLIENT LAYER                            │
+│   Next.js Dashboard  │  CI/CD Plugin  │  GitHub Webhook        │
+└──────────────┬─────────────────────────────────────┬──────────┘
+               │ HTTPS / WebSocket                    │ Webhook
+┌──────────────▼─────────────────────────────────────▼──────────┐
+│                      FASTAPI (port 8000)                        │
+│  Auth │ Projects │ Test Cases │ Suites │ Vault │ Billing │ Orgs │
+└──────────────┬──────────────────────────────────────┬──────────┘
+               │ Celery task                          │ Pub/Sub
+┌──────────────▼──────────┐           ┌───────────────▼──────────┐
+│    CELERY WORKER         │           │      REDIS               │
+│  run_test_case task      │──────────▶│  Run records             │
+│  Notifications           │  events   │  Trace lists             │
+│  Artifact upload         │           │  Pub/Sub channels        │
+└──────────────┬──────────┘           └──────────────────────────┘
+               │
+┌──────────────▼──────────────────────────────────────────────────┐
+│                    AGENT ORCHESTRATOR                            │
+│   OBSERVE → REASON → GUARD_RAILS → ACT → GOAL_CHECK             │
+│       ↑__________________________|      |                        │
+│                                         ▼                        │
+│              ERROR_HANDLER ←───── FINALIZE → END                │
+└──────────────┬──────────────────────────────────────────────────┘
+               │ MCP / CDP
+┌──────────────▼──────────────────────────────────────────────────┐
+│              SANDBOX CONTAINER (Docker)                          │
+│   Playwright + Browser │ noVNC (:6080) │ CDP (:9222)            │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -35,13 +50,16 @@ Sandbox Containers (Docker, one per test run)
 | Layer | Technology |
 |---|---|
 | Frontend | Next.js 16.2, React 19, Tailwind 4, shadcn/ui, Zustand, NextAuth (Google/GitHub OAuth) |
-| Orchestrator | Python 3.11+, LangGraph (Python), LangChain, Ollama (local LLM) |
+| Orchestrator | Python 3.11+, LangGraph (Python), LangChain |
 | Vision LLM | Any multimodal model: GPT-4o, Claude Sonnet, Gemini — user-selectable via `--model` |
-| API (Phase 3) | FastAPI, WebSocket |
-| Database (Phase 2) | PostgreSQL + JSONB |
+| API | FastAPI, Uvicorn, WebSocket |
+| Task Queue | Celery + Redis |
+| Database | PostgreSQL (optional) + in-memory fallback |
 | Sandbox | Docker, Playwright, Xvfb, x11vnc, websockify, noVNC, @playwright/mcp |
+| Secrets | AES-256-GCM via `api/crypto.py` |
 | Visual diffing | Pillow + numpy (pixelmatch-style) — Phase 2.5, opt-in with Figma file |
-| Container networking | Docker bridge (`hawkeye-net`) with container DNS (Phase 3) |
+| Billing | Stripe |
+| Container networking | Docker bridge (`hawkeye-net`) |
 
 ---
 
@@ -54,49 +72,94 @@ Project-Hawkeye/
 │   │   ├── auth/                  # Login, signup, password recovery
 │   │   ├── app/(global-hub)/      # Project selector, account, billing
 │   │   └── app/(workspace)/       # Dashboard, runs, suites, vault, baselines, settings
+│   │       ├── dashboard/         # KPI summary, active runs
+│   │       ├── runs/              # New run, live execution, run report
+│   │       ├── test-cases/        # Library, creation wizard, detail page
+│   │       ├── suites/            # Suite management, schedule modal
+│   │       ├── vault/             # Secret management
+│   │       ├── visual-baselines/  # Baseline approve/reject UI
+│   │       └── settings/          # Environments, integrations
 │   ├── src/components/            # UI components (app chrome, auth, theme, shadcn)
-│   ├── src/lib/mock-data/         # Demo data (all pages currently use this)
+│   ├── src/lib/api/               # Typed API client (client.ts, hooks.ts) — 80+ endpoints
 │   └── src/lib/                   # Stores (Zustand), auth config, utils
 │
 ├── Backend/
+│   ├── api/                       # FastAPI application
+│   │   ├── app.py                 # FastAPI app, all routers registered
+│   │   ├── main.py                # Uvicorn entry point
+│   │   ├── db.py                  # asyncpg pool singleton + get_conn() dependency
+│   │   ├── crypto.py              # AES-256-GCM vault encryption
+│   │   ├── auth_utils.py          # JWT creation, password hashing, HMAC
+│   │   ├── artifact_store.py      # ArtifactStore protocol + LocalArtifactStore
+│   │   ├── celery_app.py          # Celery app configuration
+│   │   ├── tasks.py               # run_test_case Celery task
+│   │   ├── tasks_beat.py          # check_due_schedules Beat task (every minute)
+│   │   ├── redis_store.py         # Run record + trace persistence
+│   │   ├── job_queue.py           # Asyncio job queue (legacy; Celery is primary)
+│   │   ├── container_pool.py      # ContainerPool pre-warming (HAWKEYE_POOL_SIZE)
+│   │   ├── github_checks.py       # Post Check Run pass/fail to GitHub
+│   │   ├── slack.py               # Slack failure notifications
+│   │   └── routes/
+│   │       ├── auth.py            # Register, login, OAuth token, dev user seed
+│   │       ├── runs.py            # Run CRUD + traces + observe endpoint
+│   │       ├── test_cases.py      # Legacy YAML test case discovery
+│   │       ├── test_cases_crud.py # Full CRUD per project (create, clone, import-yaml)
+│   │       ├── projects.py        # Project CRUD + stats
+│   │       ├── suites.py          # Suite CRUD, members, schedule, run-suite
+│   │       ├── vault.py           # Secret CRUD with reveal-on-demand
+│   │       ├── schedules.py       # Cron schedule CRUD per suite
+│   │       ├── environments.py    # Environment CRUD per project
+│   │       ├── baselines.py       # Visual baseline approve/reject
+│   │       ├── integrations.py    # GitHub + Slack integration config
+│   │       ├── orgs.py            # Org + member + invitation CRUD
+│   │       ├── billing.py         # Stripe checkout, portal, webhook, plans
+│   │       ├── me.py              # /api/me identity endpoint
+│   │       ├── usage.py           # Billing usage metering
+│   │       ├── artifacts.py       # Artifact manifest + file download
+│   │       ├── ws.py              # WebSocket trace streaming
+│   │       └── webhooks.py        # GitHub push webhook handler
 │   ├── hawkeye_sandbox/           # Python sandbox manager package
 │   │   ├── sandbox.py             # SandboxManager, SandboxConfig, SandboxHandle
 │   │   ├── cli.py                 # CLI: spawn containers & record
 │   │   ├── mcp.py                 # MCP config generation for Playwright/Chrome DevTools
-│   │   ├── sandbox_image/         # Docker image definition
-│   │   │   ├── Dockerfile
-│   │   │   ├── entrypoint.sh
-│   │   │   ├── launch_browser.py
-│   │   │   └── supervisord.conf
-│   │   └── examples/              # Example scripts
-│   ├── orchestrator/              # Agent harness (CLI-only, no API yet)
-│   │   ├── agent/                 # LangGraph StateGraph (nodes, edges, graph, prompt_builder)
-│   │   ├── models/                # TestCase, AgentState, StepTrace, RunResult dataclasses
-│   │   ├── runner/                # RunManager — full test lifecycle orchestration
+│   │   └── sandbox_image/         # Docker image definition
+│   │       ├── Dockerfile
+│   │       ├── entrypoint.sh
+│   │       ├── launch_browser.py
+│   │       └── supervisord.conf
+│   ├── orchestrator/              # Agent harness
+│   │   ├── agent/                 # LangGraph StateGraph
+│   │   │   ├── graph.py           # Compiled LangGraph with full state machine
+│   │   │   ├── prompt_builder.py  # System prompt (guided/unguided modes)
+│   │   │   ├── nodes/             # observe, reason, act, goal_check, error_handler, finalize, guard_rails
+│   │   │   └── edges/             # route_after_* edge functions (6 total)
+│   │   ├── models/                # TestCase, AgentState, RunResult (Pydantic + dataclasses)
+│   │   ├── runner/                # RunManager — full test lifecycle
 │   │   ├── tools/                 # Custom tools: wait_for_stable, assert_text_present, etc.
 │   │   ├── mcp/                   # PlaywrightMcpClient (stdio transport)
 │   │   ├── cdp/                   # Chrome DevTools Protocol session
 │   │   ├── trace/                 # Per-step trace collector (tokens, latency, cost)
-│   │   ├── assertions/            # AssertionEngine (content + console + network + state + visual_design)
-│   │   ├── llm/                   # LLM provider factory (Ollama / Groq / OpenRouter / NVIDIA NIM)
-│   │   ├── vision/                # Visual QA: figma_client.py, pixel_diff.py, visual_assertions.py
+│   │   ├── assertions/            # AssertionEngine (content+console+network+state+visual_design)
+│   │   ├── llm/                   # LLM provider factory + is_vision_capable()
+│   │   ├── vision/                # figma_client.py, pixel_diff.py, visual_assertions.py
 │   │   ├── reporting/             # HTML + Markdown report generator
 │   │   ├── db/                    # asyncpg DB layer + schema.sql (gated by HAWKEYE_DB_URL)
 │   │   ├── loader/                # YAML test case loader
 │   │   ├── cli/                   # Click CLI entry point
-│   │   └── test_cases/            # wikipedia_search.yaml (TC-001), saucedemo_cart.yaml (TC-002b)
+│   │   └── test_cases/            # wikipedia_search.yaml, saucedemo_cart.yaml, _template.yaml
 │   └── pyproject.toml             # uv / pyproject config
 │
-├── Docs/                          # Architecture & design docs
+├── Docs/
+│   ├── HLD_LLD.md                 # Authoritative design doc (API contracts, data models, Redis schema)
 │   ├── SystemArchitecture.md
 │   ├── SystemDesign.md
 │   ├── UI-flow.md
 │   └── Project_Hawkeye_Flow_Analysis.md
 │
+├── nginx/nginx.conf               # Reverse proxy config (port 80 → hawkeye-api:8000)
 ├── scripts/
-│   └── test_spawn_all_browsers_groq_mcp.py  # PoC: spawn → MCP → LLM → tool execution
-│
-├── docker-compose.yml
+│   └── test_spawn_all_browsers_groq_mcp.py
+├── docker-compose.yml             # All services: api, worker, redis, nginx, sandbox
 ├── .env.example
 └── CLAUDE.md                      # ← This file
 ```
@@ -118,149 +181,122 @@ Observe step
 
 - **Screenshot** (primary): vision LLM sees the page exactly as a human would. Used for intent verification — "does this look correct?", "is the cart visible?", "is there a login wall?"
 - **Accessibility tree** (secondary): provides precise element references (`e53`, `.cart-link`) needed for Playwright MCP tool calls (click, type, navigate)
-- **Fallback**: text-only models (Ollama local) skip the screenshot and use accessibility tree only — no crash, graceful degradation
+- **Fallback**: text-only models skip the screenshot and use accessibility tree only — no crash, graceful degradation
 
-### Pass 1 — Visual reasoning agent (always on)
+### Agent State Machine
 
-| Step | What happens |
-|------|--------------|
-| Observe | Screenshot via CDP + accessibility tree via MCP |
-| Reason | Multimodal message: image + tree sent to vision LLM |
-| Act | Playwright MCP tool call using element refs from tree |
-| Goal check | LLM emits `<GOAL_COMPLETE>` or `<GOAL_BLOCKED>` based on visual state |
-
-### Pass 2 — Design diff (opt-in, requires Figma file)
-
-Triggered only when user provides `--figma-url` + `--figma-token`. Runs after Pass 1 completes.
-
-| Step | What happens |
-|------|--------------|
-| Export | Fetch target frames from Figma API as PNG |
-| Capture | Take full-page screenshots from the completed run |
-| Diff | Pixelmatch (Pillow-based) — actual vs Figma frame |
-| Report | Diff % + highlighted diff image appended to HTML report |
-
-**Design diff YAML schema:**
-```yaml
-assertions:
-  - id: "V1"
-    type: "visual_design"
-    description: "Cart page matches Figma design"
-    params:
-      figma_frame: "E-Commerce / Cart Page"
-      threshold: 0.05   # max 5% pixel deviation
-      viewport: { width: 1280, height: 720 }
+```
+          START
+            │
+        OBSERVE ◄──────────────────────────────────┐
+            │                                       │
+    ┌───────┴───────┐                               │
+goal_complete?   continue                           │
+    │               │                               │
+FINALIZE         REASON                             │
+    │               │                               │
+   END      ┌───────┼───────┐                       │
+            │       │       │                       │
+         error    tool   no-tool                    │
+            │     call   (goal?)                    │
+    ERROR_HANDLER  │    GOAL_CHECK                  │
+            │   GUARD_RAILS   │                     │
+      ┌─────┘      │      goal?                     │
+    fatal      blocked?   │                         │
+      │          │     FINALIZE                     │
+   FINALIZE   OBSERVE      │                        │
+      │               loop back ───────────────────┘
+     END
 ```
 
-### AgentState fields added in Phase 2.5
+### Node Summary
+
+| Node | Purpose |
+|---|---|
+| OBSERVE | Timeout check → wait_for_stable → browser_snapshot (MCP) → CDP screenshot |
+| REASON | Build observation → trim context (24K, last 3 pairs) → llm.ainvoke() with retry/backoff |
+| GUARD_RAILS | Block policy violations; currently stub (no-op) — always passes to ACT |
+| ACT | Execute first tool call; dispatch `browser_*` → MCP, others → tool_registry |
+| GOAL_CHECK | Parse `<GOAL_COMPLETE>` / `<GOAL_BLOCKED>` / `[Sn complete]` signals |
+| ERROR_HANDLER | Classify error; MCP reconnect (3 attempts); inject recovery message |
+| FINALIZE | Run assertions; persist trace; save artifacts; print summary |
+
+### AgentState key fields
 
 ```python
 current_screenshot: bytes | None       # raw PNG from CDP
 screenshot_b64: str | None             # base64 for LLM message
-step_screenshots: list[bytes]          # all step screenshots (for Pass 2)
+step_screenshots: list[bytes]          # all step screenshots (for Pass 2 / Figma diff)
 ```
+
+---
+
+## Data Models
+
+### TestCase (Orchestrator — `orchestrator/models/test_case.py`)
+
+```python
+class TestCase(BaseModel):
+    id: str
+    name: str
+    target: Target          # url, browser, viewport, page_type, app_description, vault[]
+    goal: str               # objective (natural language)
+    steps: Steps | None     # checkpoints: [{id, description, success_signal}]
+    constraints: Constraints  # max_steps, timeout_seconds, max_retries_per_action
+    assertions: list[Assertion]
+    save_record: bool       # renamed from `record`
+    suite: str | None
+    priority: Literal["P0","P1","P2","P3"]
+    tags: list[str]
+    created_by: str | None
+    on_failure: OnFailure
+```
+
+### RunResponse (API — `api/routes/runs.py`)
+
+```json
+{
+  "run_id": "uuid",
+  "status": "queued|running|passed|failed|errored|timed_out|blocked|cancelled",
+  "test_name": "str",
+  "created_at": "ISO8601",
+  "duration_s": 0.0,
+  "total_steps": 0,
+  "estimated_cost_usd": 0.0,
+  "termination_reason": "str|null",
+  "novnc_url": "ws://...|null",
+  "assertion_results": [],
+  "steps_completed": [],
+  "total_input_tokens": 0,
+  "total_output_tokens": 0,
+  "error_count": 0,
+  "tool_call_count": 0,
+  "artifact_manifest": []
+}
+```
+
+### Redis Schema
+
+| Key | Type | TTL | Content |
+|---|---|---|---|
+| `hawkeye:run:{run_id}` | String (JSON) | 7 days | Full run record |
+| `hawkeye:run_ids` | List | None | Last 100 run IDs (LRU) |
+| `hawkeye:events:{run_id}` | Pub/Sub | N/A | Real-time WebSocket events |
+| `hawkeye:traces:{run_id}` | List (JSON) | 7 days | Per-step trace entries |
 
 ---
 
 ## Current Progress
 
-### Done
-- [x] **Frontend UI** — All pages implemented with responsive design + dark mode
-  - Landing page, auth (login/signup/recovery), global hub, account, billing
-  - Project dashboard, test config, live execution, run report
-  - Test suites, visual baselines, vault, settings/integrations
-  - Middleware route protection, JWT validation, OAuth (Google/GitHub)
-  - Zustand stores for project context and theme
-  - Phase 1 mock data (dashboard, runs, suites) shaped to match backend API types exactly
-- [x] **Sandbox container image** — Dockerfile with Xvfb, x11vnc, websockify, noVNC, Playwright, supervisord
-- [x] **SandboxManager** — Spawn/stop Docker containers, random host port mapping, health checks
-- [x] **VNC streaming** — Xvfb → x11vnc (view-only) → websockify → noVNC HTML client
-- [x] **CDP proxy** — socat proxy (9222→9223) for Chromium-family remote debugging
-- [x] **FFmpeg recording** — x11grab capture to MP4 inside container
-- [x] **MCP config generation** — Dynamic server entries for chrome-devtools-mcp + @playwright/mcp
-- [x] **CLI** — `hawkeye-sandbox spawn --url <URL> --browser chromium [--record]`
-- [x] **PoC LLM integration** — Groq API + Playwright MCP stdio in `test_spawn_all_browsers_groq_mcp.py`
-- [x] **Agent loop engine** — LangGraph StateGraph (observe→reason→act→goal_check→error_handler→finalize) in `Backend/orchestrator/agent/`
-- [x] **Test case YAML format** — Pydantic schema in `Backend/orchestrator/models/test_case.py`; TC-001 + TC-002 YAML files ready
-- [x] **CLI runner** — `python -m orchestrator run --test <file.yaml>` via `Backend/orchestrator/cli/main.py`
-- [x] **Custom tools** — `wait_for_stable`, `assert_text_present`, `get_console_errors`, `report_step_result` in `Backend/orchestrator/tools/`
-- [x] **MCP client** — `PlaywrightMcpClient` (stdio transport) in `Backend/orchestrator/mcp/`
-- [x] **CDP session** — Chrome DevTools Protocol session manager in `Backend/orchestrator/cdp/`
-- [x] **Trace collector** — Per-step token/latency/cost tracking in `Backend/orchestrator/trace/`
-- [x] **Assertion engine** — Content + console assertion types in `Backend/orchestrator/assertions/`
-- [x] **Phase 1 smoke test cases** — `wikipedia_search.yaml` (TC-001) and `saucedemo_cart.yaml` (TC-002b) — both PASS with `--record`
-- [x] **Phase 2 observability** — DB layer, guard-rails node, 3 new tools, HTML+MD reports, `--record` flag, OpenRouter support
-- [x] **Phase 2.5 visual QA agent** — screenshot capture in `observe_node`, multimodal LLM messages in `reason_node`, `is_vision_capable()` helper, NVIDIA NIM provider, Figma design diff pipeline (`vision/` package), `--figma-url`/`--figma-token` CLI flags, per-step screenshots embedded in HTML report, context trimming + rate-limit backoff in reason node
-
-#### Phase 1 Orchestrator — Complete ✓ (branch: `feat/phase1-orchestrator`)
-- [x] **Data models** — `orchestrator/models/` — `TestCase`, `AgentState`, `RunResult`, `StepTrace`, `ErrorInfo` (Pydantic + dataclasses)
-- [x] **YAML loader** — `orchestrator/loader/yaml_loader.py` — full validation with `TestCaseValidationError`
-- [x] **System prompt builder** — `orchestrator/agent/prompt_builder.py` — guided/unguided modes, checkpoints, tool conventions, login-wall `<GOAL_BLOCKED>` rule
-- [x] **LLM provider** — `orchestrator/llm/provider.py` — `get_llm()` supports `ollama:*`, `groq:*`, `openrouter:*`
-- [x] **Playwright MCP client** — `orchestrator/mcp/client.py` — stdio transport, stderr drain, JSON-RPC, 90s init timeout
-- [x] **MCP tool adapter** — `orchestrator/mcp/tool_adapter.py` — 8 confirmed tools in `DEFAULT_ALLOWLIST`; diagnostic warning on missing tools
-- [x] **CDP session** — `orchestrator/cdp/session.py` — websockets-based, Network + Console domains
-- [x] **Custom tools** — `wait_for_stable`, `assert_text_present`, `get_console_errors`, `report_step_result`, `tool_registry`
-- [x] **Agent nodes** — `observe`, `reason`, `act`, `goal_check`, `error_handler`, `finalize`
-- [x] **Edge functions** — `route_after_reason`, `route_after_act` (→ `goal_check`), `route_after_goal_check`, `route_after_error`
-- [x] **StateGraph** — `orchestrator/agent/graph.py` — compiled LangGraph with full observe→reason→act→goal_check loop
-- [x] **Trace collector** — `orchestrator/trace/collector.py` — per-step accumulator + stdout renderer
-- [x] **Assertion engine** — `orchestrator/assertions/engine.py` — `content` + `console` types; others → `skipped`
-- [x] **Run manager** — `orchestrator/runner/run_manager.py` — resource lifecycle, try/finally teardown, `--record` MP4 support, single-tab enforcement
-- [x] **CLI** — `orchestrator/cli/main.py` — `run`, `validate`, `list-tools` commands with Click; `--record` flag
-- [x] **OpenRouter provider** — `openrouter:<provider/model>` format via `ChatOpenAI` + custom headers; `OPENROUTER_API_KEY` env var
-- [x] **Retry logic** — standard 429/500 backoff `[2s, 4s, 8s]`; soft rate-limit (OpenRouter free tier) `[15s, 30s, 60s]`
-- [x] **Tool arg sanitization** — strips `null` values and `[ref=eXX]` brackets from LLM tool calls in `act.py`
-- [x] **MCP stderr drain** — background drainer prevents pipe-buffer deadlock on npx startup
-- [x] **URL parsing fix** — `observe.py` `_parse_url_title()` handles unquoted `Page URL: https://...` format from `@playwright/mcp`
-- [x] **Scroll tracking** — `page_scroll_count` state field resets on URL change; exposed in reason context
-- [x] **Single-tab enforcement** — `_ensure_single_tab()` in run_manager closes Chrome session-restore ghost tabs before MCP connects
-- [x] **Test case YAMLs**:
-  - `wikipedia_search.yaml` (TC-001) — unguided, PASSED ✓
-  - `saucedemo_cart.yaml` (TC-002b) — unguided, PASSED ✓ (SauceDemo demo store)
-  - `amazon_add_to_cart.yaml` (TC-002) — Amazon blocked by bot detection (CAPTCHA); see notes
-  - `temu_cart.yaml` (TC-003) — Temu blocked by mandatory login wall; emits `<GOAL_BLOCKED>` correctly
-
-#### Phase 1 — Confirmed Working
-- **TC-001 Wikipedia** — PASSED in ~6 steps, ~44s, ~$0.03 with `openrouter:openai/gpt-oss-120b:free`
-- **TC-002b SauceDemo** — PASSED in ~8 steps, ~55s, ~$0.03 with `openrouter:openai/gpt-oss-120b:free`
-- **Recording** — `--record` flag saves MP4 to `artifacts/<run-id>.mp4` via ffmpeg x11grab
-- **Bot detection sites** (Amazon, Temu) — fail gracefully: Amazon loops on 908-char CAPTCHA page; Temu correctly emits `<GOAL_BLOCKED>` after 2 steps
-
-#### Platform Compatibility Notes
-- **Amazon** — headless Chromium is fingerprinted; product pages return 908-char CAPTCHA shell. Requires Playwright stealth mode (Phase 3).
-- **Temu** — forces login on first visit; no guest browsing. Agent now blocks correctly within 2 steps.
-- **Ollama** — `qwen3:8b` (thinking model) emits reasoning tokens but not tool_call format. Use `openrouter:openai/gpt-oss-120b:free` instead.
-- **`@playwright/mcp@latest`** — only 8 tools confirmed present: `browser_navigate`, `browser_click`, `browser_type`, `browser_snapshot`, `browser_press_key`, `browser_wait_for`, `browser_hover`, `browser_select_option`. Tools `browser_scroll`, `browser_screenshot`, `browser_go_back`, `browser_tab_*` are absent in current version.
-
-### Not Built Yet
-- [ ] **PostgreSQL persistence** — Phase 6A: swap in-memory stores for asyncpg tables
-- [ ] **Stripe billing** — Phase 6B: checkout, portal, plan enforcement
-- [ ] **Celery Beat scheduling** — Phase 6C: cron firing via Beat worker
-- [ ] **GitHub Check Run API** — Phase 6D: pass/fail status on PRs; Slack alerts
-- [ ] **Eval observability** — Phase 7: MLflow/Arize tracing, eval dataset, regression gate
-- [ ] **Visual baseline approval UI** — Phase 6F: diff viewer, approve/reject queue
-- [ ] **Organization management UI** — Phase 6F: invitations, roles, per-org billing
-
----
-
-## Phased Roadmap
-
 ### Phase 1 — CLI Agent Harness ✓ COMPLETE
 
-**Verified passing:**
-- TC-001 Wikipedia — search, open article, scroll → PASSED (6–20 steps)
-- TC-002b SauceDemo — login, add to cart, verify → PASSED (6 steps)
-- Both with `--record` producing MP4 + MD + HTML artifacts
-
-**What was built:**
-- LangGraph StateGraph: `OBSERVE → REASON → ACT → GOAL_CHECK → ERROR_HANDLER → FINALIZE`
-- Playwright MCP client (stdio) + 4 custom tools
+- LangGraph StateGraph: `OBSERVE → REASON → GUARD_RAILS → ACT → GOAL_CHECK → ERROR_HANDLER → FINALIZE`
+- Playwright MCP client (stdio) + 7 custom tools
 - YAML test case loader + Pydantic schema
-- Per-step trace collector, assertion engine (content + console)
+- Per-step trace collector, assertion engine (content + console + network + state)
 - Click CLI: `python -m orchestrator run --test <file.yaml> [--record]`
 
-**Passing tests:**
+**Confirmed passing:**
 | Test | File | Status | Steps | Cost |
 |------|------|--------|-------|------|
 | TC-001 Wikipedia search + scroll | `wikipedia_search.yaml` | PASSED ✓ | ~6 | ~$0.03 |
@@ -270,159 +306,142 @@ step_screenshots: list[bytes]          # all step screenshots (for Pass 2)
 
 ### Phase 2 — Observability & Tracing ✓ COMPLETE
 
-**What was built:**
-- PostgreSQL persistence: 5 tables via asyncpg, gated by `HAWKEYE_DB_URL`
-- CDP enhancements: `NetworkRequest` buffer, `take_screenshot()`, `enable_page_capture()`
-- 3 new custom tools: `get_network_log`, `assert_network_request`, `assert_element_state` (7 total)
-- Guard-rails node between reason → act (navigation policy + forbidden action checks)
-- Assertion engine: `network` + `state` types added
-- HTML + Markdown report generator — saved to `artifacts/` after every run
-- CLI: `--record` MP4 capture, `--db-url`, `init-db` command
-- LLM provider: `openrouter:` prefix routes to OpenRouter API
+- PostgreSQL persistence via asyncpg, gated by `HAWKEYE_DB_URL`
+- CDP: `NetworkRequest` buffer, `take_screenshot()`, `enable_page_capture()`
+- 3 new custom tools: `get_network_log`, `assert_network_request`, `assert_element_state`
+- Guard-rails node between reason → act
+- HTML + Markdown report generator saved to `artifacts/` after every run
 
 ### Phase 2.5 — Visual QA Agent ✓ COMPLETE
 
-**What was built:**
-- `observe_node`: captures screenshot via `cdp_session.take_screenshot()` at every step; non-fatal on failure
-- `reason_node`: detects vision-capable model via `is_vision_capable()`; sends multimodal `HumanMessage` (image + accessibility tree) to vision LLMs; text-only models receive tree only (no crash)
-- `llm/provider.py`: `is_vision_capable(model)` helper + NVIDIA NIM provider (`nvidia:<name>`, requires `NVIDIA_API_KEY`)
-- `AgentState`: new fields `current_screenshot`, `screenshot_b64`, `step_screenshots`
-- `orchestrator/vision/`: `figma_client.py` (Figma API export), `pixel_diff.py` (Pillow/numpy pixelmatch), `visual_assertions.py` (runs `visual_design` assertion type)
-- `assertions/engine.py`: `visual_design` type wired through vision package
-- `cli/main.py`: `--figma-url` + `--figma-token` flags (also read from `FIGMA_URL`/`FIGMA_TOKEN` env vars)
-- `reporting/report_generator.py`: per-step screenshots embedded inline in HTML report
-- `reason_node` reliability: context trimming (24K char limit, keep last 3 pairs), exponential backoff for 429/5xx, emergency trim + retry on 413 context overflow, fast-fail on auth/billing errors
+- `observe_node`: screenshot via CDP at every step (non-fatal on failure)
+- `reason_node`: multimodal `HumanMessage` (image + accessibility tree) for vision LLMs; text-only models receive tree only
+- `is_vision_capable(model)` helper; NVIDIA NIM provider (`nvidia:<name>`)
+- `orchestrator/vision/`: Figma API export, Pillow/numpy pixelmatch, visual_design assertion type
+- `--figma-url` + `--figma-token` CLI flags
+- Context trimming (24K char limit, keep last 3 pairs), exponential backoff for 429/5xx, emergency trim on 413
 
 ### Phase 3 — Multi-Browser & API ✓ COMPLETE
 
-**What was built:**
-- FastAPI REST API at `Backend/api/` — `POST /api/runs`, `GET /api/runs`, `GET /api/runs/{id}`, `DELETE /api/runs/{id}`
-- WebSocket live trace streaming — `WS /api/ws/runs/{run_id}/trace`; `WebSocketManager` broadcasts per-step events to connected clients
-- asyncio-based job queue (`api/job_queue.py`) — single background worker, 100-run in-memory history, cancel support
-- `TraceCollector` gains optional `ws_emitter` callback — wired by job queue to push events over WebSocket
-- `GET /api/test-cases` + `POST /api/test-cases/validate` — scans `orchestrator/test_cases/*.yaml`
-- `GET /health` — readiness probe
-- `Backend/Dockerfile.api` — slim Python 3.11 image with uv
-- `docker-compose.yml` updated: `hawkeye-net` bridge network, `hawkeye-api` service on port 8000
-- `pyproject.toml`: added `fastapi`, `uvicorn[standard]`, `python-multipart`; `hawkeye-api` script entry point
-
-- Firefox/WebKit support: `PlaywrightMcpClient` now accepts `browser` param; uses `--browser firefox/webkit` (MCP launches headless browser) when CDP URL is absent
-- Container pool (`api/container_pool.py`): `ContainerPool` pre-warms N chromium containers; `acquire()`/`release()` used by job queue; controlled by `HAWKEYE_POOL_SIZE` env var (default 0 = disabled)
-- `RunManager` accepts `_prewarmed_handle`: skips spawn (1s settle vs 6s), releases back to pool after run
-- `GET /api/runs/{run_id}/observe` endpoint returns live noVNC URL for a run
-- Nginx reverse proxy (`nginx/nginx.conf`): proxies `/api/` + WebSocket upgrade to `hawkeye-api:8000`; `hawkeye-nginx` service added to docker-compose on port 80
-
-- Celery + Redis job queue (`api/celery_app.py`, `api/tasks.py`, `api/redis_store.py`): persistent runs (survive API restart), parallel execution via `--concurrency N` worker
-- Redis pub/sub for WebSocket streaming across worker/API process boundary
-- `cancel()` revokes Celery task by stored `celery_task_id`
-- Redis service + `hawkeye-worker` Celery service added to docker-compose
-- **Tested:** persistence survives API restart; 2 parallel runs confirmed running simultaneously
+- FastAPI REST API at `Backend/api/` on port 8000
+- WebSocket live trace streaming via Redis pub/sub (`WS /api/ws/runs/{run_id}/trace`)
+- Celery + Redis job queue (persistent runs, parallel execution)
+- `GET /api/runs/{run_id}/observe` — returns live noVNC URL
+- Firefox/WebKit support in `PlaywrightMcpClient`
+- `ContainerPool` pre-warming (disabled by default, `HAWKEYE_POOL_SIZE=0`)
+- Nginx reverse proxy (`nginx/nginx.conf`) on port 80
 
 ### Phase 4 — Frontend ↔ Backend Wiring ✓ COMPLETE
 
-**What was built:**
 - API client layer (`src/lib/api/client.ts`, `hooks.ts`) — typed fetch wrappers + React polling hooks
-- WebSocket hook (`useRunTraceStream`) — StrictMode-safe, defers close on CONNECTING state
-- Dashboard page wired to `useRuns()` — live KPIs, pass rate, active run count
-- New Run page wired to `useTestCases()` + `useCreateRun()` — real test case picker
-- Live Execution page — WebSocket trace stream + noVNC iframe (`resize=scale&autoconnect=1`)
-- Run Report page — `useRun()` + `useRunTraces()`, assertion table, step trace accordion
+- WebSocket hook (`useRunTraceStream`) — StrictMode-safe
+- Dashboard → `useRuns()`, New Run → `useTestCases()` + `useCreateRun()`
+- Live Execution → WebSocket trace stream + noVNC iframe
+- Run Report → `useRun()` + `useRunTraces()`, assertion table, step trace accordion
 - `novnc_url` propagation: `TraceCollector.on_sandbox_ready()` → `ws_emitter` → Redis → frontend poll
-- Redis deduplication fix in `list_runs()` (seen-set dedupe)
-- Full SaaS platform architecture designed in `Docs/workflow.md`
 
 ### Phase 5 — SaaS Platform ✓ COMPLETE
 
-Full design spec: `Docs/workflow.md` (layer diagram, PostgreSQL DDL, complete API reference, ADRs)
-
-#### Phase 5F — Artifact Store ✓
-- `Backend/api/artifact_store.py` — `ArtifactStore` protocol + `LocalArtifactStore`; serves files via `FileResponse` at `/api/runs/{id}/artifacts/{file}`
-- `Backend/api/routes/artifacts.py` — manifest endpoint + per-file download route
-- `report_generator.py` — `write_screenshot_files()` writes `screenshots/step_NN.png` from base64
-- `tasks.py` — saves all artifacts after run; stores `artifact_manifest` in Redis record
-- Run Report page — screenshot gallery with lightbox, download buttons (HTML/video/trace JSON)
-
-#### Phase 5A — Project & Test Case Management ✓
-- In-memory project CRUD (`Backend/api/routes/projects.py`) + project stats endpoint
-- In-memory test case CRUD (`Backend/api/routes/test_cases_crud.py`) — full CRUD, clone, import-yaml
+#### 5A — Project & Test Case Management ✓
+- In-memory project CRUD + stats endpoint (`api/routes/projects.py`)
+- Full test case CRUD per project — create, clone, import-yaml (`api/routes/test_cases_crud.py`)
 - `seed_from_yaml_dir()` — auto-imports all YAML test cases into default project on startup
-- `RunRequest` accepts `test_case_id`; resolves to temp YAML before handing off to `RunManager`
-- Frontend: test case library (`/app/test-cases`), 5-step creation wizard (`/app/test-cases/new`), detail page (`/app/test-cases/[id]`)
-- `/runs/new` — unified DB + YAML picker with `?tc=<id>` pre-selection; sends `test_case_id` or `test_case_path`
+- Frontend: test case library, 5-step creation wizard, detail page with YAML editor
 
-#### Phase 5B — Test Suites ✓
-- `Backend/api/routes/suites.py` — suite CRUD + `POST .../run` returns test_case_ids to dispatch
-- Suites page fully wired — create, delete, run-all with live toast; loading skeleton
+#### 5B — Test Suites ✓
+- Suite CRUD + member management + `POST .../run` (`api/routes/suites.py`)
+- Frontend: suite management page, run-all with live toast, schedule modal
 
-#### Phase 5C — Environments & Vault ✓
-- `Backend/api/routes/vault.py` — secret CRUD with reveal-on-demand; name-uniqueness guard per project
-- Vault page fully rewritten — add-secret inline form, reveal/hide toggle, clipboard copy, delete
+#### 5C — Environments & Vault ✓
+- Secret CRUD with reveal-on-demand (`api/routes/vault.py`)
+- Environment CRUD with base_url + custom headers + default flag (`api/routes/environments.py`)
+- Frontend: vault page (add, reveal/hide, copy, delete), environments settings page
 
-#### Phase 5D — Scheduling & CI/CD ✓
-- `Backend/api/routes/schedules.py` — cron schedule CRUD per suite; GitHub push webhook with HMAC-SHA256 verification (`GITHUB_WEBHOOK_SECRET`)
-- Suites page — calendar icon per card opens schedule modal with cron presets + branch filter
-- Integrations page — real webhook URL display with copy button; `CORS_ORIGINS` env var wired
+#### 5D — Scheduling & CI/CD ✓
+- Cron schedule CRUD per suite (`api/routes/schedules.py`)
+- GitHub push webhook with HMAC-SHA256 verification (`api/routes/webhooks.py`)
+- Frontend: schedule modal with cron presets + branch filter; integrations page with webhook URL
 
-#### Phase 5E — Multi-tenancy & Auth ✓
-- `apiFetch` sends `X-User-Email` header sourced from NextAuth session via `setAuthUser()`
-- Sidebar shows user avatar, name, and email when authenticated
-- `Backend/api/routes/me.py` — `/api/me` echoes identity from header; returns role
+#### 5E — Multi-tenancy & Auth ✓
+- `apiFetch` sends `X-User-Email` header from NextAuth session via `setAuthUser()`
+- `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/oauth-token`
+- Dev user seeded on startup (`HAWKEYE_DEV_EMAIL` / `HAWKEYE_DEV_PASSWORD`)
+- JWT via `create_access_token()` in `auth_utils.py`
+- `GET /api/me` returns identity + role
 
-#### Phase 5G — Billing & Usage Metering ✓
-- `Backend/api/routes/usage.py` — real usage from run count, vault secrets, artifact disk size
-- Billing page — replaced all mock imports; usage meters + cost fetched from `/api/usage`; loading skeleton while fetching
+#### 5F — Artifact Store ✓
+- `ArtifactStore` protocol + `LocalArtifactStore` (`api/artifact_store.py`)
+- `GET /api/runs/{id}/artifacts` manifest + `GET /api/runs/{id}/artifacts/{file}` download
+- Run Report: screenshot gallery with lightbox, download buttons (HTML/video/trace JSON)
 
-### Phase 7 — Eval Observability 🔧 PLANNED
+#### 5G — Billing & Usage Metering ✓
+- Usage metering from run count, vault secrets, artifact disk size (`api/routes/usage.py`)
+- Stripe plans, checkout, portal, webhook handler (`api/routes/billing.py`)
+- Stub mode when `STRIPE_SECRET_KEY` absent
+- Frontend billing page with usage meters + cost fetched from `/api/usage`
 
-- [ ] **Arize Phoenix tracing** — OTEL span instrumentation in `TraceCollector`; opt-in via `PHOENIX_COLLECTOR_ENDPOINT` env var; span hierarchy: `hawkeye.run` (root) → `hawkeye.step` → `hawkeye.observe` / `hawkeye.reason` / `hawkeye.act` children; LLM attributes via OpenInference semantic conventions (`llm.token_count.prompt`, `llm.token_count.completion`, `llm.model_name`); `Backend/orchestrator/trace/phoenix.py` emitter class
-- [ ] **Eval CLI module** — `python -m orchestrator eval --test <yaml> [--test <yaml>...] [--model <m>] [--runs N] [--output dir]`; runs N repetitions per test case sequentially, aggregates pass rate / avg steps / avg cost / p50 latency per model, prints Rich summary table, writes `eval.jsonl`; lives in `Backend/orchestrator/eval/` (runner, metrics, dataset, report)
-- [ ] **Eval dataset curation** — extract and curate evaluation datasets from existing run traces (step observations, actions, outcomes, cost); store as structured JSONL in `artifacts/eval_datasets/`; tooling to filter, label, and version datasets
-- [ ] **Benchmark comparison** — survey public web-agent benchmarks (WebArena, Mind2Web, VisualWebArena, WebVoyager) and agents benchmarked on them; identify comparable task subsets; report Hawkeye pass rate and efficiency against published baselines
-- [ ] **CLI benchmark harness** — extend eval CLI with `--benchmark webvoyager|mind2web|custom` flag; per-dataset breakdown in the summary table; downloads task files from benchmark repos automatically
+### Phase 6 — Production Hardening 🔧 IN PROGRESS (current branch: `feat/phase6-api-changes`)
 
-#### Future Plan
+#### Track A — PostgreSQL Persistence ⚠ PARTIAL
+- `api/db.py` — asyncpg pool singleton + `get_conn()` FastAPI dependency ✓
+- `api/crypto.py` — AES-256-GCM vault encryption ✓
+- `api/auth_utils.py` — JWT, password hashing, HMAC verification ✓
+- Auth, environments, integrations, orgs routes: dual-path (DB when available, in-memory fallback) ✓
+- **Gap:** vault, test_cases_crud, suites, schedules routes still in-memory only — DB wiring not complete
+- **Gap:** No SQL migration files; no `api/schema.sql`
 
-- [ ] **User-facing eval component** — frontend page for managing eval datasets, triggering benchmark runs against the live agent, reviewing per-step failure analysis, and adjusting agent configuration per dataset
-- [ ] **Prompt optimizer** — integrate DSPy MIPRO/GEPA or Agent Lightning APO to auto-optimize the system prompt from eval outcomes; offline eval → optimize → re-eval loop with score tracking across prompt versions
+#### Track B — Stripe Billing ✓ COMPLETE
+- Full checkout, portal, webhook handler with Stripe SDK
+- `PLAN_LIMITS` dict enforced; `get_plan_limits()` exported for runs router
+- Stub mode when `STRIPE_SECRET_KEY` absent
 
-Full spec: `Docs/workflow.md` §13.5
+#### Track C — Celery Beat Scheduling ✓ COMPLETE
+- `api/tasks_beat.py` — `check_due_schedules()` task fires every minute
+- `celery beat` service in docker-compose with `croniter` dependency
+
+#### Track D — GitHub CI Integration ✓ COMPLETE
+- `api/github_checks.py` — posts Check Run pass/fail after each run
+- `api/slack.py` — failure notification to org Slack webhook
+- `api/routes/webhooks.py` — GitHub push webhook with HMAC verification
+- Schedule stores branch filter; webhook captures `head_commit.id`
+
+#### Track E — Eval Observability ✗ NOT STARTED
+- No Arize Phoenix / MLflow tracing in `TraceCollector`
+- No eval CLI module (`orchestrator/eval/`)
+- No eval dataset JSONL writing
+- No benchmark comparison harness
+
+#### Track F — Organization Management ⚠ PARTIAL
+- `api/routes/orgs.py` — full org + member + invitation CRUD ✓
+- `GET /api/orgs/me`, `PATCH /api/orgs/me`, member CRUD, invitation flow ✓
+- **Gap:** No frontend org settings page (no `/app/settings/orgs` or `/app/settings/members` route)
 
 ---
 
-### Phase 6 — Production Hardening 🔧 NEXT
+## Known Gaps (from HLD_LLD.md §8)
 
-Full spec: `Docs/workflow.md` §13 (6 tracks, API contracts, SQL DDL, code sketches, 7-week plan)
+These gaps exist between the design spec and current implementation:
 
-#### Track A — PostgreSQL Persistence
-- Swap all Phase 5 in-memory stores (projects, test_cases, suites, vault, schedules) for asyncpg-backed tables
-- Add `api/db.py` pool singleton + `get_conn()` FastAPI dependency
-- AES-256-GCM vault encryption via `VAULT_ENCRYPTION_KEY` env var
-- New tables: `suite_schedules`, `vault_secrets` (with ciphertext + IV columns)
+| Area | Gap | File to Change |
+|---|---|---|
+| TestCaseCreate API schema | `api/routes/test_cases_crud.py` still uses old flat schema; needs nested `goal_config` block matching `_template.yaml` | `api/routes/test_cases_crud.py` |
+| Vault secret resolution | `target.vault[]` key references not resolved against vault before agent execution | `api/tasks.py` |
+| Agent prompt — step details | Step `description` + `success_signal` not injected into system prompt per checkpoint | `orchestrator/agent/prompt_builder.py` |
+| Agent prompt — extra_details | `goal.extra_details` and `target.app_description` not passed to prompt builder | `orchestrator/agent/prompt_builder.py` |
+| On-failure capture flags | `test_case.on_failure.capture` flags not checked — always captures everything | `orchestrator/agent/finalize.py` |
+| Guard-rails policies | `forbidden_actions` / `navigation_policy` removed from template schema; guard_rails node is a no-op stub | `orchestrator/agent/nodes/guard_rails.py` |
+| Frontend TestCaseSpec type | `src/lib/api/client.ts` `TestCaseSpec` may not match nested `goal_config` structure | `src/lib/api/client.ts` |
+| PostgreSQL full wiring | vault, test_cases, suites, schedules routes still in-memory only | `api/routes/*.py` |
+| Org management UI | No frontend pages for org settings, member management, invite flow | `src/app/app/(workspace)/settings/` |
 
-#### Track B — Stripe Billing
-- `Backend/api/routes/billing.py` — checkout session, customer portal, webhook handler
-- Plan enforcement middleware on `POST /api/runs` (429 when limit hit)
-- Frontend: real Stripe portal redirect, upgrade modal on 429
+---
 
-#### Track C — Celery Beat Scheduling
-- `api/tasks_beat.py` — `check_due_schedules` task fires due cron schedules every minute
-- Add `celery beat` service to docker-compose; add `croniter` dependency
+## Platform Compatibility Notes
 
-#### Track D — GitHub CI Integration
-- `api/github_checks.py` — post Check Run pass/fail to GitHub after each run
-- `api/slack.py` — failure notification to org Slack webhook
-- Extend GitHub push webhook to capture `head_commit.id` and attach to run record
-
-#### Track E — Agent Eval & Benchmarking
-- Optional MLflow / Arize Phoenix logging in `TraceCollector`
-- JSONL eval dataset written per run to `artifacts/{run_id}/eval.jsonl`
-- `GET /api/eval/summary` — aggregate pass rate / cost per model
-- `eval_gate.py` CLI + GitHub Actions workflow: fail CI if pass rate drops >5% or cost rises >20%
-
-#### Track F — Organization Management UI
-- `Backend/api/routes/orgs.py` — member CRUD, invitation flow (signed JWT links)
-- Frontend: org settings, members table, invite flow, role-based UI gating
-- Role matrix: Viewer → Member → Admin → Owner (see `Docs/workflow.md` §13.6)
+- **Amazon** — headless Chromium fingerprinted; returns 908-char CAPTCHA shell. Requires Playwright stealth mode.
+- **Temu** — forces login on first visit; agent blocks correctly within 2 steps.
+- **Ollama** — `qwen3:8b` emits reasoning tokens but not tool_call format. Use `openrouter:openai/gpt-oss-120b:free` instead.
+- **`@playwright/mcp@latest`** — only 8 tools confirmed present: `browser_navigate`, `browser_click`, `browser_type`, `browser_snapshot`, `browser_press_key`, `browser_wait_for`, `browser_hover`, `browser_select_option`. Tools `browser_scroll`, `browser_screenshot`, `browser_go_back`, `browser_tab_*` absent in current version.
 
 ---
 
@@ -434,43 +453,45 @@ cd Frontend/hawkeye-web && npm run dev      # Dev server (http://localhost:3000)
 cd Frontend/hawkeye-web && npm run build    # Production build
 cd Frontend/hawkeye-web && npm run lint     # ESLint
 
-# Sandbox container
-docker compose build                         # Build sandbox image
-docker compose up                            # Run sandbox (uses .env)
+# API server (from Backend/)
+cd Backend
+uv sync --extra dev
+uvicorn api.main:app --reload --port 8000   # Dev API server
 
-# Sandbox CLI (Python)
-python -m hawkeye_sandbox --url https://example.com --browser chromium
-python -m hawkeye_sandbox --url https://example.com --all   # All browsers
+# Full stack (Docker)
+docker compose build                         # Build all images
+docker compose up                            # Start all services (api, worker, redis, nginx, sandbox)
 
-# PoC test script
-set GROQ_API_KEY=<key>
-python scripts/test_spawn_all_browsers_groq_mcp.py --url https://example.com
+# Celery worker (standalone)
+cd Backend
+celery -A api.celery_app worker --loglevel=info --concurrency 2
 
-# Orchestrator CLI (run from Backend/ directory)
+# Celery Beat scheduler
+cd Backend
+celery -A api.celery_app beat --loglevel=info
+
+# Orchestrator CLI (from Backend/)
 cd Backend
 uv sync --extra dev
 
-# Validate a test case
 python -m orchestrator validate --test orchestrator/test_cases/wikipedia_search.yaml
-
-# List available tools
 python -m orchestrator list-tools
 
-# Basic run (default model is gpt-4o — visual agent always on)
-OPENROUTER_API_KEY=$(grep '^OPENROUTER_API_KEY=' .env | cut -d= -f2-) python -m orchestrator run \
+# Basic run
+OPENROUTER_API_KEY=<key> python -m orchestrator run \
   --test orchestrator/test_cases/wikipedia_search.yaml
 
 # With recording
-OPENROUTER_API_KEY=$(grep '^OPENROUTER_API_KEY=' .env | cut -d= -f2-) python -m orchestrator run \
+OPENROUTER_API_KEY=<key> python -m orchestrator run \
   --test orchestrator/test_cases/saucedemo_cart.yaml --record
 
 # With Figma design diff
-OPENROUTER_API_KEY=$(grep '^OPENROUTER_API_KEY=' .env | cut -d= -f2-) python -m orchestrator run \
+OPENROUTER_API_KEY=<key> python -m orchestrator run \
   --test orchestrator/test_cases/saucedemo_cart.yaml --record \
   --figma-url https://www.figma.com/file/xxx --figma-token <token>
 
-# Override to a cheaper text-only model (disables visual agent)
-OPENROUTER_API_KEY=$(grep '^OPENROUTER_API_KEY=' .env | cut -d= -f2-) python -m orchestrator run \
+# Override to text-only model (disables visual agent)
+OPENROUTER_API_KEY=<key> python -m orchestrator run \
   --test orchestrator/test_cases/saucedemo_cart.yaml \
   --model openrouter:openai/gpt-oss-120b:free
 
@@ -482,22 +503,17 @@ python -m orchestrator init-db --db-url postgres://user:pass@localhost/hawkeye
 
 ## Spec Reference Map
 
-The full Hawkeye spec lives at `C:\Users\vjayr\Downloads\spec.md`. Key sections:
-
-| Feature | Spec Section |
+| Feature | Document |
 |---|---|
-| Hybrid tool architecture (MCP + custom) | §2.3 |
-| Test case YAML schema | §3 |
-| Sandbox container (Dockerfile, entrypoint, networking) | §4 |
-| Agent loop engine (state graph, nodes, edges) | §5 |
-| Page readiness system (`wait_for_stable`) | §6 |
-| Orchestrator structure (directory layout, tools, CDP) | §7 |
-| Database schema (test_cases, test_runs, agent_traces) | §8 |
-| API endpoints (REST + WebSocket) | §9 |
-| Tracing & observability | §10 |
-| Implementation roadmap | §11 |
-| Cost estimation per test run | §12 |
-| Security considerations | §13 |
+| Full API contracts, data models, Redis schema, run lifecycle | `Docs/HLD_LLD.md` |
+| Hybrid tool architecture (MCP + custom) | `Docs/HLD_LLD.md` §2 + spec.md §2.3 |
+| Test case YAML schema + `_template.yaml` | `Docs/HLD_LLD.md` §1.3 + `orchestrator/test_cases/_template.yaml` |
+| Agent graph nodes + edges | `Docs/HLD_LLD.md` §3 |
+| Redis schema + run lifecycle | `Docs/HLD_LLD.md` §5–6 |
+| Implementation gaps | `Docs/HLD_LLD.md` §8 |
+| Sandbox container (Dockerfile, entrypoint) | spec.md §4 |
+| Tracing & observability | spec.md §10 |
+| Phase 7 eval plan | spec.md §11 |
 
 ---
 
@@ -508,4 +524,4 @@ The full Hawkeye spec lives at `C:\Users\vjayr\Downloads\spec.md`. Key sections:
 - **No comments** unless explaining WHY (hidden constraints, workarounds, non-obvious behavior)
 - **No abstractions** beyond what the task requires — three similar lines > premature abstraction
 - **Test before reporting done** — for UI changes, verify in browser; for CLI, run the actual command
-- **Spec is the source of truth** for feature design — consult it before implementing
+- **HLD_LLD.md is the source of truth** for API contracts, data models, and design decisions
