@@ -35,7 +35,7 @@ export default function NewTestCasePage() {
   const [goal, setGoal] = useState("");
   const [pageType, setPageType] = useState("spa");
   const [appDesc, setAppDesc] = useState("");
-  const [hints, setHints] = useState("");
+  const [extraDetails, setExtraDetails] = useState("");
 
   // Step 3 — Checkpoints
   const [guided, setGuided] = useState(false);
@@ -49,7 +49,6 @@ export default function NewTestCasePage() {
   // Step 5 — Constraints
   const [maxSteps, setMaxSteps] = useState(30);
   const [timeout, setTimeout] = useState(180);
-  const [navPolicy, setNavPolicy] = useState("interact_only");
 
   function addCheckpoint() {
     const next = checkpoints.length + 1;
@@ -89,21 +88,18 @@ export default function NewTestCasePage() {
     try {
       const body = {
         name: name.trim(),
-        goal: goal.trim(),
-        target: { url: url.trim(), browser },
+        goal: {
+          objective: goal.trim(),
+          constraints: { max_steps: maxSteps, timeout_seconds: timeout, max_retries_per_action: 2 },
+          extra_details: extraDetails.trim() || null,
+          steps: guided && checkpoints.some((c) => c.description) ? {
+            checkpoints: checkpoints.filter((c) => c.description.trim()),
+          } : null,
+        },
+        target: { url: url.trim(), browser, page_type: pageType, app_description: appDesc.trim() || null, vault: [] },
         priority,
         tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
-        steps: guided && checkpoints.some((c) => c.description) ? {
-          mode: "guided",
-          checkpoints: checkpoints.filter((c) => c.description.trim()),
-        } : null,
         assertions,
-        constraints: { max_steps: maxSteps, timeout_seconds: timeout, navigation_policy: navPolicy, forbidden_actions: [] },
-        context: {
-          page_type: pageType,
-          app_description: appDesc.trim() || null,
-          hints: hints.split("\n").map((h) => h.trim()).filter(Boolean),
-        },
       };
       const tc = await apiClient.createProjectTestCase(DEFAULT_PROJECT, body);
       router.push(`/app/test-cases/${tc.id}`);
@@ -208,14 +204,14 @@ export default function NewTestCasePage() {
                     <Input id="appDesc" placeholder="e.g. Demo e-commerce store, credentials: standard_user / secret_sauce" value={appDesc} onChange={(e) => setAppDesc(e.target.value)} />
                   </div>
                   <div className="space-y-1.5">
-                    <Label htmlFor="hints">Hints <span className="text-muted-foreground text-xs">(one per line)</span></Label>
+                    <Label htmlFor="extraDetails">Extra details <span className="text-muted-foreground text-xs">(hints, timing quirks, known issues)</span></Label>
                     <textarea
-                      id="hints"
+                      id="extraDetails"
                       rows={3}
                       className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
-                      placeholder="Click 'Add to cart' on the Backpack product\nVerify cart badge increments"
-                      value={hints}
-                      onChange={(e) => setHints(e.target.value)}
+                      placeholder="Click 'Add to cart' on the Backpack product&#10;Verify cart badge increments"
+                      value={extraDetails}
+                      onChange={(e) => setExtraDetails(e.target.value)}
                     />
                   </div>
                 </>
@@ -339,16 +335,6 @@ export default function NewTestCasePage() {
                         className="w-full accent-primary"
                       />
                     </div>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Navigation policy</Label>
-                    <Select value={navPolicy} onValueChange={(v) => v && setNavPolicy(v)}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="interact_only">interact_only — click links only</SelectItem>
-                        <SelectItem value="explicit_urls_allowed">explicit_urls_allowed — may navigate by URL</SelectItem>
-                      </SelectContent>
-                    </Select>
                   </div>
                 </>
               )}
