@@ -121,45 +121,50 @@ export type Checkpoint = {
   description: string;
   success_signal: string;
   data?: Record<string, unknown> | null;
+  assertions?: AssertionSpec[];
+};
+
+export type GoalSpec = {
+  objective: string;
+  constraints: {
+    max_steps: number;
+    timeout_seconds: number;
+    max_retries_per_action: number;
+  };
+  extra_details: string | null;
+  steps: { checkpoints: Checkpoint[] } | null;
+};
+
+export type VaultEntry = {
+  key: string;
+  value: string;
 };
 
 export type TestCaseSpec = TestCaseSummary & {
-  record: boolean;
+  save_record: boolean;
   spec: {
     id: string;
     name: string;
-    goal: string;
+    goal: GoalSpec;
     suite: string | null;
     priority: string;
     tags: string[];
     created_by: string | null;
-    record: boolean;
+    project: string | null;
+    save_record: boolean;
     target: {
       url: string;
       browser: string;
       viewport: { width: number; height: number; device_scale_factor: number } | null;
+      page_type: string;
+      app_description: string | null;
+      vault: VaultEntry[];
       locale: string | null;
       timezone: string | null;
-      auth: Auth | null;
       extra_headers: Record<string, string> | null;
       block_urls: string[];
     };
-    steps: { mode: string; checkpoints: Checkpoint[] } | null;
     assertions: AssertionSpec[];
-    constraints: {
-      max_steps: number;
-      timeout_seconds: number;
-      max_retries_per_action: number;
-      navigation_policy: string;
-      forbidden_actions: string[];
-      required_behaviors: string[];
-    };
-    context: {
-      app_description: string | null;
-      page_type: string;
-      hints: string[];
-      known_issues: string[];
-    };
     on_failure: {
       capture: {
         screenshot: boolean;

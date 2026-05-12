@@ -55,13 +55,18 @@ async def finalize_node(
     collector.on_finalize(assertion_results)
     collector.print_summary(status=current_status)
 
-    # --- Write trace JSON ---
-    try:
-        trace_path = collector.write_json(output_dir, status=current_status)
-        logger.info("Trace written to %s", trace_path)
-    except Exception as exc:
-        logger.error("finalize: failed to write trace: %s", exc)
-        trace_path = None
+    # --- Write trace JSON (gated by on_failure.capture.agent_trace) ---
+    trace_path = None
+    capture = state["test_case"].on_failure.capture
+    save_trace = capture.get("agent_trace", True) if isinstance(capture, dict) else getattr(capture, "agent_trace", True)
+    if save_trace:
+        try:
+            trace_path = collector.write_json(output_dir, status=current_status)
+            logger.info("Trace written to %s", trace_path)
+        except Exception as exc:
+            logger.error("finalize: failed to write trace: %s", exc)
+    else:
+        logger.info("finalize: skipping trace write (on_failure.capture.agent_trace=False)")
 
     return {
         "status": current_status,

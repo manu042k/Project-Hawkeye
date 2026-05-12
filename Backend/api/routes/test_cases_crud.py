@@ -37,7 +37,6 @@ class CheckpointBody(BaseModel):
 
 
 class StepsBody(BaseModel):
-    mode: str = "guided"
     checkpoints: list[CheckpointBody] = []
 
 
@@ -54,18 +53,20 @@ class ViewportBody(BaseModel):
     device_scale_factor: float = 1.0
 
 
-class AuthBody(BaseModel):
-    method: str = "none"  # none | cookie_inject | login_flow | token_header
-    credentials_ref: str | None = None
+class VaultEntryBody(BaseModel):
+    key: str
+    value: str
 
 
 class TargetBody(BaseModel):
     url: str
     browser: str = "chromium"
     viewport: ViewportBody | None = None
+    page_type: str = "spa"
+    app_description: str | None = None
+    vault: list[VaultEntryBody] = []
     locale: str | None = None
     timezone: str | None = None
-    auth: AuthBody | None = None
     extra_headers: dict[str, str] | None = None
     block_urls: list[str] = []
 
@@ -88,30 +89,26 @@ class ConstraintsBody(BaseModel):
     max_steps: int = 30
     timeout_seconds: int = 180
     max_retries_per_action: int = 2
-    navigation_policy: str = "interact_only"
-    forbidden_actions: list[str] = []
-    required_behaviors: list[str] = []
 
 
-class ContextBody(BaseModel):
-    app_description: str | None = None
-    hints: list[str] = []
-    known_issues: list[str] = []
-    page_type: str = "spa"
+class GoalBody(BaseModel):
+    objective: str
+    constraints: ConstraintsBody = ConstraintsBody()
+    extra_details: str | None = None
+    steps: StepsBody | None = None
 
 
 class TestCaseCreate(BaseModel):
     name: str
-    goal: str
+    goal: GoalBody
     target: TargetBody
     suite: str | None = None
     priority: str = "P1"
     tags: list[str] = []
-    record: bool = False
-    steps: StepsBody | None = None
+    save_record: bool = False
+    created_by: str | None = None
+    project: str | None = None
     assertions: list[AssertionBody] = []
-    constraints: ConstraintsBody = ConstraintsBody()
-    context: ContextBody = ContextBody()
     on_failure: OnFailureBody | None = None
 
 
@@ -156,16 +153,20 @@ def _build_spec(tc_id: str, body: TestCaseCreate) -> dict:
     return {
         "id": tc_id,
         "name": body.name,
-        "goal": body.goal,
+        "goal": {
+            "objective": body.goal.objective,
+            "constraints": body.goal.constraints.model_dump(),
+            "extra_details": body.goal.extra_details,
+            "steps": body.goal.steps.model_dump() if body.goal.steps else None,
+        },
         "suite": body.suite,
         "target": body.target.model_dump(),
         "priority": body.priority,
         "tags": body.tags,
-        "record": body.record,
-        "steps": body.steps.model_dump() if body.steps else None,
+        "save_record": body.save_record,
+        "created_by": body.created_by,
+        "project": body.project,
         "assertions": [a.model_dump() for a in body.assertions],
-        "constraints": body.constraints.model_dump(),
-        "context": body.context.model_dump(),
         "on_failure": body.on_failure.model_dump() if body.on_failure else None,
     }
 
@@ -225,11 +226,11 @@ async def get_test_case(project_id: str, tc_id: str) -> dict:
             raise HTTPException(404, f"Test case {tc_id!r} not found")
         r = dict(row)
         spec = r["spec"] if isinstance(r["spec"], dict) else json.loads(r["spec"])
-        return {**_row_to_summary(r), "record": spec.get("record", False), "spec": spec}
+        return {**_row_to_summary(r), "save_record": spec.get("save_record", False), "spec": spec}
     record = _store.get(project_id, {}).get(tc_id)
     if not record:
         raise HTTPException(404, f"Test case {tc_id!r} not found")
-    return {**_to_summary(record), "record": record["spec"].get("record", False), "spec": record["spec"]}
+    return {**_to_summary(record), "save_record": record["spec"].get("save_record", False), "spec": record["spec"]}
 
 
 @router.put("/{project_id}/test-cases/{tc_id}")

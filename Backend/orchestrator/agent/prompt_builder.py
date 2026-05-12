@@ -15,8 +15,6 @@ _GUIDED_GOAL_SECTION = """\
 {goal}
 
 ## Steps (guided checkpoints)
-Mode: {mode}
-
 Complete these checkpoints in order (or adapt if the UI requires it):
 {checkpoints}
 
@@ -24,6 +22,10 @@ After completing each checkpoint, write "[S<id> complete]" in your response
 (e.g. "[S1 complete]") so progress is tracked."""
 
 _CHECKPOINT_ITEM = "- [{id}] {description}\n  Success signal: {success_signal}"
+
+_EXTRA_DETAILS_SECTION = """\
+## Extra context
+{extra_details}"""
 
 _TOOL_CONVENTIONS = """\
 ## Tool-use conventions
@@ -56,36 +58,12 @@ _TOOL_CONVENTIONS = """\
 
 _CONSTRAINTS_SECTION = """\
 ## Constraints
-- Max steps: {max_steps} (you will be stopped if you exceed this).
-- Navigation policy: {navigation_policy}.
-  {navigation_policy_detail}
-- Forbidden actions: {forbidden_actions}
-- Required behaviors: {required_behaviors}"""
-
-_NAVIGATION_POLICY_DETAILS = {
-    "interact_only": (
-        "Navigate exclusively by clicking links, buttons, and UI elements. "
-        "Do NOT use browser_navigate to type URLs directly — discover paths "
-        "through the UI as a real user would."
-    ),
-    "explicit_urls_allowed": (
-        "You may use browser_navigate to go directly to URLs mentioned in "
-        "the goal or step data fields."
-    ),
-}
+- Max steps: {max_steps} (you will be stopped if you exceed this)."""
 
 _APP_CONTEXT_SECTION = """\
 ## Application context
 Page type: {page_type} (informs how wait_for_stable behaves).
 {app_description}"""
-
-_HINTS_SECTION = """\
-## Hints
-{hints}"""
-
-_KNOWN_ISSUES_SECTION = """\
-## Known issues to ignore
-{known_issues}"""
 
 
 def build_system_prompt(test_case: TestCase) -> str:
@@ -101,10 +79,13 @@ def build_system_prompt(test_case: TestCase) -> str:
         "Interact with the browser ONLY through the provided tools."
     )
 
+    goal = test_case.goal
+    steps = goal.steps
+
     # --- Goal / guided steps section ---
-    if test_case.steps is None:
+    if steps is None or not steps.checkpoints:
         parts.append(
-            _UNGUIDED_GOAL_SECTION.format(goal=test_case.goal.strip())
+            _UNGUIDED_GOAL_SECTION.format(goal=goal.objective.strip())
         )
     else:
         checkpoint_lines = "\n".join(
@@ -113,57 +94,34 @@ def build_system_prompt(test_case: TestCase) -> str:
                 description=cp.description,
                 success_signal=cp.success_signal,
             )
-            for cp in test_case.steps.checkpoints
+            for cp in steps.checkpoints
         )
         parts.append(
             _GUIDED_GOAL_SECTION.format(
-                goal=test_case.goal.strip(),
-                mode=test_case.steps.mode,
+                goal=goal.objective.strip(),
                 checkpoints=checkpoint_lines,
             )
         )
+
+    # --- Extra details (optional) ---
+    if goal.extra_details:
+        parts.append(_EXTRA_DETAILS_SECTION.format(extra_details=goal.extra_details.strip()))
 
     # --- Tool conventions ---
     parts.append(_TOOL_CONVENTIONS)
 
     # --- Constraints ---
-    nav_policy = test_case.constraints.navigation_policy
-    forbidden = test_case.constraints.forbidden_actions
-    required = test_case.constraints.required_behaviors
-    parts.append(
-        _CONSTRAINTS_SECTION.format(
-            max_steps=test_case.constraints.max_steps,
-            navigation_policy=nav_policy,
-            navigation_policy_detail=_NAVIGATION_POLICY_DETAILS.get(
-                nav_policy, nav_policy
-            ),
-            forbidden_actions=(
-                "\n  - ".join([""] + forbidden) if forbidden else "(none)"
-            ),
-            required_behaviors=(
-                "\n  - ".join([""] + required) if required else "(none)"
-            ),
-        )
-    )
+    constraints = goal.constraints
+    parts.append(_CONSTRAINTS_SECTION.format(max_steps=constraints.max_steps))
 
     # --- App context ---
-    ctx = test_case.context
-    app_desc = ctx.app_description.strip() if ctx.app_description else ""
+    target = test_case.target
+    app_desc = target.app_description.strip() if target.app_description else ""
     parts.append(
         _APP_CONTEXT_SECTION.format(
-            page_type=ctx.page_type,
+            page_type=target.page_type,
             app_description=app_desc,
         ).strip()
     )
-
-    # --- Hints (optional) ---
-    if ctx.hints:
-        hints_text = "\n".join(f"- {h}" for h in ctx.hints)
-        parts.append(_HINTS_SECTION.format(hints=hints_text))
-
-    # --- Known issues (optional) ---
-    if ctx.known_issues:
-        issues_text = "\n".join(f"- {i}" for i in ctx.known_issues)
-        parts.append(_KNOWN_ISSUES_SECTION.format(known_issues=issues_text))
 
     return "\n\n".join(parts)

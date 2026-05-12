@@ -19,13 +19,10 @@ const DEFAULT_PROJECT = "default";
 const BROWSERS = ["chromium", "firefox", "webkit", "chrome", "msedge"];
 const PRIORITIES = ["P0", "P1", "P2", "P3"];
 const PAGE_TYPES = ["spa", "ssr", "static", "streaming"];
-const NAV_POLICIES = ["interact_only", "explicit_urls_allowed"];
-const AUTH_METHODS = ["none", "cookie_inject", "login_flow", "token_header"];
 const ASSERTION_TYPES = [
   "content", "console", "network", "state", "visual_design",
   "text_present", "element_present", "url_contains", "console_no_errors", "network_request_made",
 ];
-const CHECKPOINT_MODES = ["guided", "strict", "unordered"];
 
 type Tab = "overview" | "config" | "test-design" | "history";
 
@@ -93,8 +90,6 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
   const [vpDpr, setVpDpr] = useState(1.0);
   const [locale, setLocale] = useState("");
   const [timezone, setTimezone] = useState("");
-  const [authMethod, setAuthMethod] = useState("none");
-  const [authCredRef, setAuthCredRef] = useState("");
   const [extraHeaders, setExtraHeaders] = useState(""); // "Key: Value" per line
   const [blockUrls, setBlockUrls] = useState("");       // one pattern per line
 
@@ -102,16 +97,12 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
   const [maxSteps, setMaxSteps] = useState(30);
   const [timeoutS, setTimeoutS] = useState(180);
   const [maxRetries, setMaxRetries] = useState(2);
-  const [navPolicy, setNavPolicy] = useState("interact_only");
-  const [record, setRecord] = useState(false);
-  const [forbiddenActions, setForbiddenActions] = useState("");
-  const [requiredBehaviors, setRequiredBehaviors] = useState("");
+  const [saveRecord, setSaveRecord] = useState(false);
+  const [extraDetails, setExtraDetails] = useState("");
 
-  // ── Agent context ───────────────────────────────────────────────────────────
+  // ── Agent context (now in target + goal.extra_details) ──────────────────────
   const [pageType, setPageType] = useState("spa");
   const [appDesc, setAppDesc] = useState("");
-  const [hints, setHints] = useState("");
-  const [knownIssues, setKnownIssues] = useState("");
 
   // ── On failure ──────────────────────────────────────────────────────────────
   const [capScreenshot, setCapScreenshot] = useState(true);
@@ -122,7 +113,6 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
   const [capVideo, setCapVideo] = useState(false);
 
   // ── Steps ───────────────────────────────────────────────────────────────────
-  const [stepsMode, setStepsMode] = useState("guided");
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
   const [activeCheckpoint, setActiveCheckpoint] = useState<number | null>(null);
 
@@ -153,7 +143,7 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
       const s = data.spec;
       // Overview
       setName(s.name);
-      setGoal(s.goal);
+      setGoal(s.goal?.objective ?? "");
       setSuite(s.suite ?? "");
       setPriority(s.priority ?? "P1");
       setTags(s.tags ?? []);
@@ -165,23 +155,17 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
       setVpDpr(s.target?.viewport?.device_scale_factor ?? 1.0);
       setLocale(s.target?.locale ?? "");
       setTimezone(s.target?.timezone ?? "");
-      setAuthMethod(s.target?.auth?.method ?? "none");
-      setAuthCredRef(s.target?.auth?.credentials_ref ?? "");
       setExtraHeaders(formatHeaders(s.target?.extra_headers ?? null));
       setBlockUrls((s.target?.block_urls ?? []).join("\n"));
-      // Execution
-      setMaxSteps(s.constraints?.max_steps ?? 30);
-      setTimeoutS(s.constraints?.timeout_seconds ?? 180);
-      setMaxRetries(s.constraints?.max_retries_per_action ?? 2);
-      setNavPolicy(s.constraints?.navigation_policy ?? "interact_only");
-      setRecord(data.record ?? false);
-      setForbiddenActions((s.constraints?.forbidden_actions ?? []).join("\n"));
-      setRequiredBehaviors((s.constraints?.required_behaviors ?? []).join("\n"));
-      // Context
-      setPageType(s.context?.page_type ?? "spa");
-      setAppDesc(s.context?.app_description ?? "");
-      setHints((s.context?.hints ?? []).join("\n"));
-      setKnownIssues((s.context?.known_issues ?? []).join("\n"));
+      // Context (now in target + goal)
+      setPageType(s.target?.page_type ?? "spa");
+      setAppDesc(s.target?.app_description ?? "");
+      // Execution (constraints now inside goal)
+      setMaxSteps(s.goal?.constraints?.max_steps ?? 30);
+      setTimeoutS(s.goal?.constraints?.timeout_seconds ?? 180);
+      setMaxRetries(s.goal?.constraints?.max_retries_per_action ?? 2);
+      setSaveRecord(data.save_record ?? false);
+      setExtraDetails(s.goal?.extra_details ?? "");
       // On failure
       const cap = s.on_failure?.capture;
       setCapScreenshot(cap?.screenshot ?? true);
@@ -190,9 +174,8 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
       setCapConsoleLog(cap?.console_log ?? true);
       setCapAgentTrace(cap?.agent_trace ?? true);
       setCapVideo(cap?.video ?? false);
-      // Steps
-      setStepsMode(s.steps?.mode ?? "guided");
-      const cps = (s.steps?.checkpoints ?? []).map((cp) => ({ ...cp, assertions: cp.assertions ?? [] }));
+      // Steps (now inside goal.steps)
+      const cps = (s.goal?.steps?.checkpoints ?? []).map((cp) => ({ ...cp, assertions: cp.assertions ?? [] }));
       setCheckpoints(cps);
       setActiveCheckpoint(cps.length > 0 ? 0 : null);
     } catch {
@@ -224,32 +207,28 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
     try {
       const parsedHeaders = parseHeaders(extraHeaders);
       await apiClient.updateProjectTestCase(DEFAULT_PROJECT, tcId, {
-        name, goal,
+        name,
+        goal: {
+          objective: goal,
+          constraints: { max_steps: maxSteps, timeout_seconds: timeoutS, max_retries_per_action: maxRetries },
+          extra_details: extraDetails || null,
+          steps: checkpoints.length > 0 ? { checkpoints } : null,
+        },
         suite: suite || null,
-        priority, tags, record,
+        priority, tags,
+        save_record: saveRecord,
         target: {
           url, browser,
           viewport: { width: vpWidth, height: vpHeight, device_scale_factor: vpDpr },
+          page_type: pageType,
+          app_description: appDesc || null,
+          vault: [],
           locale: locale || null,
           timezone: timezone || null,
-          auth: authMethod !== "none" ? { method: authMethod, credentials_ref: authCredRef || null } : null,
           extra_headers: Object.keys(parsedHeaders).length ? parsedHeaders : null,
           block_urls: blockUrls.split("\n").map(s => s.trim()).filter(Boolean),
         },
-        steps: checkpoints.length > 0 ? { mode: stepsMode, checkpoints } : null,
         assertions: checkpoints.flatMap((cp) => cp.assertions ?? []),
-        constraints: {
-          max_steps: maxSteps, timeout_seconds: timeoutS, max_retries_per_action: maxRetries,
-          navigation_policy: navPolicy,
-          forbidden_actions: forbiddenActions.split("\n").map(s => s.trim()).filter(Boolean),
-          required_behaviors: requiredBehaviors.split("\n").map(s => s.trim()).filter(Boolean),
-        },
-        context: {
-          app_description: appDesc || null,
-          page_type: pageType,
-          hints: hints.split("\n").map(s => s.trim()).filter(Boolean),
-          known_issues: knownIssues.split("\n").map(s => s.trim()).filter(Boolean),
-        },
         on_failure: {
           capture: {
             screenshot: capScreenshot, dom_snapshot: capDomSnapshot,
@@ -464,24 +443,6 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                   </div>
                 </FieldRow>
 
-                {/* Auth */}
-                <div className="rounded-lg border border-border/60 bg-card/30 p-4 space-y-3">
-                  <p className="text-xs font-semibold text-foreground">Authentication</p>
-                  <FieldRow cols={2}>
-                    <div className="space-y-2">
-                      <Label>Method</Label>
-                      <select value={authMethod} onChange={(e) => setAuthMethod(e.target.value)} className={selectCls}>
-                        {AUTH_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
-                      </select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Credentials ref <span className="text-muted-foreground text-xs">(vault secret name)</span></Label>
-                      <Input value={authCredRef} onChange={(e) => setAuthCredRef(e.target.value)}
-                        placeholder="my-app-credentials" disabled={authMethod === "none"} />
-                    </div>
-                  </FieldRow>
-                </div>
-
                 {/* Extra headers */}
                 <div className="space-y-2">
                   <Label>Extra headers <span className="text-muted-foreground text-xs">(Key: Value, one per line)</span></Label>
@@ -514,25 +475,9 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                     <Input type="number" value={maxRetries} onChange={(e) => setMaxRetries(Number(e.target.value))} min={0} max={5} />
                   </div>
                 </FieldRow>
-                <div className="space-y-2">
-                  <Label>Navigation policy</Label>
-                  <select value={navPolicy} onChange={(e) => setNavPolicy(e.target.value)} className={selectCls}>
-                    {NAV_POLICIES.map((p) => <option key={p} value={p}>{p}</option>)}
-                  </select>
-                </div>
                 <div className="p-3 rounded-lg border border-border/60 bg-card/40">
-                  <Toggle checked={record} onChange={setRecord} label="Record session video (MP4)"
+                  <Toggle checked={saveRecord} onChange={setSaveRecord} label="Record session video (MP4)"
                     description="Saves a screen recording to artifacts after each run" />
-                </div>
-                <div className="space-y-2">
-                  <Label>Forbidden actions <span className="text-muted-foreground text-xs">(one per line)</span></Label>
-                  <textarea value={forbiddenActions} onChange={(e) => setForbiddenActions(e.target.value)} rows={3}
-                    className={textareaCls} placeholder="navigate to any domain other than example.com" />
-                </div>
-                <div className="space-y-2">
-                  <Label>Required behaviors <span className="text-muted-foreground text-xs">(one per line)</span></Label>
-                  <textarea value={requiredBehaviors} onChange={(e) => setRequiredBehaviors(e.target.value)} rows={3}
-                    className={textareaCls} placeholder="must click the checkout button before finishing" />
                 </div>
               </div>
 
@@ -544,12 +489,8 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                   <RichTextEditor value={appDesc} onChange={setAppDesc} rows={3} placeholder="Brief description of the app under test…" />
                 </div>
                 <div className="space-y-2">
-                  <Label>Hints <span className="text-muted-foreground text-xs">(one per line)</span></Label>
-                  <RichTextEditor value={hints} onChange={setHints} rows={4} placeholder="The search box is on the top-right…" />
-                </div>
-                <div className="space-y-2">
-                  <Label>Known issues <span className="text-muted-foreground text-xs">(one per line)</span></Label>
-                  <RichTextEditor value={knownIssues} onChange={setKnownIssues} rows={3} placeholder="Login modal appears on first visit…" />
+                  <Label>Extra details <span className="text-muted-foreground text-xs">(hints, known issues, timing quirks)</span></Label>
+                  <RichTextEditor value={extraDetails} onChange={setExtraDetails} rows={5} placeholder="Timing quirks, known UI behaviors, edge cases the agent should know about…" />
                 </div>
               </div>
 
@@ -588,10 +529,6 @@ export default function TestCaseDetailPage({ params }: { params: Promise<{ id: s
                 <div className="flex items-center justify-between gap-3 border-b border-border/60 px-4 py-3 bg-card/60">
                   <div className="flex items-center gap-3">
                     <span className="text-sm font-semibold">Steps</span>
-                    <select value={stepsMode} onChange={(e) => setStepsMode(e.target.value)}
-                      className="rounded border border-input bg-background px-2 py-0.5 text-xs text-muted-foreground">
-                      {CHECKPOINT_MODES.map((m) => <option key={m} value={m}>{m}</option>)}
-                    </select>
                     <span className="text-xs text-muted-foreground">{checkpoints.length} step{checkpoints.length !== 1 ? "s" : ""}</span>
                   </div>
                   <Button variant="outline" size="sm" className="h-7 text-xs" onClick={addCheckpoint}>

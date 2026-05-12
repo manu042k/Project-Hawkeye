@@ -19,6 +19,46 @@ from api.celery_app import celery_app, REDIS_URL
 logger = logging.getLogger(__name__)
 
 
+def _inject_vault_secrets(test_case) -> None:
+    """Resolve target.vault[] secret references and set them as env vars.
+
+    Each VaultEntry has key (env var name) and value (vault secret name).
+    Looks up the plain-text value from the in-memory vault store and sets
+    os.environ[key] so the agent and browser tooling can read credentials.
+    """
+    if not test_case.target.vault:
+        return
+    try:
+        from api.routes.vault import _store as _vault_store
+        from api.crypto import decrypt, encryption_enabled
+        import base64
+
+        project_id = test_case.project or "default"
+        secrets_by_name = {
+            s["name"]: s
+            for s in _vault_store.get(project_id, {}).values()
+        }
+
+        for entry in test_case.target.vault:
+            secret = secrets_by_name.get(entry.value)
+            if secret is None:
+                logger.warning("Vault secret %r not found for key %r", entry.value, entry.key)
+                continue
+            stored = secret.get("value", "")
+            iv_b64 = secret.get("iv", "")
+            if encryption_enabled() and iv_b64:
+                try:
+                    plain = decrypt(base64.b64decode(stored), base64.b64decode(iv_b64))
+                except Exception:
+                    plain = stored
+            else:
+                plain = stored
+            os.environ[entry.key] = plain
+            logger.info("Vault: injected secret %r as env var %r", entry.value, entry.key)
+    except Exception as exc:
+        logger.warning("Vault resolution failed (non-fatal): %s", exc)
+
+
 def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -66,6 +106,7 @@ async def _execute(celery_task_id: str, run_id: str, request_dict: dict) -> dict
         await _publish("run_started", {"status": "running"})
 
         test_case = load_test_case(request_dict["test_case_path"])
+        _inject_vault_secrets(test_case)
         llm = get_llm(request_dict["model"])
 
         manager = RunManager(
