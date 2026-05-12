@@ -48,15 +48,46 @@ class AssertionBody(BaseModel):
     params: dict = {}
 
 
+class ViewportBody(BaseModel):
+    width: int = 1280
+    height: int = 720
+    device_scale_factor: float = 1.0
+
+
+class AuthBody(BaseModel):
+    method: str = "none"  # none | cookie_inject | login_flow | token_header
+    credentials_ref: str | None = None
+
+
 class TargetBody(BaseModel):
     url: str
     browser: str = "chromium"
-    auth: dict | None = None
+    viewport: ViewportBody | None = None
+    locale: str | None = None
+    timezone: str | None = None
+    auth: AuthBody | None = None
+    extra_headers: dict[str, str] | None = None
+    block_urls: list[str] = []
+
+
+class OnFailureCaptureBody(BaseModel):
+    screenshot: bool = True
+    dom_snapshot: bool = True
+    network_log: bool = True
+    console_log: bool = True
+    agent_trace: bool = True
+    video: bool = False
+
+
+class OnFailureBody(BaseModel):
+    capture: OnFailureCaptureBody = OnFailureCaptureBody()
+    notify: dict = {}
 
 
 class ConstraintsBody(BaseModel):
     max_steps: int = 30
     timeout_seconds: int = 180
+    max_retries_per_action: int = 2
     navigation_policy: str = "interact_only"
     forbidden_actions: list[str] = []
     required_behaviors: list[str] = []
@@ -73,12 +104,15 @@ class TestCaseCreate(BaseModel):
     name: str
     goal: str
     target: TargetBody
+    suite: str | None = None
     priority: str = "P1"
     tags: list[str] = []
+    record: bool = False
     steps: StepsBody | None = None
     assertions: list[AssertionBody] = []
     constraints: ConstraintsBody = ConstraintsBody()
     context: ContextBody = ContextBody()
+    on_failure: OnFailureBody | None = None
 
 
 def _to_summary(tc: dict) -> dict:
@@ -123,13 +157,16 @@ def _build_spec(tc_id: str, body: TestCaseCreate) -> dict:
         "id": tc_id,
         "name": body.name,
         "goal": body.goal,
+        "suite": body.suite,
         "target": body.target.model_dump(),
         "priority": body.priority,
         "tags": body.tags,
+        "record": body.record,
         "steps": body.steps.model_dump() if body.steps else None,
         "assertions": [a.model_dump() for a in body.assertions],
         "constraints": body.constraints.model_dump(),
         "context": body.context.model_dump(),
+        "on_failure": body.on_failure.model_dump() if body.on_failure else None,
     }
 
 
@@ -187,11 +224,12 @@ async def get_test_case(project_id: str, tc_id: str) -> dict:
         if not row:
             raise HTTPException(404, f"Test case {tc_id!r} not found")
         r = dict(row)
-        return {**_row_to_summary(r), "spec": r["spec"]}
+        spec = r["spec"] if isinstance(r["spec"], dict) else json.loads(r["spec"])
+        return {**_row_to_summary(r), "record": spec.get("record", False), "spec": spec}
     record = _store.get(project_id, {}).get(tc_id)
     if not record:
         raise HTTPException(404, f"Test case {tc_id!r} not found")
-    return {**_to_summary(record), "spec": record["spec"]}
+    return {**_to_summary(record), "record": record["spec"].get("record", False), "spec": record["spec"]}
 
 
 @router.put("/{project_id}/test-cases/{tc_id}")
