@@ -151,7 +151,8 @@ class RunManager:
                 novnc_url = sandbox_handle.novnc_url
                 # Wait for browser to fully start.
                 await asyncio.sleep(_BROWSER_STARTUP_WAIT_S)
-                if self._record and sandbox_handle:
+                capture_video = test_case.on_failure.capture.get("video", True)
+                if self._record and capture_video and sandbox_handle:
                     try:
                         sandbox_handle = self._sandbox_manager.start_recording(sandbox_handle)
                     except Exception as exc:
