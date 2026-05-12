@@ -3,6 +3,7 @@ import {
   CreditCard,
   FlaskConical,
   FolderKanban,
+  Globe,
   Home,
   KeyRound,
   LayoutDashboard,
@@ -42,4 +43,5 @@ export const primaryNav: AppNavItem[] = [
 /** Account / billing live in `globalFooterNav`; workspace middle nav is execution + integrations only. */
 export const workspaceSettingsNav: AppNavItem[] = [
   { href: "/app/settings/integrations", label: "Integrations", icon: Settings },
+  { href: "/app/settings/environments", label: "Environments", icon: Globe },
 ];

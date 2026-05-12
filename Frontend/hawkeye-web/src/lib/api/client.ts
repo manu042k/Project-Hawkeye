@@ -179,6 +179,16 @@ export type TestCaseSpec = TestCaseSummary & {
   };
 };
 
+export type Environment = {
+  id: string;
+  project_id: string;
+  name: string;
+  base_url: string;
+  is_default: boolean;
+  headers: Record<string, string>;
+  created_at: string;
+};
+
 export type Baseline = {
   id: string;
   project_id: string;
@@ -416,6 +426,16 @@ export const apiClient = {
   listInvitations: (orgId: string) => apiFetch<{ invitations: Array<{ id: string; email: string; role: string; status: string }> }>(`/api/orgs/${orgId}/invitations`),
   revokeInvitation: (orgId: string, invId: string) =>
     apiFetch<{ revoked: boolean }>(`/api/orgs/${orgId}/invitations/${invId}`, { method: "DELETE" }),
+
+  // Environments (Phase 5)
+  listEnvironments: (projectId: string) =>
+    apiFetch<{ environments: Environment[]; total: number }>(`/api/projects/${projectId}/environments`),
+  createEnvironment: (projectId: string, body: { name: string; base_url: string; is_default?: boolean; headers?: Record<string, string> }) =>
+    apiFetch<Environment>(`/api/projects/${projectId}/environments`, { method: "POST", body: JSON.stringify(body) }),
+  updateEnvironment: (projectId: string, envId: string, body: Partial<{ name: string; base_url: string; is_default: boolean; headers: Record<string, string> }>) =>
+    apiFetch<Environment>(`/api/projects/${projectId}/environments/${envId}`, { method: "PUT", body: JSON.stringify(body) }),
+  deleteEnvironment: (projectId: string, envId: string) =>
+    apiFetch<{ deleted: boolean }>(`/api/projects/${projectId}/environments/${envId}`, { method: "DELETE" }),
 
   // Visual baselines (Phase 5 / 6F)
   listBaselines: (projectId: string, params?: { status?: string; test_case_id?: string }) => {
