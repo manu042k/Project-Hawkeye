@@ -24,6 +24,8 @@ async def lifespan(app: FastAPI):
     job_queue.start()
     from api.routes.test_cases_crud import seed_from_yaml_dir
     seed_from_yaml_dir(project_id="default")
+    from api.routes.auth import _seed_dev_user
+    _seed_dev_user()
     yield
     await job_queue.stop()
     if pool_size > 0:
