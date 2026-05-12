@@ -15,18 +15,20 @@ class Viewport(BaseModel):
     device_scale_factor: float = 1.0
 
 
-class Auth(BaseModel):
-    method: Literal["cookie_inject", "login_flow", "token_header", "none"] = "none"
-    credentials_ref: str | None = None
+class VaultEntry(BaseModel):
+    key: str
+    value: str
 
 
 class Target(BaseModel):
     url: str
     browser: str = "chromium"
     viewport: Viewport | None = None
+    page_type: Literal["static", "ssr", "spa", "streaming"] = "spa"
+    app_description: str | None = None
+    vault: list[VaultEntry] = Field(default_factory=list)
     locale: str | None = None
     timezone: str | None = None
-    auth: Auth | None = None
     extra_headers: dict[str, str] | None = None
     block_urls: list[str] = Field(default_factory=list)
 
@@ -47,7 +49,6 @@ class Checkpoint(BaseModel):
 
 
 class Steps(BaseModel):
-    mode: Literal["guided", "strict", "unordered"] = "guided"
     checkpoints: list[Checkpoint] = Field(default_factory=list)
 
 
@@ -62,16 +63,13 @@ class Constraints(BaseModel):
     max_steps: int = 30
     timeout_seconds: int = 180
     max_retries_per_action: int = 2
-    navigation_policy: Literal["interact_only", "explicit_urls_allowed"] = "interact_only"
-    forbidden_actions: list[str] = Field(default_factory=list)
-    required_behaviors: list[str] = Field(default_factory=list)
 
 
-class Context(BaseModel):
-    app_description: str | None = None
-    hints: list[str] = Field(default_factory=list)
-    known_issues: list[str] = Field(default_factory=list)
-    page_type: Literal["static", "ssr", "spa", "streaming"] = "spa"
+class Goal(BaseModel):
+    objective: str
+    constraints: Constraints = Field(default_factory=Constraints)
+    extra_details: str | None = None
+    steps: Steps | None = None
 
 
 class OnFailure(BaseModel):
@@ -91,15 +89,14 @@ class OnFailure(BaseModel):
 class TestCase(BaseModel):
     id: str
     name: str
-    goal: str
+    goal: Goal
     target: Target
     suite: str | None = None
     priority: Literal["P0", "P1", "P2", "P3"] = "P1"
     tags: list[str] = Field(default_factory=list)
+    save_record: bool = False
     created_by: str | None = None
+    project: str | None = None
     created_at: str | None = None
-    steps: Steps | None = None
     assertions: list[Assertion] = Field(default_factory=list)
-    constraints: Constraints = Field(default_factory=Constraints)
-    context: Context = Field(default_factory=Context)
     on_failure: OnFailure = Field(default_factory=OnFailure)
