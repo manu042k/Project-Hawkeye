@@ -127,7 +127,6 @@ async def _fire_suite(suite_id: str, project_id: str, branch: str) -> list[str]:
 celery_app.conf.beat_schedule = {
     "tick-schedules-every-minute": {
         "task": "hawkeye.tick_schedules",
-        "schedule": 60.0,  # seconds
+        "schedule": 60.0,
     },
 }
-celery_app.conf.include = list(celery_app.conf.include or []) + ["api.tasks_beat"]
