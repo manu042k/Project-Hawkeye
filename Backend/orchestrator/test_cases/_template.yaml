@@ -1,0 +1,120 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Hawkeye Test Case Template
+# Copy this file, rename it, and fill in the fields marked with <...>.
+# Fields marked OPTIONAL can be removed if not needed.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Unique identifier for this test case (e.g. TC-001, TC-042)
+id: "<TC-XXX>"
+
+# Short human-readable name
+name: "<App Name> — <what this test does>"
+
+# OPTIONAL: Group this test belongs to (e.g. "checkout", "auth", "smoke")
+suite: "<suite-name>"
+
+# Priority: P0 (critical) → P1 (high) → P2 (medium) → P3 (low)
+priority: "P1"
+
+# OPTIONAL: Labels for filtering and reporting
+tags: ["<tag1>", "<tag2>"]
+
+# User ID of who created this test case (links to the user record)
+created_by: "<user-id>"
+
+# Project ID this test belongs to (links to the project record)
+project: "<project-id>"
+
+# Set to true to save a video recording of every run to the database
+save_record: false
+
+# ─── TARGET ──────────────────────────────────────────────────────────────────
+# Describes the application under test and the browser environment.
+
+target:
+  # Entry URL the agent navigates to first
+  url: "https://<your-app.com>"
+
+  # Browser engine: chromium | firefox | webkit | chrome | msedge
+  browser: "chromium"
+
+  # Viewport size and pixel density
+  viewport:
+    width: 1280
+    height: 720
+    device_scale_factor: 1.0
+
+  # Page rendering type: spa | ssr | static | streaming
+  page_type: spa
+
+  # Brief description of the application — helps the agent understand context
+  app_description: |
+    <Describe the app: what it does, any quirks, whether login is required,
+    tech stack notes, etc.>
+
+  #  Secrets the agent needs (e.g. login credentials).
+  # Values are vault secret names — never put raw passwords here.
+  vault: {}
+
+  # Override browser locale (e.g. "en-US", "de-DE")
+  locale: "en-US"
+
+  # Override browser timezone (e.g. "America/New_York")
+  timezone: "America/New_York"
+
+# ─── GOAL ────────────────────────────────────────────────────────────────────
+# Defines what the agent should accomplish, how it is constrained,
+# any extra context it needs, and the step-by-step flow to follow.
+
+goal:
+  # Plain English description of the end goal.
+  # Be specific about what "done" looks like.
+  objective: |
+    <Describe what the agent must accomplish. State the final success
+    condition clearly. Include any explicit stop conditions
+    (e.g. "do not proceed to checkout").>
+
+  # Execution limits
+  constraints:
+    max_steps: 20 # Maximum number of agent actions before timeout
+    timeout_seconds: 300 # Wall-clock time limit in seconds
+    max_retries_per_action: 2
+
+  # Extra context the agent should know before starting.
+  # Use this for timing quirks, known UI behaviours, or edge cases.
+  extra_details: |
+    <Any additional context that helps the agent handle this app reliably.>
+
+  # Step-by-step instructions for the agent.
+  # Each step has:
+  #   description   — what the agent should do (natural language)
+  #   success_signal — what the agent should observe when the step is done
+  steps:
+    checkpoints:
+      - id: S1
+        description: |
+          <Describe the action the agent should take at this step.>
+        success_signal: |
+          <Describe what the agent should see or observe when this step
+          is successfully completed.>
+
+      - id: S2
+        description: |
+          <Next action.>
+        success_signal: |
+          <Expected outcome.>
+
+      # Add more steps as needed...
+
+# ─── ON FAILURE ──────────────────────────────────────────────────────────────
+# Artifacts to collect automatically when a run fails.
+
+on_failure:
+  capture:
+    screenshot: true # Final page screenshot
+    dom_snapshot: true # Full DOM at point of failure
+    network_log: true # All network requests made
+    console_log: true # Browser console output
+    agent_trace: true # Step-by-step agent reasoning log
+    video: true # Screen recording of the full run
+  notify: {} # OPTIONAL: e.g. { slack: "#alerts", email: "team@co.com" }

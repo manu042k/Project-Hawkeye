@@ -1,8 +1,11 @@
 id: "TC-003"
-name: "Temu: search product, add to cart, verify cart"
-suite: "phase1-smoke"
+name: "Temu — search for product, add to cart, and verify"
+suite: "e-commerce"
 priority: "P1"
-tags: ["temu", "cart", "e-commerce"]
+tags: ["temu", "cart", "search", "e-commerce"]
+created_by: "<user-id>"
+project: "<project-id>"
+save_record: false
 
 target:
   url: "https://www.temu.com"
@@ -10,66 +13,76 @@ target:
   viewport:
     width: 1280
     height: 720
-
-goal: |
-  Starting from the Temu homepage, search for 'wireless headphones',
-  open any product from the results, add it to the cart, navigate to
-  the cart, and verify the item is present.
-
-steps: null
-
-assertions:
-  - id: "A1"
-    type: "content"
-    description: "Cart contains a product"
-    params:
-      check: "text_present"
-      text: "headphones"
-
-  - id: "A2"
-    type: "content"
-    description: "Cart shows a price"
-    params:
-      check: "text_matches"
-      pattern: "\\$[0-9]+"
-
-  - id: "A3"
-    type: "console"
-    description: "No critical JS errors"
-    params:
-      level: "error"
-      max_count: 20
-      ignore_patterns:
-        - "favicon"
-        - "analytics"
-        - "beacon"
-        - "401"
-        - "Failed to load resource"
-        - "ads"
-
-constraints:
-  max_steps: 25
-  timeout_seconds: 360
-  navigation_policy: "interact_only"
-  forbidden_actions:
-    - "proceed to checkout"
-    - "enter payment information"
-    - "place an order"
-  required_behaviors:
-    - "verify cart contents by navigating to the cart page"
-
-context:
-  page_type: "spa"
+    device_scale_factor: 1.0
+  page_type: spa
   app_description: |
-    Temu — e-commerce marketplace. Products are listed on search results
-    with thumbnails. Cart is accessible via the cart icon in the header.
-  hints:
-    - "Dismiss any popups or cookie banners before proceeding"
-    - "If the site redirects to a login page and you cannot dismiss it or navigate away, emit <GOAL_BLOCKED> with explanation 'Site requires login'"
-    - "If a CAPTCHA appears, emit <GOAL_BLOCKED> with explanation 'CAPTCHA encountered'"
-    - "Use the search bar at the top to search for 'wireless headphones'"
-    - "After search results load, click on any product thumbnail or title to open the product page"
-    - "On the product page, find and click the 'Add to cart' button"
-    - "After adding to cart, click the cart icon in the header to go to the cart page"
-    - "Once the cart page shows the item, emit <GOAL_COMPLETE> as plain text without a tool call"
-    - "Do NOT proceed to checkout or enter any payment details"
+    Temu is an e-commerce marketplace with product listings, search,
+    and a cart. The site may show popups, cookie banners, or a mandatory
+    login wall on first visit.
+
+goal:
+  objective: |
+    From the Temu homepage, search for "wireless headphones", open any
+    product from the results, add it to the cart, navigate to the cart,
+    and confirm the item is present. Do not proceed to checkout.
+
+  constraints:
+    max_steps: 25
+    timeout_seconds: 360
+    max_retries_per_action: 2
+
+  extra_details: |
+    Dismiss any popups or cookie banners before proceeding.
+    If the site shows a mandatory login wall that cannot be dismissed,
+    emit <GOAL_BLOCKED> with reason "Site requires login".
+    If a CAPTCHA appears, emit <GOAL_BLOCKED> with reason "CAPTCHA encountered".
+    Do not enter any payment details or proceed to checkout.
+
+  steps:
+    checkpoints:
+
+      - id: S1
+        description: |
+          Dismiss any popups or banners on the homepage, then use the
+          search bar to search for "wireless headphones".
+        success_signal: |
+          Search results are visible showing a grid of wireless headphone
+          products with thumbnails and prices.
+
+      - id: S2
+        description: |
+          Click on any product thumbnail or title to open its product page.
+        success_signal: |
+          The product detail page is visible showing the product name,
+          images, price, and an "Add to cart" button.
+
+      - id: S3
+        description: |
+          Click the "Add to cart" button on the product page.
+        success_signal: |
+          A confirmation appears that the item was added, or the cart
+          icon in the header shows an incremented count.
+
+      - id: S4
+        description: |
+          Click the cart icon in the header to navigate to the cart page.
+        success_signal: |
+          The cart page is visible showing the headphones product with
+          its name and price listed.
+
+      - id: S5
+        description: |
+          Confirm the cart contents are correct.
+        success_signal: |
+          At least one headphones item is in the cart with a price shown.
+          The goal is complete — do not click checkout.
+
+on_failure:
+  capture:
+    screenshot: true
+    dom_snapshot: true
+    network_log: true
+    console_log: true
+    agent_trace: true
+    video: true
+  notify: {}
