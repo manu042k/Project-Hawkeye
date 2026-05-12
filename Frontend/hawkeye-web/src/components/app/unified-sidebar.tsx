@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
-import { setAuthUser } from "@/lib/api/client";
+import { setAuthUser, setAuthToken } from "@/lib/api/client";
 import {
   Activity,
   Bell,
@@ -144,6 +144,7 @@ export function UnifiedSidebar({ className }: { className?: string }) {
 
   useEffect(() => {
     setAuthUser(session?.user?.email ?? null);
+    setAuthToken((session as { access_token?: string })?.access_token ?? null);
   }, [session?.user?.email]);
   const currentProject = useProjectStore((s) => s.currentProject);
   const hub = isGlobalHubPath(pathname);

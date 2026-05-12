@@ -99,18 +99,78 @@ export type TestCaseSummary = {
   updated_at: string;
 };
 
+export type AssertionType =
+  | "content" | "console" | "network" | "state" | "visual_design"
+  | "text_present" | "element_present" | "url_contains"
+  | "console_no_errors" | "network_request_made";
+
+export type Auth = {
+  method: "none" | "cookie_inject" | "login_flow" | "token_header";
+  credentials_ref: string | null;
+};
+
+export type AssertionSpec = {
+  id: string;
+  type: AssertionType | string;
+  description: string;
+  params: Record<string, unknown>;
+};
+
+export type Checkpoint = {
+  id: string;
+  description: string;
+  success_signal: string;
+  data?: Record<string, unknown> | null;
+};
+
 export type TestCaseSpec = TestCaseSummary & {
+  record: boolean;
   spec: {
     id: string;
     name: string;
     goal: string;
-    target: { url: string; browser: string; auth?: Record<string, unknown> | null };
+    suite: string | null;
     priority: string;
     tags: string[];
-    steps: { mode: string; checkpoints: Array<{ id: string; description: string; success_signal: string }> } | null;
-    assertions: Array<{ id: string; type: string; description: string; params: Record<string, unknown> }>;
-    constraints: { max_steps: number; timeout_seconds: number; navigation_policy: string; forbidden_actions: string[] };
-    context: { app_description: string | null; hints: string[]; page_type: string };
+    created_by: string | null;
+    record: boolean;
+    target: {
+      url: string;
+      browser: string;
+      viewport: { width: number; height: number; device_scale_factor: number } | null;
+      locale: string | null;
+      timezone: string | null;
+      auth: Auth | null;
+      extra_headers: Record<string, string> | null;
+      block_urls: string[];
+    };
+    steps: { mode: string; checkpoints: Checkpoint[] } | null;
+    assertions: AssertionSpec[];
+    constraints: {
+      max_steps: number;
+      timeout_seconds: number;
+      max_retries_per_action: number;
+      navigation_policy: string;
+      forbidden_actions: string[];
+      required_behaviors: string[];
+    };
+    context: {
+      app_description: string | null;
+      page_type: string;
+      hints: string[];
+      known_issues: string[];
+    };
+    on_failure: {
+      capture: {
+        screenshot: boolean;
+        dom_snapshot: boolean;
+        network_log: boolean;
+        console_log: boolean;
+        agent_trace: boolean;
+        video: boolean;
+      };
+      notify: Record<string, unknown>;
+    } | null;
   };
 };
 
@@ -145,6 +205,7 @@ export type SuiteSummary = {
   pass_rate: number;
   last_run_at: string | null;
   created_at: string;
+  group?: string | null;
 };
 
 export type ProjectSummary = {
@@ -164,13 +225,21 @@ export type TraceEvent = {
   timestamp: string;
 };
 
-// Module-level session state — set by the sidebar via setAuthUser()
+// Module-level session state — set by the sidebar on session change
 let _authEmail: string | null = null;
+let _authToken: string | null = null;
+
 export function setAuthUser(email: string | null) { _authEmail = email; }
+export function setAuthToken(token: string | null) { _authToken = token; }
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const authHeaders: Record<string, string> = {};
-  if (_authEmail) authHeaders["X-User-Email"] = _authEmail;
+  if (_authToken) {
+    authHeaders["Authorization"] = `Bearer ${_authToken}`;
+  } else if (_authEmail) {
+    // Dev fallback when backend has no HAWKEYE_AUTH_SECRET configured
+    authHeaders["X-User-Email"] = _authEmail;
+  }
   const res = await fetch(`${API_URL}${path}`, {
     headers: { "Content-Type": "application/json", ...authHeaders, ...init?.headers },
     ...init,
@@ -212,6 +281,8 @@ export const apiClient = {
   },
   getProjectTestCase: (projectId: string, tcId: string) =>
     apiFetch<TestCaseSpec>(`/api/projects/${projectId}/test-cases/${tcId}`),
+  getTestCaseRuns: (projectId: string, tcId: string) =>
+    apiFetch<{ runs: RunSummary[]; total: number }>(`/api/projects/${projectId}/test-cases/${tcId}/runs`),
   createProjectTestCase: (projectId: string, body: unknown) =>
     apiFetch<TestCaseSummary>(`/api/projects/${projectId}/test-cases`, { method: "POST", body: JSON.stringify(body) }),
   updateProjectTestCase: (projectId: string, tcId: string, body: unknown) =>
@@ -228,7 +299,7 @@ export const apiClient = {
   // Test suites (Phase 5B)
   listSuites: (projectId: string) =>
     apiFetch<{ suites: SuiteSummary[]; total: number }>(`/api/projects/${projectId}/suites`),
-  createSuite: (projectId: string, body: { name: string; description?: string; test_case_ids?: string[] }) =>
+  createSuite: (projectId: string, body: { name: string; description?: string; test_case_ids?: string[]; group?: string }) =>
     apiFetch<SuiteSummary>(`/api/projects/${projectId}/suites`, { method: "POST", body: JSON.stringify(body) }),
   getSuite: (projectId: string, suiteId: string) =>
     apiFetch<SuiteSummary>(`/api/projects/${projectId}/suites/${suiteId}`),
@@ -236,6 +307,40 @@ export const apiClient = {
     apiFetch<SuiteSummary>(`/api/projects/${projectId}/suites/${suiteId}`, { method: "PUT", body: JSON.stringify(body) }),
   deleteSuite: (projectId: string, suiteId: string) =>
     apiFetch<{ deleted: boolean }>(`/api/projects/${projectId}/suites/${suiteId}`, { method: "DELETE" }),
+
+  addSuiteMember: (projectId: string, suiteId: string, testCaseId: string) =>
+    apiFetch<{ suite_id: string; test_case_ids: string[] }>(
+      `/api/projects/${projectId}/suites/${suiteId}/members`,
+      { method: "POST", body: JSON.stringify({ test_case_id: testCaseId }) },
+    ),
+
+  removeSuiteMember: (projectId: string, suiteId: string, tcId: string) =>
+    apiFetch<{ removed: boolean; test_case_ids: string[] }>(
+      `/api/projects/${projectId}/suites/${suiteId}/members/${tcId}`,
+      { method: "DELETE" },
+    ),
+
+  getSuiteSchedule: (projectId: string, suiteId: string) =>
+    apiFetch<{ cron_expr: string | null; timezone: string; enabled: boolean; next_run_at: string | null }>(
+      `/api/projects/${projectId}/suites/${suiteId}/schedule`,
+    ),
+
+  setSuiteSchedule: (projectId: string, suiteId: string, body: { cron_expr: string; timezone?: string; enabled?: boolean }) =>
+    apiFetch<{ cron_expr: string | null; timezone: string; enabled: boolean; next_run_at: string | null }>(
+      `/api/projects/${projectId}/suites/${suiteId}/schedule`,
+      { method: "PUT", body: JSON.stringify(body) },
+    ),
+
+  getSuiteRuns: (projectId: string, suiteId: string) =>
+    apiFetch<{ runs: RunSummary[]; total: number }>(`/api/projects/${projectId}/suites/${suiteId}/runs`),
+
+  getSuiteGroups: (projectId: string) =>
+    apiFetch<{ groups: string[] }>(`/api/projects/${projectId}/suite-groups`),
+  updateSuiteGroup: (projectId: string, suiteId: string, group: string | null) =>
+    apiFetch<SuiteSummary>(`/api/projects/${projectId}/suites/${suiteId}`, {
+      method: "PUT",
+      body: JSON.stringify({ group }),
+    }),
   runSuite: (projectId: string, suiteId: string) =>
     apiFetch<{ suite_id: string; test_case_ids: string[]; message: string }>(`/api/projects/${projectId}/suites/${suiteId}/run`, { method: "POST" }),
 
@@ -268,6 +373,29 @@ export const apiClient = {
     cost_usd: number;
     subscription: { plan: string; price_monthly: number; next_billing_date: string | null };
   }>("/api/usage"),
+
+  getBillingPlans: () => apiFetch<{ plans: Array<{ id: string; name: string; price_monthly: number; limits: Record<string, number> }> }>("/api/billing/plans"),
+
+  createBillingCheckout: (body: { plan: string; org_id: string }) =>
+    apiFetch<{ checkout_url: string; stub?: boolean }>("/api/billing/checkout", { method: "POST", body: JSON.stringify(body) }),
+
+  createBillingPortal: (body: { org_id: string }) =>
+    apiFetch<{ portal_url: string; stub?: boolean }>("/api/billing/portal", { method: "POST", body: JSON.stringify(body) }),
+
+  // Orgs + members (Phase 6F)
+  getOrg: (orgId: string) => apiFetch<{ id: string; name: string; slug: string; plan: string; billing_email: string | null; created_at: string }>(`/api/orgs/${orgId}`),
+  updateOrg: (orgId: string, body: { name?: string; billing_email?: string }) =>
+    apiFetch<{ id: string; name: string }>(`/api/orgs/${orgId}`, { method: "PATCH", body: JSON.stringify(body) }),
+  listMembers: (orgId: string) => apiFetch<{ members: Array<{ id: string; email: string; name: string; avatar_url?: string; role: string; joined_at: string }>; total: number }>(`/api/orgs/${orgId}/members`),
+  updateMemberRole: (orgId: string, userId: string, role: string) =>
+    apiFetch<{ updated: boolean }>(`/api/orgs/${orgId}/members/${userId}`, { method: "PATCH", body: JSON.stringify({ role }) }),
+  removeMember: (orgId: string, userId: string) =>
+    apiFetch<{ removed: boolean }>(`/api/orgs/${orgId}/members/${userId}`, { method: "DELETE" }),
+  inviteMember: (orgId: string, body: { email: string; role: string }) =>
+    apiFetch<{ id: string; email: string; role: string; status: string }>(`/api/orgs/${orgId}/invitations`, { method: "POST", body: JSON.stringify(body) }),
+  listInvitations: (orgId: string) => apiFetch<{ invitations: Array<{ id: string; email: string; role: string; status: string }> }>(`/api/orgs/${orgId}/invitations`),
+  revokeInvitation: (orgId: string, invId: string) =>
+    apiFetch<{ revoked: boolean }>(`/api/orgs/${orgId}/invitations/${invId}`, { method: "DELETE" }),
 
   // Identity
   getMe: () => apiFetch<{ email: string; authenticated: boolean; role: string }>("/api/me"),

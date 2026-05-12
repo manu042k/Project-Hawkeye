@@ -1,8 +1,11 @@
 id: "TC-001"
-name: "Wikipedia: search and scroll through AI article"
-suite: "phase1-smoke"
+name: "Wikipedia — search for AI article and scroll through content"
+suite: "smoke"
 priority: "P1"
-tags: ["wikipedia", "search", "scroll"]
+tags: ["wikipedia", "search", "scroll", "smoke"]
+created_by: "<user-id>"
+project: "<project-id>"
+save_record: false
 
 target:
   url: "https://www.wikipedia.org"
@@ -10,46 +13,68 @@ target:
   viewport:
     width: 1280
     height: 720
+    device_scale_factor: 1.0
+  page_type: ssr
+  app_description: |
+    Wikipedia is a free multilingual online encyclopedia. Articles are
+    server-rendered. The homepage has a prominent search box.
 
-goal: |
-  Starting from the Wikipedia homepage, search for the term
-  "artificial intelligence", open the article, and scroll
-  through the article content to read multiple sections.
+goal:
+  objective: |
+    From the Wikipedia homepage, search for "artificial intelligence",
+    open the article, and scroll through multiple sections of the content.
 
-steps: null
+  constraints:
+    max_steps: 20
+    timeout_seconds: 600
+    max_retries_per_action: 2
 
-assertions:
-  - id: "A1"
-    type: "content"
-    description: "Article title contains 'Artificial intelligence'"
-    params:
-      check: "text_present"
-      text: "Artificial intelligence"
+  extra_details: |
+    After typing in the search box, press Enter or click the search button.
+    If auto-redirected directly to the article, proceed straight to scrolling.
+    Scroll through the article 3 times using PageDown, then emit <GOAL_COMPLETE>.
+    Do not keep scrolling indefinitely.
 
-  - id: "A2"
-    type: "console"
-    description: "No critical JS errors during navigation"
-    params:
-      level: "error"
-      max_count: 3
-      ignore_patterns:
-        - "favicon"
-        - "analytics"
-        - "gtag"
+  steps:
+    checkpoints:
 
-constraints:
-  max_steps: 20
-  timeout_seconds: 600
-  navigation_policy: "explicit_urls_allowed"
-  forbidden_actions:
-    - "navigate to any domain other than wikipedia.org"
+      - id: S1
+        description: |
+          Type "artificial intelligence" into the search box on the
+          Wikipedia homepage and submit the search.
+        success_signal: |
+          Either the Artificial Intelligence article page loads directly,
+          or a search results page appears with the article as the top result.
 
-context:
-  page_type: "ssr"
-  app_description: "Wikipedia — a free multilingual online encyclopedia."
-  hints:
-    - "The search box is prominent on the homepage with placeholder text"
-    - "After typing, press Enter to search or click the search button"
-    - "If auto-redirected to the article, proceed directly to scrolling"
-    - "After searching, click the article link in results if not auto-redirected"
-    - "Once you are on the Artificial Intelligence article page, press PageDown 3 times to scroll through content, then immediately emit <GOAL_COMPLETE> — do NOT keep scrolling indefinitely"
+      - id: S2
+        description: |
+          If on a search results page, click the "Artificial intelligence"
+          article link to open it.
+        success_signal: |
+          The full Wikipedia article on Artificial Intelligence is visible
+          with the title "Artificial intelligence" at the top of the page.
+
+      - id: S3
+        description: |
+          Scroll down through the article content using PageDown 3 times
+          to read through multiple sections.
+        success_signal: |
+          The page has scrolled down showing additional sections of the
+          article beyond the introduction.
+
+      - id: S4
+        description: |
+          Confirm the article was successfully read and the goal is complete.
+        success_signal: |
+          The Artificial Intelligence article is open and multiple sections
+          are visible after scrolling. The goal is complete.
+
+on_failure:
+  capture:
+    screenshot: true
+    dom_snapshot: true
+    network_log: true
+    console_log: true
+    agent_trace: true
+    video: true
+  notify: {}

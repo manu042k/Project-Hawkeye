@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import {
   ArrowRight,
   ArrowUpDown,
@@ -35,15 +35,45 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { demoProjectCards, type DemoProjectCard } from "@/lib/mock-data/projects";
+import { apiClient } from "@/lib/api/client";
+import type { ProjectSummary as ApiProject } from "@/lib/api/client";
 import { useProjectStore, type ProjectSummary } from "@/lib/project/store";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
-const envLabel: Record<ProjectSummary["environment"], string> = {
+const envLabel: Record<string, string> = {
   production: "Production",
   staging: "Staging",
   local: "Local",
 };
+
+type ProjectCard = {
+  id: string;
+  name: string;
+  key: string;
+  summary: string;
+  updatedLabel: string;
+  members: number;
+  openIssues: number;
+  starred: boolean;
+  environment: ProjectSummary["environment"];
+  lastRunOk: boolean | null;
+};
+
+function toProjectCard(p: ApiProject): ProjectCard {
+  const slug = p.slug ?? p.name;
+  const key = slug.slice(0, 2).toUpperCase();
+  const created = new Date(p.created_at);
+  const diffH = Math.round((Date.now() - created.getTime()) / 3_600_000);
+  const updatedLabel = diffH < 24 ? `Updated ${diffH}h ago` : `Updated ${Math.round(diffH / 24)}d ago`;
+  const env = ((p.settings?.environment as string) || "staging") as ProjectSummary["environment"];
+  return {
+    id: p.id, name: p.name, key, summary: p.description ?? "",
+    updatedLabel, members: 1, openIssues: 0,
+    starred: (p.settings?.starred as boolean) ?? false,
+    environment: env, lastRunOk: null,
+  };
+}
 
 export default function GlobalProjectSelectorPage() {
   return (
@@ -69,18 +99,23 @@ function ProjectSelectorContent() {
   const [query, setQuery] = useState("");
   const [hubTab, setHubTab] = useState<string>("all");
   const [envFilter, setEnvFilter] = useState<string>("all");
+  const [projects, setProjects] = useState<ProjectCard[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    apiClient.getProjects()
+      .then((res) => setProjects(res.projects.map(toProjectCard)))
+      .catch(() => toast.error("Failed to load projects"))
+      .finally(() => setLoading(false));
+  }, []);
 
   const globalMetrics = useMemo(
-    () => ({
-      uptime: "99.98%",
-      runs: 3,
-      projects: demoProjectCards.length,
-    }),
-    []
+    () => ({ uptime: "99.98%", runs: 0, projects: projects.length }),
+    [projects.length]
   );
 
   const filtered = useMemo(() => {
-    let list = [...demoProjectCards];
+    let list = [...projects];
     const q = query.trim().toLowerCase();
     if (q) {
       list = list.filter(
@@ -93,35 +128,31 @@ function ProjectSelectorContent() {
     if (hubTab === "starred") list = list.filter((p) => p.starred);
     if (hubTab === "recent") {
       list = [...list].sort((a, b) => {
-        const rank = (x: DemoProjectCard) =>
+        const rank = (x: ProjectCard) =>
           x.updatedLabel.includes("h ago") ? 2 : x.updatedLabel.includes("d ago") ? 1 : 0;
         return rank(b) - rank(a);
       });
     }
     if (envFilter !== "all") list = list.filter((p) => p.environment === envFilter);
     return list;
-  }, [query, hubTab, envFilter]);
+  }, [projects, query, hubTab, envFilter]);
 
-  function enterProject(p: DemoProjectCard) {
-    setCurrentProject({
-      id: p.id,
-      name: p.name,
-      environment: p.environment,
-      lastRunOk: p.lastRunOk,
-    });
+  function enterProject(p: ProjectCard) {
+    setCurrentProject({ id: p.id, name: p.name, environment: p.environment, lastRunOk: p.lastRunOk });
     router.push(resume.startsWith("/app") ? resume : "/app/dashboard");
   }
 
-  function onCreateProject(e: React.FormEvent) {
+  async function onCreateProject(e: React.FormEvent) {
     e.preventDefault();
     if (!newName.trim()) return;
-    const id = `proj-${newName.trim().toLowerCase().replace(/\s+/g, "-")}-${Date.now()}`;
-    setCurrentProject({
-      id,
-      name: newName.trim(),
-      environment: newEnv,
-      lastRunOk: null,
-    });
+    const slug = newName.trim().toLowerCase().replace(/\s+/g, "-");
+    try {
+      const proj = await apiClient.createProject({ name: newName.trim(), slug });
+      setCurrentProject({ id: proj.id, name: proj.name, environment: newEnv, lastRunOk: null });
+    } catch {
+      const id = `proj-${slug}-${Date.now()}`;
+      setCurrentProject({ id, name: newName.trim(), environment: newEnv, lastRunOk: null });
+    }
     setDialogOpen(false);
     router.push("/app/dashboard");
   }
@@ -151,13 +182,13 @@ function ProjectSelectorContent() {
               <TabsTrigger value="all" className="gap-1.5 px-3 text-xs sm:text-sm">
                 All
                 <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-[10px]">
-                  {demoProjectCards.length}
+                  {projects.length}
                 </Badge>
               </TabsTrigger>
               <TabsTrigger value="starred" className="gap-1.5 px-3 text-xs sm:text-sm">
                 Starred
                 <Badge variant="outline" className="ml-1 px-1.5 py-0 text-[10px]">
-                  {demoProjectCards.filter((p) => p.starred).length}
+                  {projects.filter((p) => p.starred).length}
                 </Badge>
               </TabsTrigger>
               <TabsTrigger value="recent" className="text-xs sm:text-sm">
@@ -245,8 +276,16 @@ function ProjectSelectorContent() {
             <p className="hidden text-sm text-muted-foreground sm:block">{filtered.length} shown</p>
           </div>
 
+          {loading ? (
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="h-48 animate-pulse rounded-xl border border-border/60 bg-muted/40" />
+              ))}
+            </div>
+          ) : null}
+
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {filtered.map((p) => (
+            {!loading && filtered.map((p) => (
               <button
                 key={p.id}
                 type="button"

@@ -1,7 +1,7 @@
 import {
-  ClipboardList,
+  Archive,
   CreditCard,
-  FileText,
+  FlaskConical,
   FolderKanban,
   Home,
   KeyRound,
@@ -31,9 +31,9 @@ export const globalFooterNav: GlobalFooterNavItem[] = [
 /** Project tier — execution + management loop (UI-flow §2). */
 export const primaryNav: AppNavItem[] = [
   { href: "/app/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/app/runs/new", label: "Test configuration", icon: ClipboardList },
-  { href: "/app/runs/live", label: "Live execution", icon: PlayCircle },
-  { href: "/app/runs/report", label: "Run report", icon: FileText },
+  { href: "/app/test-cases", label: "Test cases", icon: FlaskConical },
+  { href: "/app/runs/live", label: "Live", icon: PlayCircle },
+  { href: "/app/artifacts", label: "Artifacts", icon: Archive },
   { href: "/app/suites", label: "Test suites", icon: FolderKanban },
   { href: "/app/visual-baselines", label: "Visual baselines", icon: Sparkles },
   { href: "/app/vault", label: "The Vault", icon: KeyRound },

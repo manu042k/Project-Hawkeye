@@ -21,7 +21,8 @@ CREATE TABLE IF NOT EXISTS users (
   email         TEXT UNIQUE NOT NULL,
   name          TEXT,
   avatar_url    TEXT,
-  auth_provider TEXT NOT NULL DEFAULT 'google',
+  auth_provider TEXT NOT NULL DEFAULT 'oauth',
+  pw_hash       TEXT,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -66,11 +67,41 @@ CREATE TABLE IF NOT EXISTS vault_secrets (
   project_id       UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   key              TEXT NOT NULL,
   encrypted_value  TEXT NOT NULL,
+  iv               TEXT,
+  environment      TEXT NOT NULL DEFAULT 'Development',
+  secret_type      TEXT NOT NULL DEFAULT 'API Key',
   description      TEXT,
   created_by       UUID REFERENCES users(id),
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (project_id, key)
 );
+
+-- ─── TEST SUITES ─────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS test_suites (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id   UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name         TEXT NOT NULL,
+  description  TEXT,
+  test_case_ids JSONB NOT NULL DEFAULT '[]',
+  archived_at  TIMESTAMPTZ,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_test_suites_project ON test_suites (project_id) WHERE archived_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS suite_schedules (
+  id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id         UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  suite_id           UUID NOT NULL REFERENCES test_suites(id) ON DELETE CASCADE,
+  cron               TEXT NOT NULL,
+  branch             TEXT NOT NULL DEFAULT 'main',
+  enabled            BOOLEAN NOT NULL DEFAULT true,
+  last_triggered_at  TIMESTAMPTZ,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_suite_schedules_suite ON suite_schedules (suite_id);
 
 -- ─── INTEGRATIONS ─────────────────────────────────────────────────────────────
 

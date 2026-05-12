@@ -10,6 +10,28 @@ router = APIRouter(prefix="/runs", tags=["runs"])
 _TEST_CASES_DIR = Path(__file__).parent.parent.parent / "orchestrator" / "test_cases"
 
 
+def _enforce_plan_limit(request: RunRequest) -> None:
+    """Reject runs when the org has exhausted its monthly quota.
+
+    When no DB is present (dev mode) or plan enforcement is disabled via
+    HAWKEYE_PLAN_ENFORCE=0, this is a no-op.
+    """
+    import os
+    if os.environ.get("HAWKEYE_PLAN_ENFORCE", "0") != "1":
+        return
+    from api.redis_store import list_runs as _list_runs
+    from api.routes.billing import PLAN_LIMITS
+    # Default to free limits; a production impl would look up org+plan from DB
+    plan = os.environ.get("HAWKEYE_DEFAULT_PLAN", "free")
+    limit = PLAN_LIMITS.get(plan, PLAN_LIMITS["free"])["runs"]
+    current_count = len(_list_runs())
+    if current_count >= limit:
+        raise HTTPException(
+            429,
+            detail=f"Plan limit reached: {current_count}/{limit} runs used this period. Upgrade to continue.",
+        )
+
+
 def _record_to_response(record: dict) -> RunResponse:
     return RunResponse(
         run_id=record["run_id"],
@@ -35,6 +57,9 @@ def _record_to_response(record: dict) -> RunResponse:
 
 @router.post("", response_model=RunResponse)
 async def submit_run(request: RunRequest) -> RunResponse:
+    # Plan-limit check: count runs this month vs org plan limit
+    _enforce_plan_limit(request)
+
     # Phase 5A: resolve test_case_id from in-memory store -> write tmp yaml path
     if request.test_case_id:
         from api.routes.test_cases_crud import _store

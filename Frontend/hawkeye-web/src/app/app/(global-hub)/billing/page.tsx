@@ -17,6 +17,8 @@ import { toast } from "sonner";
 import { apiClient } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 
+type PlanDef = { id: string; name: string; price_monthly: number; limits: Record<string, number> };
+
 type UsageMeter = { id: string; label: string; description: string; used: number; limit: number; unit: string };
 
 type BillingTab = "Profile" | "Billing" | "Security" | "Notifications";
@@ -56,6 +58,8 @@ export default function BillingPage() {
   const [usagePeriodLabel, setUsagePeriodLabel] = useState("Current billing period");
   const [subscription, setSubscription] = useState({ plan: "Pro", price_monthly: 99, next_billing_date: null as string | null });
   const [costUsd, setCostUsd] = useState(0);
+  const [plans, setPlans] = useState<PlanDef[]>([]);
+  const [portalLoading, setPortalLoading] = useState(false);
 
   useEffect(() => {
     apiClient.getUsage().then((res) => {
@@ -64,7 +68,24 @@ export default function BillingPage() {
       setSubscription(res.subscription);
       setCostUsd(res.cost_usd);
     }).catch(() => {});
+    apiClient.getBillingPlans().then((res) => setPlans(res.plans)).catch(() => {});
   }, []);
+
+  async function handleManageBilling() {
+    setPortalLoading(true);
+    try {
+      const res = await apiClient.createBillingPortal({ org_id: "default" });
+      if (res.stub) {
+        toast.message("Billing portal", { description: "Configure STRIPE_SECRET_KEY to enable the real portal." });
+      } else {
+        window.location.href = res.portal_url;
+      }
+    } catch {
+      toast.error("Failed to open billing portal");
+    } finally {
+      setPortalLoading(false);
+    }
+  }
 
   // Keep profile fields in sync with session once it loads
   useEffect(() => {
@@ -208,8 +229,8 @@ export default function BillingPage() {
                     <div className="text-sm text-muted-foreground">
                       Next billing date: <span className="text-foreground/90">{subscription.next_billing_date ?? "—"}</span>
                     </div>
-                    <Button variant="outline" onClick={() => toast.message("Billing portal", { description: "Connect Stripe Customer Portal when backend is ready." })}>
-                      Manage billing
+                    <Button variant="outline" disabled={portalLoading} onClick={handleManageBilling}>
+                      {portalLoading ? "Opening…" : "Manage billing"}
                     </Button>
                   </div>
                 </CardContent>

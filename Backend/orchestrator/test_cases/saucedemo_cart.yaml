@@ -1,8 +1,11 @@
 id: "TC-002b"
-name: "SauceDemo: add product to cart and verify"
-suite: "phase1-smoke"
+name: "SauceDemo — login, add product to cart, and verify"
+suite: "e-commerce"
 priority: "P1"
-tags: ["e-commerce", "cart", "login"]
+tags: ["saucedemo", "cart", "login", "smoke"]
+created_by: "<user-id>"
+project: "<project-id>"
+save_record: false
 
 target:
   url: "https://www.saucedemo.com"
@@ -10,47 +13,70 @@ target:
   viewport:
     width: 1280
     height: 720
+    device_scale_factor: 1.0
+  page_type: spa
+  app_description: |
+    SauceDemo is a fake e-commerce site built for testing purposes.
+    It requires login before any shopping can be done.
+  vault:
+    - key: username
+      value: standard_user
+    - key: password
+      value: secret_sauce
 
-goal: |
-  Log in to SauceDemo with username 'standard_user' and password 'secret_sauce'.
-  Add exactly ONE product to the cart, then navigate to the cart and confirm
-  the product is listed there.
+goal:
+  objective: |
+    Log in to SauceDemo, add exactly one product to the cart,
+    navigate to the cart, and confirm the product is listed there.
+    Do not proceed to checkout.
 
-steps: null
+  constraints:
+    max_steps: 20
+    timeout_seconds: 300
+    max_retries_per_action: 2
 
-assertions:
-  - id: "A1"
-    type: "content"
-    description: "Cart page shows at least one item"
-    params:
-      check: "text_present"
-      text: "Your Cart"
+  extra_details: |
+    Add only ONE product — do not add multiple items.
+    The cart icon is in the top-right corner and shows a badge count.
+    After adding a product, click the cart icon to navigate to the cart page.
 
-  - id: "A2"
-    type: "console"
-    description: "No critical JS errors"
-    params:
-      level: "error"
-      max_count: 5
-      ignore_patterns:
-        - "favicon"
-        - "analytics"
-        - "401"
-        - "Unauthorized"
-        - "Failed to load resource"
+  steps:
+    checkpoints:
 
-constraints:
-  max_steps: 20
-  timeout_seconds: 300
-  navigation_policy: "explicit_urls_allowed"
-  forbidden_actions:
-    - "navigate to any domain other than saucedemo.com"
+      - id: S1
+        description: |
+          Log in using username "standard_user" and password "secret_sauce".
+        success_signal: |
+          The product listing page is visible showing multiple products
+          with titles, prices, and "Add to cart" buttons.
 
-context:
-  page_type: "spa"
-  app_description: "SauceDemo — a fake e-commerce site for testing. Credentials: standard_user / secret_sauce."
-  hints:
-    - "Login with username 'standard_user' and password 'secret_sauce'"
-    - "Click ONE product name or image, then IMMEDIATELY click the cart icon in the top-right"
-    - "Do NOT add multiple products — one is sufficient"
-    - "The cart icon is in the top-right corner and shows a badge count"
+      - id: S2
+        description: |
+          Click "Add to cart" on any single product.
+        success_signal: |
+          The button changes to "Remove" and the cart icon in the
+          top-right shows a badge count of 1.
+
+      - id: S3
+        description: |
+          Click the cart icon in the top-right to navigate to the cart page.
+        success_signal: |
+          The cart page is visible showing the product name, quantity,
+          and price under the "Your Cart" heading.
+
+      - id: S4
+        description: |
+          Confirm the cart contents are correct.
+        success_signal: |
+          Exactly one item is listed in the cart with a name and price.
+          The goal is complete — do not click checkout.
+
+on_failure:
+  capture:
+    screenshot: true
+    dom_snapshot: true
+    network_log: true
+    console_log: true
+    agent_trace: true
+    video: true
+  notify: {}
