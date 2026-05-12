@@ -154,6 +154,38 @@ ASSERT_ELEMENT_STATE_SCHEMA: dict[str, Any] = {
     },
 }
 
+SCROLL_PAGE_SCHEMA: dict[str, Any] = {
+    "name": "scroll_page",
+    "description": (
+        "Scroll the current page smoothly in one tool call instead of pressing PageDown "
+        "multiple times. Use this for reading long articles, finding content below the fold, "
+        "or completing scroll-based test steps. Returns scroll position and whether the "
+        "bottom of the page has been reached."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "direction": {
+                "type": "string",
+                "enum": ["down", "up", "top", "bottom"],
+                "description": (
+                    "'down' scroll down, 'up' scroll up, "
+                    "'top' jump to page top, 'bottom' jump to page bottom."
+                ),
+                "default": "down",
+            },
+            "times": {
+                "type": "integer",
+                "description": "Number of viewport heights to scroll (default 1, max 10). Ignored for 'top'/'bottom'.",
+                "default": 1,
+                "minimum": 1,
+                "maximum": 10,
+            },
+        },
+        "required": [],
+    },
+}
+
 # All custom tool schemas in one list — used by the REASON node.
 ALL_CUSTOM_SCHEMAS: list[dict[str, Any]] = [
     WAIT_FOR_STABLE_SCHEMA,
@@ -163,4 +195,5 @@ ALL_CUSTOM_SCHEMAS: list[dict[str, Any]] = [
     GET_NETWORK_LOG_SCHEMA,
     ASSERT_NETWORK_REQUEST_SCHEMA,
     ASSERT_ELEMENT_STATE_SCHEMA,
+    SCROLL_PAGE_SCHEMA,
 ]

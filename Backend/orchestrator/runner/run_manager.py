@@ -92,14 +92,18 @@ class RunManager:
         # Apply CLI overrides to the test case constraints.
         if max_steps_override is not None:
             test_case = test_case.model_copy(
-                update={"constraints": test_case.constraints.model_copy(
-                    update={"max_steps": max_steps_override}
+                update={"goal": test_case.goal.model_copy(
+                    update={"constraints": test_case.goal.constraints.model_copy(
+                        update={"max_steps": max_steps_override}
+                    )}
                 )}
             )
         if timeout_override is not None:
             test_case = test_case.model_copy(
-                update={"constraints": test_case.constraints.model_copy(
-                    update={"timeout_seconds": timeout_override}
+                update={"goal": test_case.goal.model_copy(
+                    update={"constraints": test_case.goal.constraints.model_copy(
+                        update={"timeout_seconds": timeout_override}
+                    )}
                 )}
             )
         browser = browser_override or test_case.target.browser
@@ -142,7 +146,7 @@ class RunManager:
                 await asyncio.sleep(1.0)
             else:
                 cfg = SandboxConfig(
-                    url=test_case.target.url,
+                    url="about:blank",
                     browser=browser,
                     image=self._sandbox_image,
                 )
@@ -170,7 +174,38 @@ class RunManager:
                     novnc_url, container_name,
                 )
 
-            # --- CDP session ---
+            # --- Playwright MCP client ---
+            # MCP must connect and navigate BEFORE CDP so that when CDP connects
+            # it attaches to the MCP-active tab, not the about:blank orphan tab.
+            mcp_client = PlaywrightMcpClient(cdp_url or None, browser=browser)
+            await mcp_client.initialize()
+            mcp_schemas = await mcp_client.list_tools()
+            mcp_tools = mcp_tools_to_langchain(mcp_client, mcp_schemas)
+
+            # Navigate MCP to the target URL (creates/uses the MCP page).
+            logger.info("Navigating to target URL: %s", test_case.target.url)
+            nav_result = await mcp_client.call_tool(
+                "browser_navigate", {"url": test_case.target.url}
+            )
+            if nav_result.is_error:
+                logger.warning("Initial navigation error (non-fatal): %s", nav_result.error_message)
+
+            # Close any orphaned about:blank tab left by launch_browser.py.
+            # Must happen BEFORE CDP connects so CDP attaches to the correct tab.
+            if cdp_url:
+                from orchestrator.cdp.session import CdpSession
+                _cleanup = CdpSession(cdp_url)
+                try:
+                    closed = await _cleanup.close_blank_tabs()
+                    if closed:
+                        logger.debug("Closed %d blank tab(s)", closed)
+                except Exception as exc:
+                    logger.debug("Blank tab cleanup failed (non-fatal): %s", exc)
+
+            # Brief wait for the page to finish loading before CDP attaches.
+            await asyncio.sleep(2.0)
+
+            # --- CDP session (connects to the MCP-active tab) ---
             if cdp_url:
                 from orchestrator.cdp.session import CdpSession
                 cdp_session = CdpSession(cdp_url)
@@ -182,38 +217,15 @@ class RunManager:
                     logger.warning("CDP session failed (continuing without CDP): %s", exc)
                     cdp_session = None
 
-            # --- Playwright MCP client ---
-            mcp_client = PlaywrightMcpClient(cdp_url or None, browser=browser)
-            await mcp_client.initialize()
-            mcp_schemas = await mcp_client.list_tools()
-            mcp_tools = mcp_tools_to_langchain(mcp_client, mcp_schemas)
-
             # --- Custom tools ---
             tool_registry = build_default_registry(lambda: cdp_session)
             from orchestrator.tools.schemas import ALL_CUSTOM_SCHEMAS
-            from langchain_core.tools import StructuredTool
 
-            # Build custom StructuredTools that route through tool_registry.
-            # These are passed to the LLM for schema awareness but dispatched
-            # by the ACT node through tool_registry.dispatch().
             custom_tools = _build_custom_langchain_tools(
                 tool_registry, ALL_CUSTOM_SCHEMAS, cdp_session=cdp_session
             )
 
             collector.on_tools_ready(len(mcp_tools), len(custom_tools))
-
-            # Navigate the MCP-active tab to the target URL.
-            # When connecting via --cdp-endpoint, Playwright MCP may create a
-            # blank tab as the active page. This ensures the agent always starts
-            # on the intended target, and the noVNC observer sees the right tab.
-            logger.info("Navigating to target URL: %s", test_case.target.url)
-            nav_result = await mcp_client.call_tool(
-                "browser_navigate", {"url": test_case.target.url}
-            )
-            if nav_result.is_error:
-                logger.warning("Initial navigation error (non-fatal): %s", nav_result.error_message)
-            # Brief wait for the page to start loading before the first observe.
-            await asyncio.sleep(2.0)
 
             # --- Compile graph ---
             assertion_engine = AssertionEngine(cdp_session=cdp_session)
@@ -245,7 +257,7 @@ class RunManager:
                 "messages": [SystemMessage(content=build_system_prompt(test_case))],
                 "step_number": 0,
                 "current_checkpoint": (
-                    test_case.steps.checkpoints[0].id if test_case.steps else None
+                    test_case.goal.steps.checkpoints[0].id if test_case.goal.steps else None
                 ),
                 "completed_checkpoints": [],
                 "current_url": test_case.target.url,
@@ -357,7 +369,7 @@ def _build_run_result(
 ) -> RunResult:
     """Convert the final graph state into a RunResult."""
     import asyncio
-    from orchestrator.reporting.report_generator import generate_markdown_report, generate_html_report
+    from orchestrator.reporting.report_generator import generate_html_report
     summary = collector.get_summary(run_id=run_id, status=final_state.get("status", "errored"))
     try:
         trace_path = collector.write_json(output_dir, status=summary.status)
@@ -381,9 +393,7 @@ def _build_run_result(
         tool_call_count=summary.mcp_tool_calls + summary.custom_tool_calls,
     )
     try:
-        md_path = generate_markdown_report(run_result, collector.traces, output_dir)
-        html_path = generate_html_report(run_result, collector.traces, output_dir)
-        print(f"[report]    {md_path}")
+        html_path = generate_html_report(run_result, collector.traces, output_dir, test_case=test_case)
         print(f"[report]    {html_path}")
     except Exception as _rep_exc:
         logger.warning("Report generation failed (non-fatal): %s", _rep_exc)

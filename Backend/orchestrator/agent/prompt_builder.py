@@ -14,14 +14,24 @@ _GUIDED_GOAL_SECTION = """\
 ## Goal
 {goal}
 
-## Steps (guided checkpoints)
-Complete these checkpoints in order (or adapt if the UI requires it):
+## Checkpoints — execute ONE AT A TIME in strict order
 {checkpoints}
 
-After completing each checkpoint, write "[S<id> complete]" in your response
-(e.g. "[S1 complete]") so progress is tracked."""
+### Checkpoint execution rules (MANDATORY)
+1. Read the current checkpoint's Description to know WHAT to do.
+2. Perform ONLY the actions needed for that checkpoint.
+3. After acting, verify the Success Signal is true before declaring completion.
+4. Write "[S<id> complete]" (e.g. "[S1 complete]") in your response the moment
+   you confirm the success signal — then immediately move to the next checkpoint.
+5. Do NOT repeat or redo a checkpoint you already marked complete.
+6. Do NOT navigate back to earlier pages once a checkpoint is done.
+7. If a checkpoint's condition is ALREADY MET when you arrive, mark it complete
+   immediately and proceed — do not perform its action again."""
 
-_CHECKPOINT_ITEM = "- [{id}] {description}\n  Success signal: {success_signal}"
+_CHECKPOINT_ITEM = """\
+[{id}]
+  Do: {description}
+  ✓ Done when: {success_signal}"""
 
 _EXTRA_DETAILS_SECTION = """\
 ## Extra context
@@ -31,30 +41,25 @@ _TOOL_CONVENTIONS = """\
 ## Tool-use conventions
 - Call `browser_snapshot` to read the current accessibility tree before clicking.
   Each interactive element has a `[ref=...]` label — use that exact ref value.
-- Take ONE snapshot per step to decide your next action. Do NOT take multiple
-  snapshots in a row — each snapshot uses budget. If you cannot see what you
-  need, SCROLL DOWN using browser_press_key (key: 'PageDown') and then take
-  a fresh snapshot to see what appeared.
-- The snapshot may be truncated on large pages — this is normal. Scroll down
-  to reveal more content rather than retrying the snapshot with different params.
-- After typing in a search box, press Enter via `browser_press_key` (key: 'Enter').
-- Dismiss any cookie banners, popups, or login prompts before proceeding.
-- When a search results page loads: press PageDown once (browser_press_key, key: 'PageDown'),
-  then take a snapshot and click the first product title or link you can see.
-- Use `wait_for_stable` when the page may still be loading after navigation.
-- Call `report_step_result` to log intermediate assertion outcomes.
+- Take ONE snapshot per step. If the snapshot is truncated, scroll down with
+  browser_press_key (key: 'PageDown') to reveal more — do NOT snapshot again.
+- After typing in a search box, use browser_type with submit=True OR follow
+  with browser_press_key (key: 'Enter') to submit.
+- Dismiss cookie banners, popups, or login prompts before proceeding.
+- Use `report_step_result` only to log a checkpoint outcome.
+- Do NOT call `browser_navigate` to go back to a page you already left.
 
 ## Completing the goal — CRITICAL
-- Emit "[S<id> complete]" in the SAME response where you perform the final
-  action for that checkpoint. Do not wait for the next step.
-- When ALL checkpoints are complete and the overall goal is achieved, emit
-  `<GOAL_COMPLETE>` as PLAIN TEXT with NO tool call. Stop browsing immediately.
-- For scroll tasks: when "Scrolls on current page" reaches 3 or more, the scroll
-  goal is met. Emit `<GOAL_COMPLETE>` as plain text WITHOUT making a tool call.
-- If you are stuck and cannot make progress after trying 2 different approaches,
-  write `<GOAL_BLOCKED>` followed by a brief explanation.
-- If the site forces a login wall that you cannot dismiss or bypass, immediately
-  write `<GOAL_BLOCKED>: Site requires login` — do NOT loop trying to close it."""
+- Write "[S<id> complete]" in the SAME response as the final action for that
+  checkpoint (e.g. "[S1 complete]"). Do not wait for the next observe step.
+- If a checkpoint's success signal is already satisfied on arrival, write
+  "[S<id> complete]" immediately without repeating any action.
+- When ALL checkpoints are done and the overall goal is achieved, emit
+  `<GOAL_COMPLETE>` as PLAIN TEXT with NO tool call.
+- For scroll tasks: track "Scrolls on current page" shown in your context.
+  When it reaches the required count, emit `<GOAL_COMPLETE>` immediately.
+- If stuck after 2 different attempts, write `<GOAL_BLOCKED>` + explanation.
+- If a login wall cannot be dismissed, write `<GOAL_BLOCKED>: Site requires login`."""
 
 _CONSTRAINTS_SECTION = """\
 ## Constraints
