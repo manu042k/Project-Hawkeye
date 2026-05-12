@@ -179,6 +179,21 @@ export type TestCaseSpec = TestCaseSummary & {
   };
 };
 
+export type Baseline = {
+  id: string;
+  project_id: string;
+  test_case_id: string | null;
+  run_id: string | null;
+  checkpoint_id: string | null;
+  status: "pending_review" | "approved" | "rejected";
+  diff_pct: number | null;
+  screenshot_url: string | null;
+  baseline_url: string | null;
+  created_at: string;
+  reviewed_at: string | null;
+  review_note: string | null;
+};
+
 export type Schedule = {
   id: string;
   project_id: string;
@@ -401,6 +416,20 @@ export const apiClient = {
   listInvitations: (orgId: string) => apiFetch<{ invitations: Array<{ id: string; email: string; role: string; status: string }> }>(`/api/orgs/${orgId}/invitations`),
   revokeInvitation: (orgId: string, invId: string) =>
     apiFetch<{ revoked: boolean }>(`/api/orgs/${orgId}/invitations/${invId}`, { method: "DELETE" }),
+
+  // Visual baselines (Phase 5 / 6F)
+  listBaselines: (projectId: string, params?: { status?: string; test_case_id?: string }) => {
+    const qs = new URLSearchParams(params ?? {}).toString();
+    return apiFetch<{ baselines: Baseline[]; total: number }>(`/api/projects/${projectId}/baselines${qs ? `?${qs}` : ""}`);
+  },
+  getBaseline: (projectId: string, baselineId: string) =>
+    apiFetch<Baseline>(`/api/projects/${projectId}/baselines/${baselineId}`),
+  approveBaseline: (projectId: string, baselineId: string) =>
+    apiFetch<{ approved: boolean }>(`/api/projects/${projectId}/baselines/${baselineId}/approve`, { method: "POST" }),
+  rejectBaseline: (projectId: string, baselineId: string, reason: string) =>
+    apiFetch<{ rejected: boolean }>(`/api/projects/${projectId}/baselines/${baselineId}/reject`, {
+      method: "POST", body: JSON.stringify({ reason }),
+    }),
 
   // Identity
   getMe: () => apiFetch<{ email: string; authenticated: boolean; role: string }>("/api/me"),
