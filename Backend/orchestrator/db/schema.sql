@@ -118,7 +118,8 @@ CREATE TABLE IF NOT EXISTS integrations (
 CREATE TABLE IF NOT EXISTS test_cases (
     id            UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
     project_id    UUID         REFERENCES projects(id) ON DELETE CASCADE,
-    created_by    UUID         REFERENCES users(id),
+    created_by    TEXT,
+    last_run_by   TEXT,
     status        TEXT         NOT NULL DEFAULT 'active'
                                 CHECK (status IN ('active','draft','archived')),
     version       INT          NOT NULL DEFAULT 1,
@@ -153,7 +154,8 @@ CREATE TABLE IF NOT EXISTS test_runs (
     steps_completed      JSONB          DEFAULT '[]',
     novnc_url            VARCHAR(512),
     container_name       VARCHAR(128),
-    termination_reason   TEXT
+    termination_reason   TEXT,
+    triggered_by         TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_test_runs_case ON test_runs (test_case_id);
 CREATE INDEX IF NOT EXISTS idx_test_runs_started ON test_runs (started_at DESC);

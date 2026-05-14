@@ -13,10 +13,45 @@ from api.routes import (runs, test_cases, ws, artifacts, projects, test_cases_cr
                         environments, baselines, integrations, webhooks, auth)
 
 
+async def _apply_schema() -> None:
+    """Run schema.sql idempotently (all statements use IF NOT EXISTS)."""
+    from api.db import db_enabled, execute, fetchval
+    if not db_enabled():
+        return
+    schema_path = Path(__file__).parent.parent / "orchestrator" / "db" / "schema.sql"
+    if not schema_path.exists():
+        return
+    sql = schema_path.read_text()
+    for stmt in sql.split(";"):
+        stmt = stmt.strip()
+        if stmt:
+            try:
+                await execute(stmt)
+            except Exception:
+                pass  # e.g. extension already exists in a read-only schema
+    # Seed a default org + project so string project_id "default" resolves
+    try:
+        exists = await fetchval("SELECT id FROM projects WHERE slug='default' LIMIT 1")
+        if not exists:
+            org_id = await fetchval(
+                "INSERT INTO organizations (name, slug) VALUES ('Default Org','default') "
+                "ON CONFLICT (slug) DO UPDATE SET slug=EXCLUDED.slug RETURNING id"
+            )
+            await execute(
+                "INSERT INTO projects (id, org_id, name, slug) "
+                "VALUES ('00000000-0000-0000-0000-000000000001', $1, 'Default Project', 'default') "
+                "ON CONFLICT DO NOTHING",
+                org_id,
+            )
+    except Exception:
+        pass
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from api.db import init_pool, close_pool
     await init_pool()
+    await _apply_schema()
     pool_size = int(os.environ.get("HAWKEYE_POOL_SIZE", "0"))
     if pool_size > 0:
         from api.container_pool import container_pool
