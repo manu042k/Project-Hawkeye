@@ -3,6 +3,7 @@
 import { use, useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import {
   ArrowLeft,
   Play,
@@ -128,6 +129,7 @@ export default function TestCaseDetailPage({
 }) {
   const { id: tcId } = use(params);
   const router = useRouter();
+  const { data: session } = useSession();
 
   const [tab, setTab] = useState<Tab>("overview");
   const [tc, setTc] = useState<TestCaseSpec | null>(null);
@@ -319,14 +321,14 @@ export default function TestCaseDetailPage({
   }, []);
 
   const nameValid = name.trim().length >= 10;
-  const goalValid = wordCount(goal) >= 50;
+  const goalValid = wordCount(goal) >= 30;
   const urlValid = isValidUrl(url);
   const stepsValid = checkpoints.length > 0 && checkpoints.every((cp) => cp.description.trim() && cp.success_signal.trim());
 
   async function handleSave() {
     if (!nameValid) { toast.error("Name must be at least 10 characters"); return; }
     if (!urlValid) { toast.error("A valid target URL is required (set it in Config tab)"); return; }
-    if (!goalValid) { toast.error("Goal must be at least 50 words"); return; }
+    if (!goalValid) { toast.error("Goal must be at least 30 words"); return; }
     if (!stepsValid) { toast.error("Add at least one step with description and success signal (Steps tab)"); return; }
     setSaving(true);
     try {
@@ -337,6 +339,7 @@ export default function TestCaseDetailPage({
       }
       const body = {
         name,
+        created_by: session?.user?.email ?? null,
         goal: {
           objective: goal,
           constraints: {
@@ -572,7 +575,7 @@ export default function TestCaseDetailPage({
                   onEdit={editAll}
                 />
                 {goal.length > 0 && !goalValid && (
-                  <p className="text-xs text-rose-400">{wordCount(goal)} / 50 words minimum</p>
+                  <p className="text-xs text-rose-400">{wordCount(goal)} / 30 words minimum</p>
                 )}
               </div>
               <FieldRow cols={2}>
@@ -636,6 +639,26 @@ export default function TestCaseDetailPage({
                   </Button>
                 </div>
               </div>
+              {!isNew && (
+                <div className="rounded-lg border border-border/50 bg-muted/30 px-4 py-3 grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">Created by</span>
+                    <p className="font-medium truncate">{tc?.created_by ?? "—"}</p>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Last run by</span>
+                    <p className="font-medium truncate">{tc?.last_run_by ?? "—"}</p>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Created</span>
+                    <p className="font-medium">{tc?.created_at ? new Date(tc.created_at).toLocaleDateString() : "—"}</p>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Last run</span>
+                    <p className="font-medium">{tc?.last_run_at ? new Date(tc.last_run_at).toLocaleDateString() : "—"}</p>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
