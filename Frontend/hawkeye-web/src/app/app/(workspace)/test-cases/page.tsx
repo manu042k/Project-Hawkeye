@@ -9,6 +9,10 @@ import { AppTopbar } from "@/components/app/app-topbar";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter,
+  DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { apiClient, type TestCaseSummary } from "@/lib/api/client";
@@ -30,6 +34,8 @@ export default function TestCasesPage() {
   const [q, setQ] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [runTcId, setRunTcId] = useState<string | null>(null);
+  const [archiveId, setArchiveId] = useState<string | null>(null);
+  const [archiving, setArchiving] = useState(false);
 
   async function load(query = "") {
     setLoading(true);
@@ -51,10 +57,16 @@ export default function TestCasesPage() {
     load();
   }
 
-  async function handleArchive(tcId: string) {
-    if (!confirm("Archive this test case?")) return;
-    await apiClient.archiveProjectTestCase(DEFAULT_PROJECT, tcId);
-    load();
+  async function confirmArchive() {
+    if (!archiveId) return;
+    setArchiving(true);
+    try {
+      await apiClient.archiveProjectTestCase(DEFAULT_PROJECT, archiveId);
+      load();
+    } finally {
+      setArchiving(false);
+      setArchiveId(null);
+    }
   }
 
   const filtered = cases.filter((c) =>
@@ -176,7 +188,7 @@ export default function TestCasesPage() {
                         variant="ghost"
                         size="icon"
                         className="size-7 text-rose-500 hover:text-rose-400"
-                        onClick={(e) => { e.stopPropagation(); handleArchive(tc.id); }}
+                        onClick={(e) => { e.stopPropagation(); setArchiveId(tc.id); }}
                         title="Archive"
                       >
                         <Trash2 className="size-3.5" />
@@ -197,6 +209,25 @@ export default function TestCasesPage() {
           initialTestCaseId={runTcId}
         />
       )}
+
+      <Dialog open={!!archiveId} onOpenChange={(o) => { if (!o) setArchiveId(null); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Archive test case?</DialogTitle>
+            <DialogDescription>
+              This test case will be archived and hidden from the list. You can restore it later.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setArchiveId(null)} disabled={archiving}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={confirmArchive} disabled={archiving}>
+              {archiving ? "Archiving…" : "Archive"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
