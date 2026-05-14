@@ -9,6 +9,7 @@ import { AppTopbar } from "@/components/app/app-topbar";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 import { useProjectStore } from "@/lib/project/store";
 import { useRuns, useDeleteRun } from "@/lib/api/hooks";
@@ -300,15 +301,23 @@ export default function DashboardPage() {
                             {/* Test Case column: avatar + name + run ID */}
                             <TableCell>
                               <div className="flex items-center gap-3">
-                                <div
-                                  className={cn(
-                                    "inline-flex size-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold",
-                                    avatarColor(name),
-                                  )}
-                                  aria-hidden
-                                >
-                                  {initials(name)}
-                                </div>
+                                <Tooltip>
+                                  <TooltipTrigger
+                                    className={cn(
+                                      "inline-flex size-8 shrink-0 cursor-default items-center justify-center rounded-full text-[11px] font-bold",
+                                      avatarColor(name),
+                                    )}
+                                  >
+                                    {initials(name)}
+                                  </TooltipTrigger>
+                                  <TooltipContent side="right" className="text-xs">
+                                    {row.triggered_by ? (
+                                      <span>Run by <span className="font-medium">{row.triggered_by}</span></span>
+                                    ) : (
+                                      <span className="text-muted-foreground">No trigger info</span>
+                                    )}
+                                  </TooltipContent>
+                                </Tooltip>
                                 <div className="min-w-0">
                                   <p className="truncate text-sm font-medium">{name}</p>
                                   <p className="font-mono text-[10px] text-muted-foreground">{row.run_id.slice(0, 8)}</p>
