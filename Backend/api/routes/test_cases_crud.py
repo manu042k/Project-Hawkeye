@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from api.db import db_enabled, fetch, fetchrow, execute
@@ -112,6 +112,13 @@ class TestCaseCreate(BaseModel):
     on_failure: OnFailureBody | None = None
 
 
+def _clean(val: str | None) -> str | None:
+    """Strip placeholder values that come from YAML templates."""
+    if not val or val.startswith("<") and val.endswith(">"):
+        return None
+    return val
+
+
 def _to_summary(tc: dict) -> dict:
     return {
         "id": tc["id"],
@@ -120,8 +127,10 @@ def _to_summary(tc: dict) -> dict:
         "version": tc["version"],
         "priority": tc["spec"].get("priority", "P1"),
         "tags": tc["spec"].get("tags", []),
+        "created_by": _clean(tc["spec"].get("created_by")),
         "last_run_status": tc.get("last_run_status"),
         "last_run_at": tc.get("last_run_at"),
+        "last_run_by": tc.get("last_run_by"),
         "created_at": tc["created_at"],
         "updated_at": tc["updated_at"],
     }
@@ -142,8 +151,10 @@ def _row_to_summary(row: dict) -> dict:
         "version": row["version"],
         "priority": row.get("priority") or spec.get("priority", "P1"),
         "tags": tags,
+        "created_by": _clean(row.get("created_by") or spec.get("created_by")),
         "last_run_status": row.get("last_run_status"),
         "last_run_at": str(row["last_run_at"]) if row.get("last_run_at") else None,
+        "last_run_by": row.get("last_run_by"),
         "created_at": str(row["created_at"]),
         "updated_at": str(row["updated_at"]),
     }
@@ -172,33 +183,69 @@ def _build_spec(tc_id: str, body: TestCaseCreate) -> dict:
 
 
 @router.post("/{project_id}/test-cases", status_code=201)
-async def create_test_case(project_id: str, body: TestCaseCreate) -> dict:
+async def create_test_case(project_id: str, body: TestCaseCreate, http_request: Request) -> dict:
+    if not body.created_by:
+        user_email = http_request.headers.get("X-User-Email")
+        if user_email:
+            body = body.model_copy(update={"created_by": user_email})
     tc_id = str(uuid.uuid4())
     spec = _build_spec(tc_id, body)
     if db_enabled():
         row = await fetchrow(
             """INSERT INTO test_cases
-               (id, project_id, status, version, name, priority, tags, spec, created_at, updated_at)
-               VALUES ($1,$2,'active',1,$3,$4,$5::jsonb,$6::jsonb,now(),now())
+               (id, project_id, status, version, name, priority, tags, spec, created_by, created_at, updated_at)
+               VALUES ($1,$2,'active',1,$3,$4,$5::jsonb,$6::jsonb,$7,now(),now())
                RETURNING *""",
-            tc_id, project_id, body.name, body.priority,
-            json.dumps(body.tags), json.dumps(spec),
+            tc_id, _db_project_id(project_id), body.name, body.priority,
+            json.dumps(body.tags), json.dumps(spec), body.created_by,
         )
         return _row_to_summary(dict(row))  # type: ignore[arg-type]
     record = {
         "id": tc_id, "project_id": project_id, "status": "active", "version": 1,
-        "spec": spec, "last_run_status": None, "last_run_at": None,
+        "spec": spec, "last_run_status": None, "last_run_at": None, "last_run_by": None,
         "created_at": _utcnow(), "updated_at": _utcnow(),
     }
     _store.setdefault(project_id, {})[tc_id] = record
     return _to_summary(record)
 
 
+async def _enrich_with_run_info(summaries: list[dict]) -> list[dict]:
+    """Attach last_run_status, last_run_at, last_run_by from Redis to each summary."""
+    from api.redis_store import list_runs
+    try:
+        all_runs = await list_runs()
+    except Exception:
+        return summaries
+    # Build: tc_id -> most recent run record
+    latest: dict[str, dict] = {}
+    for r in all_runs:
+        tc_id = r.get("test_case_id") or r.get("request", {}).get("test_case_id")
+        if not tc_id:
+            continue
+        existing = latest.get(tc_id)
+        if not existing or r.get("created_at", "") > existing.get("created_at", ""):
+            latest[tc_id] = r
+    for s in summaries:
+        run = latest.get(s["id"])
+        if run:
+            s["last_run_status"] = run.get("status")
+            s["last_run_at"] = run.get("completed_at") or run.get("created_at")
+            s["last_run_by"] = run.get("triggered_by")
+    return summaries
+
+
+_DEFAULT_PROJECT_UUID = "00000000-0000-0000-0000-000000000001"
+
+
+def _db_project_id(project_id: str) -> str:
+    return project_id if project_id != "default" else _DEFAULT_PROJECT_UUID
+
+
 @router.get("/{project_id}/test-cases")
 async def list_test_cases(project_id: str, status: str = "active", q: str = "") -> dict:
     if db_enabled():
         sql = "SELECT * FROM test_cases WHERE project_id=$1"
-        args: list = [project_id]
+        args: list = [_db_project_id(project_id)]
         if status != "all":
             sql += " AND status=$2"
             args.append(status)
@@ -207,7 +254,7 @@ async def list_test_cases(project_id: str, status: str = "active", q: str = "") 
         if q:
             q_low = q.lower()
             rows = [r for r in rows if q_low in r["name"].lower()]
-        summaries = [_row_to_summary(r) for r in rows]
+        summaries = await _enrich_with_run_info([_row_to_summary(r) for r in rows])
         return {"test_cases": summaries, "total": len(summaries)}
     cases = list(_store.get(project_id, {}).values())
     if status != "all":
@@ -215,22 +262,28 @@ async def list_test_cases(project_id: str, status: str = "active", q: str = "") 
     if q:
         q_low = q.lower()
         cases = [c for c in cases if q_low in c["spec"]["name"].lower() or q_low in c["spec"].get("goal", "").lower()]
-    return {"test_cases": [_to_summary(c) for c in cases], "total": len(cases)}
+    summaries = await _enrich_with_run_info([_to_summary(c) for c in cases])
+    return {"test_cases": summaries, "total": len(summaries)}
 
 
 @router.get("/{project_id}/test-cases/{tc_id}")
 async def get_test_case(project_id: str, tc_id: str) -> dict:
     if db_enabled():
-        row = await fetchrow("SELECT * FROM test_cases WHERE id=$1 AND project_id=$2", tc_id, project_id)
+        row = await fetchrow("SELECT * FROM test_cases WHERE id=$1 AND project_id=$2", tc_id, _db_project_id(project_id))
         if not row:
             raise HTTPException(404, f"Test case {tc_id!r} not found")
         r = dict(row)
         spec = r["spec"] if isinstance(r["spec"], dict) else json.loads(r["spec"])
-        return {**_row_to_summary(r), "save_record": spec.get("save_record", False), "spec": spec}
-    record = _store.get(project_id, {}).get(tc_id)
-    if not record:
-        raise HTTPException(404, f"Test case {tc_id!r} not found")
-    return {**_to_summary(record), "save_record": record["spec"].get("save_record", False), "spec": record["spec"]}
+        summary = _row_to_summary(r)
+    else:
+        record = _store.get(project_id, {}).get(tc_id)
+        if not record:
+            raise HTTPException(404, f"Test case {tc_id!r} not found")
+        summary = _to_summary(record)
+        spec = record["spec"]
+    enriched = await _enrich_with_run_info([summary])
+    s = enriched[0]
+    return {**s, "save_record": spec.get("save_record", False), "spec": spec}
 
 
 @router.put("/{project_id}/test-cases/{tc_id}")
@@ -241,7 +294,7 @@ async def update_test_case(project_id: str, tc_id: str, body: TestCaseCreate) ->
             """UPDATE test_cases SET name=$3, priority=$4, tags=$5::jsonb, spec=$6::jsonb,
                version=version+1, updated_at=now()
                WHERE id=$1 AND project_id=$2 RETURNING *""",
-            tc_id, project_id, body.name, body.priority,
+            tc_id, _db_project_id(project_id), body.name, body.priority,
             json.dumps(body.tags), json.dumps(spec),
         )
         if not row:
@@ -261,7 +314,7 @@ async def archive_test_case(project_id: str, tc_id: str) -> dict:
     if db_enabled():
         tag = await execute(
             "UPDATE test_cases SET status='archived', updated_at=now() WHERE id=$1 AND project_id=$2",
-            tc_id, project_id,
+            tc_id, _db_project_id(project_id),
         )
         if tag == "UPDATE 0":
             raise HTTPException(404, f"Test case {tc_id!r} not found")
@@ -277,7 +330,7 @@ async def archive_test_case(project_id: str, tc_id: str) -> dict:
 @router.post("/{project_id}/test-cases/{tc_id}/clone", status_code=201)
 async def clone_test_case(project_id: str, tc_id: str) -> dict:
     if db_enabled():
-        original = await fetchrow("SELECT * FROM test_cases WHERE id=$1 AND project_id=$2", tc_id, project_id)
+        original = await fetchrow("SELECT * FROM test_cases WHERE id=$1 AND project_id=$2", tc_id, _db_project_id(project_id))
         if not original:
             raise HTTPException(404, f"Test case {tc_id!r} not found")
         orig = dict(original)
@@ -290,7 +343,7 @@ async def clone_test_case(project_id: str, tc_id: str) -> dict:
         row = await fetchrow(
             """INSERT INTO test_cases (id,project_id,status,version,name,priority,tags,spec,created_at,updated_at)
                VALUES ($1,$2,'draft',1,$3,$4,$5::jsonb,$6::jsonb,now(),now()) RETURNING *""",
-            new_id, project_id, spec["name"], orig.get("priority", "P1"),
+            new_id, _db_project_id(project_id), spec["name"], orig.get("priority", "P1"),
             json.dumps(orig.get("tags") or []), json.dumps(spec),
         )
         return _row_to_summary(dict(row))  # type: ignore[arg-type]
@@ -344,36 +397,71 @@ async def import_yaml(project_id: str, body: dict) -> dict:
 async def get_test_case_runs(project_id: str, tc_id: str, limit: int = 20, page: int = 1) -> dict:
     """Return run history for a specific test case (from Redis store)."""
     from api.redis_store import list_runs
-    all_runs = list_runs()
+    from api.routes.runs import _record_to_response
+    all_runs = await list_runs()
     matched = [
         r for r in all_runs
-        if r.get("test_case_id") == tc_id or r.get("test_name") == tc_id
+        if r.get("test_case_id") == tc_id
+        or r.get("request", {}).get("test_case_id") == tc_id
     ]
     matched.sort(key=lambda r: r.get("created_at", ""), reverse=True)
     start = (page - 1) * limit
-    page_items = matched[start: start + limit]
+    page_items = [_record_to_response(r).model_dump() for r in matched[start: start + limit]]
     return {"runs": page_items, "total": len(matched), "page": page, "limit": limit}
 
 
 def seed_from_yaml_dir(project_id: str = "default") -> None:
     """Import all YAML test cases from orchestrator/test_cases/ into the default project."""
+    import asyncio
+
+    async def _seed_db(records: list[dict]) -> None:
+        for record in records:
+            try:
+                await execute(
+                    """INSERT INTO test_cases
+                       (id, project_id, status, version, name, priority, tags, spec, created_at, updated_at)
+                       VALUES ($1, $2, 'active', 1, $3, $4, $5::jsonb, $6::jsonb, now(), now())
+                       ON CONFLICT (id) DO NOTHING""",
+                    record["id"],
+                    _DEFAULT_PROJECT_UUID,
+                    record["spec"].get("name", ""),
+                    record["spec"].get("priority", "P1"),
+                    json.dumps(record["spec"].get("tags", [])),
+                    json.dumps(record["spec"]),
+                )
+            except Exception:
+                continue
+
+    mem_records: list[dict] = []
     for yaml_path in sorted(_TEST_CASES_DIR.glob("*.yaml")):
         try:
             tc = load_test_case(yaml_path)
             spec = tc.model_dump()
             tc_id = spec["id"] or str(uuid.uuid4())
+            record = {
+                "id": tc_id,
+                "project_id": project_id,
+                "status": "active",
+                "version": 1,
+                "spec": spec,
+                "last_run_status": None,
+                "last_run_at": None,
+                "last_run_by": None,
+                "created_at": _utcnow(),
+                "updated_at": _utcnow(),
+            }
             if tc_id not in _store.get(project_id, {}):
-                record = {
-                    "id": tc_id,
-                    "project_id": project_id,
-                    "status": "active",
-                    "version": 1,
-                    "spec": spec,
-                    "last_run_status": None,
-                    "last_run_at": None,
-                    "created_at": _utcnow(),
-                    "updated_at": _utcnow(),
-                }
                 _store.setdefault(project_id, {})[tc_id] = record
+            mem_records.append(record)
         except Exception:
             continue
+
+    if db_enabled() and mem_records:
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                loop.create_task(_seed_db(mem_records))
+            else:
+                loop.run_until_complete(_seed_db(mem_records))
+        except Exception:
+            pass
