@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useProjectStore } from "@/lib/project/store";
 import { apiClient, type Schedule, type SuiteSummary } from "@/lib/api/client";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 const DEFAULT_PROJECT = "default";
@@ -107,30 +108,36 @@ function SuiteCard({
           </div>
         )}
       </CardHeader>
-      <CardContent className="space-y-5">
-        <p className="text-sm text-muted-foreground">{s.description || "No description."}</p>
+      <CardContent className="space-y-4 pt-0">
+        {s.description && (
+          <p className="text-xs text-muted-foreground line-clamp-2">{s.description}</p>
+        )}
 
-        <div className="space-y-2 border-t border-border/60 pt-4">
-          <div className="flex items-center gap-3">
-            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
-              <div
-                className="h-full bg-emerald-500"
-                style={{ width: `${Math.round(s.pass_rate * 100)}%` }}
-              />
-            </div>
-            <span className="font-mono text-xs text-emerald-400">{percent(s.pass_rate)} Pass</span>
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>Pass rate</span>
+            <span className={s.pass_rate >= 0.8 ? "text-emerald-400 font-semibold" : s.pass_rate >= 0.5 ? "text-amber-400 font-semibold" : "text-rose-400 font-semibold"}>
+              {percent(s.pass_rate)}
+            </span>
           </div>
-
-          <Button
-            variant="outline"
-            className="w-full"
-            onClick={() => onRun(s.id, s.name)}
-            disabled={s.test_count === 0}
-          >
-            <Play className="size-4" aria-hidden="true" />
-            Run All
-          </Button>
+          <div className="h-1.5 overflow-hidden rounded-full bg-muted/60">
+            <div
+              className={cn("h-full rounded-full transition-all", s.pass_rate >= 0.8 ? "bg-emerald-500" : s.pass_rate >= 0.5 ? "bg-amber-500" : "bg-rose-500")}
+              style={{ width: `${Math.round(s.pass_rate * 100)}%` }}
+            />
+          </div>
         </div>
+
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full"
+          onClick={() => onRun(s.id, s.name)}
+          disabled={s.test_count === 0}
+        >
+          <Play className="size-3.5" aria-hidden="true" />
+          Run All ({s.test_count})
+        </Button>
       </CardContent>
     </Card>
   );
@@ -441,24 +448,16 @@ export default function SuitesPage() {
                   className="flex-1 min-w-40"
                   autoFocus
                 />
-                <div className="flex items-center gap-2">
-                  <select
-                    className="rounded border border-border/60 bg-background px-2 py-1.5 text-sm"
-                    value={newGroup}
-                    onChange={(e) => setNewGroup(e.target.value)}
-                  >
-                    <option value="">(no group)</option>
-                    {allGroups.map((g) => (
-                      <option key={g} value={g}>{g}</option>
-                    ))}
-                  </select>
-                  <Input
-                    placeholder="Or type new group…"
-                    value={newGroup}
-                    onChange={(e) => setNewGroup(e.target.value)}
-                    className="w-40"
-                  />
-                </div>
+                <Input
+                  list="group-suggestions"
+                  placeholder="Group (optional)…"
+                  value={newGroup}
+                  onChange={(e) => setNewGroup(e.target.value)}
+                  className="w-44"
+                />
+                <datalist id="group-suggestions">
+                  {allGroups.map((g) => <option key={g} value={g} />)}
+                </datalist>
                 <Button onClick={handleCreate} disabled={creating || !newName.trim()}>
                   {creating ? "Creating…" : "Create"}
                 </Button>
