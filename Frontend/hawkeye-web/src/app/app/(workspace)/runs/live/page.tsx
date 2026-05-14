@@ -126,131 +126,49 @@ function RunDetailPanel({ runId }: { runId: string }) {
     : null;
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto px-6 py-8">
-      <div className="mx-auto max-w-[1600px] space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm text-muted-foreground">
-            <span className="text-foreground/90">Test runs</span>
-            <span className="mx-2 text-border">/</span>
-            <span className="font-mono">{runId}</span>
-          </p>
-          <StatusBadge status={status} />
-        </div>
+    <div className="flex flex-1 min-h-0 flex-col overflow-hidden">
 
-        <Card className="border-border/60 bg-card/60">
-          <CardContent className="py-5">
-            <div className="flex flex-wrap items-center gap-6 text-sm">
-              <span className="text-muted-foreground">
-                <span className="font-semibold text-foreground font-mono">{stepCount}</span>
-                {run?.total_steps ? ` / ${run.total_steps} steps` : " steps"}
-              </span>
-              {run?.estimated_cost_usd != null && (
-                <span className="text-muted-foreground">
-                  {"Cost "}
-                  <span className="font-semibold text-foreground font-mono">${run.estimated_cost_usd.toFixed(4)}</span>
-                </span>
-              )}
-              {run?.total_input_tokens != null && (
-                <span className="text-muted-foreground">
-                  {"Tokens "}
-                  <span className="font-semibold text-foreground font-mono">
-                    {((run.total_input_tokens ?? 0) + (run.total_output_tokens ?? 0)).toLocaleString()}
-                  </span>
-                </span>
-              )}
-              {isDone && (
-                <Link
-                  href={`/app/artifacts/${runId}`}
-                  className={cn(buttonVariants({ variant: "default", size: "sm" }), "ml-auto")}
-                >
-                  <CheckCircle2 className="size-4" />
-                  View Report
-                </Link>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <Card className="flex flex-col overflow-hidden border-border/60 bg-card/60" style={{ height: 560 }}>
-            <CardHeader className="flex flex-row items-center gap-4 border-b border-border/60 shrink-0">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <TerminalIcon className="size-4 text-muted-foreground" aria-hidden="true" />
-                AI Execution Logs
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="bg-background/30 p-0 overflow-hidden" style={{ height: 500 }}>
-              <ScrollArea className="h-full p-5 font-mono text-sm">
-                <div className="space-y-3">
-                  {logLines.length === 0 && !isDone && (
-                    <div className="text-muted-foreground italic">Connecting to run…</div>
-                  )}
-                  {logLines.map((l, idx) => {
-                    const tone =
-                      l.level === "action" ? "text-primary" :
-                      l.level === "reasoning" ? "text-foreground" :
-                      l.level === "error" ? "text-rose-400" :
-                      "text-muted-foreground";
-                    return (
-                      <div key={idx} className="flex gap-4">
-                        <span className="w-20 shrink-0 text-muted-foreground">{l.ts}</span>
-                        <span className={tone}>{l.message}</span>
-                      </div>
-                    );
-                  })}
-                  {!isDone && (
-                    <div className="flex items-center gap-2 pt-2 text-muted-foreground">
-                      <span className="h-4 w-1.5 bg-primary/70 animate-pulse" />
-                      <span className="italic">Awaiting next action…</span>
-                    </div>
-                  )}
-                  <div ref={scrollRef} />
-                </div>
-              </ScrollArea>
-            </CardContent>
-          </Card>
-
-          <Card className="flex flex-col overflow-hidden border-border/60 bg-card/60" style={{ height: 560 }}>
-            <CardHeader className="flex flex-row items-center justify-between gap-4 border-b border-border/60 shrink-0">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Monitor className="size-4 text-muted-foreground" aria-hidden="true" />
-                Browser Feed
-              </CardTitle>
-              {novncUrl && <Badge variant="outline" className="text-xs text-emerald-400 border-emerald-500/30">Live</Badge>}
-            </CardHeader>
-            <CardContent className="bg-background/30 p-0 overflow-hidden" style={{ height: 500 }}>
-              {novncUrl ? (
-                <iframe
-                  src={novncUrl}
-                  className="w-full h-full border-0 block"
-                  title="Live browser feed"
-                />
-              ) : (
-                <div className="flex h-full flex-col items-center justify-center gap-3">
-                  <div className="inline-flex size-14 items-center justify-center rounded-full bg-muted/60">
-                    <Monitor className="size-7 text-muted-foreground/50" aria-hidden="true" />
-                  </div>
-                  <div className="text-sm font-medium text-muted-foreground">Live VNC stream</div>
-                  <div className="text-xs text-muted-foreground/70">
-                    {status === "running" ? "Awaiting sandbox URL…" : "Available during active runs"}
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        {!isDone && (
-          <div className="flex justify-end">
+      {/* ── Stats bar ──────────────────────────────────────────────── */}
+      <div className="flex shrink-0 items-center gap-4 border-b border-border/60 bg-card/40 px-5 py-3">
+        <span className="font-mono text-xs text-muted-foreground">{runId}</span>
+        <div className="h-3.5 w-px bg-border/60" />
+        <StatusBadge status={status} />
+        <div className="h-3.5 w-px bg-border/60" />
+        <span className="text-xs text-muted-foreground">
+          <span className="font-semibold text-foreground font-mono">{stepCount}</span>
+          {run?.total_steps ? `/${run.total_steps}` : ""} steps
+        </span>
+        {run?.estimated_cost_usd != null && (
+          <span className="text-xs text-muted-foreground">
+            <span className="font-semibold text-foreground font-mono">${run.estimated_cost_usd.toFixed(4)}</span> cost
+          </span>
+        )}
+        {run?.total_input_tokens != null && (
+          <span className="text-xs text-muted-foreground">
+            <span className="font-semibold text-foreground font-mono">
+              {((run.total_input_tokens ?? 0) + (run.total_output_tokens ?? 0)).toLocaleString()}
+            </span> tokens
+          </span>
+        )}
+        <div className="ml-auto flex items-center gap-2">
+          {isDone ? (
+            <Link
+              href={`/app/artifacts/${runId}`}
+              className={cn(buttonVariants({ variant: "default", size: "sm" }), "h-7 gap-1.5 text-xs")}
+            >
+              <CheckCircle2 className="size-3.5" />
+              View Report
+            </Link>
+          ) : (
             <Dialog>
               <DialogTrigger
                 className={cn(
-                  buttonVariants({ variant: "outline" }),
-                  "border-rose-500/60 text-rose-400 hover:bg-rose-500/10 hover:text-rose-300",
+                  buttonVariants({ variant: "outline", size: "sm" }),
+                  "h-7 text-xs border-rose-500/60 text-rose-400 hover:bg-rose-500/10 hover:text-rose-300",
                 )}
               >
-                <XCircle className="size-4" aria-hidden="true" />
-                Abort Test Run
+                <XCircle className="size-3.5" />
+                Abort
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
@@ -266,8 +184,84 @@ function RunDetailPanel({ runId }: { runId: string }) {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
+          )}
+        </div>
+      </div>
+
+      {/* ── Main split: logs 40% | browser 60% ─────────────────────── */}
+      <div className="flex flex-1 min-h-0 overflow-hidden">
+
+        {/* Logs */}
+        <div className="flex w-[40%] shrink-0 flex-col border-r border-border/60 bg-background/20 min-h-0">
+          <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2.5 shrink-0">
+            <TerminalIcon className="size-3.5 text-muted-foreground" />
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">AI Execution Logs</span>
           </div>
-        )}
+          <ScrollArea className="flex-1 min-h-0">
+            <div className="space-y-2 p-4 font-mono text-xs">
+              {logLines.length === 0 && !isDone && (
+                <div className="text-muted-foreground/60 italic">Connecting to run…</div>
+              )}
+              {logLines.map((l, idx) => {
+                const tone =
+                  l.level === "action"    ? "text-primary" :
+                  l.level === "reasoning" ? "text-foreground/90" :
+                  l.level === "error"     ? "text-rose-400" :
+                  "text-muted-foreground";
+                const dot =
+                  l.level === "action"    ? "bg-primary" :
+                  l.level === "reasoning" ? "bg-foreground/40" :
+                  l.level === "error"     ? "bg-rose-400" :
+                  "bg-muted-foreground/40";
+                return (
+                  <div key={idx} className="flex gap-3 items-start">
+                    <span className="shrink-0 text-muted-foreground/50 w-[4.5rem]">{l.ts}</span>
+                    <span className={cn("mt-1.5 size-1.5 shrink-0 rounded-full", dot)} />
+                    <span className={tone}>{l.message}</span>
+                  </div>
+                );
+              })}
+              {!isDone && (
+                <div className="flex items-center gap-2 pt-1 text-muted-foreground/50">
+                  <span className="h-3 w-1 bg-primary/60 animate-pulse rounded-sm" />
+                  <span className="italic">Awaiting next action…</span>
+                </div>
+              )}
+              <div ref={scrollRef} />
+            </div>
+          </ScrollArea>
+        </div>
+
+        {/* Browser feed */}
+        <div className="flex flex-1 min-h-0 flex-col bg-black/40">
+          <div className="flex items-center justify-between border-b border-border/60 px-4 py-2.5 shrink-0">
+            <div className="flex items-center gap-2">
+              <Monitor className="size-3.5 text-muted-foreground" />
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Browser Feed</span>
+            </div>
+            {novncUrl && (
+              <span className="flex items-center gap-1.5 text-[10px] font-semibold text-emerald-400">
+                <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                Live
+              </span>
+            )}
+          </div>
+          <div className="flex-1 min-h-0 p-3">
+            {novncUrl ? (
+              <BrowserFeedFrame url={novncUrl} />
+            ) : (
+              <div className="flex h-full flex-col items-center justify-center gap-3">
+                <div className="inline-flex size-14 items-center justify-center rounded-full bg-muted/30">
+                  <Monitor className="size-7 text-muted-foreground/30" />
+                </div>
+                <p className="text-sm text-muted-foreground/60">
+                  {status === "running" ? "Awaiting sandbox…" : "Available during active runs"}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+
       </div>
     </div>
   );
@@ -428,6 +422,43 @@ function LiveExecutionInner() {
     </div>
   );
 }
+
+const BROWSER_W = 1280;
+const BROWSER_H = 720;
+
+function BrowserFeedFrame({ url }: { url: string }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const obs = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      const scale = Math.min(width / BROWSER_W, height / BROWSER_H);
+      const iframe = iframeRef.current;
+      if (!iframe) return;
+      iframe.style.width = `${BROWSER_W}px`;
+      iframe.style.height = `${BROWSER_H}px`;
+      iframe.style.transform = `scale(${scale})`;
+      iframe.style.transformOrigin = "top left";
+    });
+    obs.observe(container);
+    return () => obs.disconnect();
+  }, []);
+
+  return (
+    <div ref={containerRef} className="relative w-full h-full overflow-hidden bg-black rounded-lg">
+      <iframe
+        ref={iframeRef}
+        src={url}
+        title="Live browser feed"
+        style={{ position: "absolute", top: 0, left: 0, border: "none" }}
+      />
+    </div>
+  );
+}
+
 
 export default function LiveExecutionPage() {
   return (
