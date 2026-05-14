@@ -48,6 +48,12 @@ class RunResponse(BaseModel):
     error_count: int | None = None
     tool_call_count: int | None = None
     artifact_manifest: list[dict] | None = None
+    browser_used: str | None = None
+    model_used: str | None = None
+    recording: bool | None = None
+    max_steps_override: int | None = None
+    timeout_override: int | None = None
+    viewport: dict | None = None
 
 
 class RunListResponse(BaseModel):

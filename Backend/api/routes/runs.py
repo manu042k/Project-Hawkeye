@@ -33,6 +33,7 @@ def _enforce_plan_limit(request: RunRequest) -> None:
 
 
 def _record_to_response(record: dict) -> RunResponse:
+    req = record.get("request") or {}
     return RunResponse(
         run_id=record["run_id"],
         status=record["status"],
@@ -53,6 +54,12 @@ def _record_to_response(record: dict) -> RunResponse:
         error_count=record.get("error_count"),
         tool_call_count=record.get("tool_call_count"),
         artifact_manifest=record.get("artifact_manifest"),
+        browser_used=req.get("browser") or "chromium",
+        model_used=req.get("model"),
+        recording=req.get("record", False),
+        max_steps_override=req.get("max_steps"),
+        timeout_override=req.get("timeout"),
+        viewport=record.get("viewport"),
     )
 
 
@@ -87,6 +94,8 @@ async def submit_run(request: RunRequest, http_request: Request) -> RunResponse:
             _yaml.dump(spec, f, allow_unicode=True)
             tmp_path = f.name
         request = request.model_copy(update={"test_case_path": tmp_path})
+        _viewport = (spec.get("target") or {}).get("viewport")
+        _test_name = spec.get("name")
     else:
         path = Path(request.test_case_path)
         if not path.is_absolute():
@@ -94,11 +103,24 @@ async def submit_run(request: RunRequest, http_request: Request) -> RunResponse:
         if not path.exists():
             raise HTTPException(422, f"Test case not found: {path}")
         request = request.model_copy(update={"test_case_path": str(path)})
+        _viewport = None
+        _test_name = None
     run_id = job_queue.submit(request)
     await asyncio.sleep(0.05)
     record = await job_queue.get_run(run_id)
     if not record:
         return RunResponse(run_id=run_id, status="queued", created_at="")
+    # Stash extra metadata not carried in RunRequest
+    needs_save = False
+    if _viewport and not record.get("viewport"):
+        record["viewport"] = _viewport
+        needs_save = True
+    if _test_name and not record.get("test_name"):
+        record["test_name"] = _test_name
+        needs_save = True
+    if needs_save:
+        from api import redis_store as _rs
+        await _rs.save_run(record)
     return _record_to_response(record)
 
 

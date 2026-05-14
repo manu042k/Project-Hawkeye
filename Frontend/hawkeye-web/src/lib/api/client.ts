@@ -38,6 +38,12 @@ export type RunSummary = {
   total_output_tokens: number | null;
   error_count: number | null;
   tool_call_count: number | null;
+  browser_used: string | null;
+  model_used: string | null;
+  recording: boolean | null;
+  max_steps_override: number | null;
+  timeout_override: number | null;
+  viewport: { width: number; height: number; device_scale_factor?: number } | null;
 };
 
 export type StepTrace = {
