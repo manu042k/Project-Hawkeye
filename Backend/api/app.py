@@ -47,18 +47,33 @@ async def _apply_schema() -> None:
         pass
 
 
+async def _seed_default_project() -> None:
+    """Ensure the 'default' project row exists in the DB."""
+    from api.database import AsyncSessionLocal
+    from api.models import Project
+    from sqlalchemy import select
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(Project).where(Project.id == "default"))
+        if not result.scalar_one_or_none():
+            session.add(Project(id="default", name="Default Project", slug="default"))
+            await session.commit()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from api.db import init_pool, close_pool
-    await init_pool()
+    from api.database import init_db
+    await init_pool()  # asyncpg pool for legacy routes (auth, orgs, etc.)
     await _apply_schema()
+    await init_db()  # SQLAlchemy — creates tables if not exist
+    await _seed_default_project()
     pool_size = int(os.environ.get("HAWKEYE_POOL_SIZE", "0"))
     if pool_size > 0:
         from api.container_pool import container_pool
         await container_pool.start()
     job_queue.start()
     from api.routes.test_cases_crud import seed_from_yaml_dir
-    seed_from_yaml_dir(project_id="default")
+    await seed_from_yaml_dir(project_id="default")
     from api.routes.auth import _seed_dev_user
     _seed_dev_user()
     yield
