@@ -381,8 +381,8 @@ export const apiClient = {
       method: "PUT",
       body: JSON.stringify({ group }),
     }),
-  runSuite: (projectId: string, suiteId: string) =>
-    apiFetch<{ suite_id: string; test_case_ids: string[]; message: string }>(`/api/projects/${projectId}/suites/${suiteId}/run`, { method: "POST" }),
+  runSuite: (projectId: string, suiteId: string, body?: { model?: string; triggered_by?: string }) =>
+    apiFetch<{ suite_id: string; dispatched_run_ids: string[]; total: number }>(`/api/projects/${projectId}/suites/${suiteId}/run`, { method: "POST", body: JSON.stringify(body ?? {}) }),
 
   // Vault secrets (Phase 5C)
   listSecrets: (projectId: string, params?: { environment?: string; type?: string }) => {

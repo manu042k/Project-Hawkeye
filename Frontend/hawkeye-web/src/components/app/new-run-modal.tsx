@@ -26,44 +26,7 @@ import {
 } from "@/components/ui/select";
 
 import { apiClient, type TestCaseSummary } from "@/lib/api/client";
-
-const MODEL_GROUPS = [
-  {
-    label: "Anthropic (via OpenRouter)",
-    models: [
-      { value: "openrouter:anthropic/claude-sonnet-4-5", label: "Claude Sonnet 4.5 ✦ vision" },
-      { value: "openrouter:anthropic/claude-opus-4", label: "Claude Opus 4 ✦ vision" },
-      { value: "openrouter:anthropic/claude-haiku-4-5", label: "Claude Haiku 4.5 ✦ vision" },
-    ],
-  },
-  {
-    label: "OpenAI (via OpenRouter)",
-    models: [
-      { value: "openrouter:openai/gpt-4o", label: "GPT-4o ✦ vision" },
-      { value: "openrouter:openai/gpt-4.1", label: "GPT-4.1 ✦ vision" },
-      { value: "openrouter:openai/gpt-oss-120b:free", label: "GPT-OSS 120B (free tier)" },
-    ],
-  },
-  {
-    label: "Groq",
-    models: [
-      { value: "groq:llama-3.3-70b-versatile", label: "Llama 3.3 70B Versatile" },
-      { value: "groq:llama-3.1-8b-instant", label: "Llama 3.1 8B Instant" },
-    ],
-  },
-  {
-    label: "NVIDIA NIM",
-    models: [
-      { value: "nvidia:nvidia/llama-3.2-90b-vision-instruct", label: "Llama 3.2 90B Vision ✦ vision" },
-      { value: "nvidia:nvidia/llama-3.2-11b-vision-instruct", label: "Llama 3.2 11B Vision ✦ vision" },
-      { value: "nvidia:meta/llama-3.3-70b-instruct", label: "Llama 3.3 70B Instruct" },
-      { value: "nvidia:nvidia/nemotron-4-340b-instruct", label: "Nemotron 4 340B ✦ vision" },
-    ],
-  },
-];
-
-const DEFAULT_MODEL = MODEL_GROUPS[0].models[0].value;
-
+import { MODEL_GROUPS, DEFAULT_MODEL, ALL_MODELS } from "@/lib/models";
 
 interface NewRunModalProps {
   open: boolean;
@@ -96,7 +59,6 @@ export function NewRunModal({ open, onClose, initialTestCaseId }: NewRunModalPro
     if (initialTestCaseId) setTestCaseId(initialTestCaseId);
   }, [initialTestCaseId]);
 
-
   async function handleSubmit() {
     if (!testCaseId) return;
     setSubmitting(true);
@@ -120,9 +82,7 @@ export function NewRunModal({ open, onClose, initialTestCaseId }: NewRunModalPro
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Configure &amp; run test</DialogTitle>
-          <DialogDescription>
-            Choose a test case, model, and browser, then launch.
-          </DialogDescription>
+          <DialogDescription>Choose a test case and model, then launch.</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
@@ -141,11 +101,9 @@ export function NewRunModal({ open, onClose, initialTestCaseId }: NewRunModalPro
                       : undefined}
                   </SelectValue>
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="w-[var(--radix-select-trigger-width)]">
                   {(testCases ?? []).map((tc) => (
-                    <SelectItem key={tc.id} value={tc.id}>
-                      {tc.name}
-                    </SelectItem>
+                    <SelectItem key={tc.id} value={tc.id}>{tc.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -157,34 +115,26 @@ export function NewRunModal({ open, onClose, initialTestCaseId }: NewRunModalPro
             <Select value={model} onValueChange={(v) => v && setModel(v)}>
               <SelectTrigger id="model-select" className="w-full">
                 <SelectValue>
-                  {MODEL_GROUPS.flatMap((g) => g.models).find((m) => m.value === model)?.label ?? model}
+                  {ALL_MODELS.find((m) => m.value === model)?.label ?? model}
                 </SelectValue>
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="w-[var(--radix-select-trigger-width)]">
                 {MODEL_GROUPS.map((group) => (
                   <SelectGroup key={group.label}>
                     <SelectLabel>{group.label}</SelectLabel>
                     {group.models.map((m) => (
-                      <SelectItem key={m.value} value={m.value}>
-                        {m.label}
-                      </SelectItem>
+                      <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
                     ))}
                   </SelectGroup>
                 ))}
               </SelectContent>
             </Select>
           </div>
-
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={submitting}>
-            Cancel
-          </Button>
-          <Button
-            onClick={handleSubmit}
-            disabled={!testCaseId || submitting}
-          >
+          <Button variant="outline" onClick={onClose} disabled={submitting}>Cancel</Button>
+          <Button onClick={handleSubmit} disabled={!testCaseId || submitting}>
             {submitting ? "Starting…" : "Run test"}
           </Button>
         </DialogFooter>

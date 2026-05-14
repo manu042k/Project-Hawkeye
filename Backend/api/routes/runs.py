@@ -1,7 +1,9 @@
 from __future__ import annotations
 import asyncio
+import json
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from api.job_queue import job_queue
 from api.redis_store import get_traces as _get_traces
 from api.schemas import RunListResponse, RunRequest, RunResponse
@@ -128,6 +130,34 @@ async def submit_run(request: RunRequest, http_request: Request) -> RunResponse:
 async def list_runs() -> RunListResponse:
     records = await job_queue.list_runs()
     return RunListResponse(runs=[_record_to_response(r) for r in records], total=len(records))
+
+
+@router.get("/stream")
+async def stream_runs(request: Request) -> StreamingResponse:
+    """SSE endpoint — sends the full run list on connect, then a run record on every change."""
+    from api import redis_store as _rs
+
+    async def event_generator():
+        # Send current snapshot on connect
+        records = await job_queue.list_runs()
+        runs = [_record_to_response(r).model_dump(mode="json") for r in records]
+        yield f"event: snapshot\ndata: {json.dumps(runs)}\n\n"
+
+        # Stream individual run updates
+        async for record in _rs.subscribe_runs_updates():
+            if await request.is_disconnected():
+                break
+            run = _record_to_response(record).model_dump(mode="json")
+            yield f"event: run_update\ndata: {json.dumps(run)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/{run_id}", response_model=RunResponse)

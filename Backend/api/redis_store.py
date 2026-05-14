@@ -10,6 +10,7 @@ _EVENTS_CHANNEL = "hawkeye:events:{}"
 _TRACES_KEY = "hawkeye:traces:{}"
 _MAX_RUN_IDS = 100
 _RUN_TTL_S = 60 * 60 * 24 * 7  # 7 days
+_RUNS_UPDATES_CHANNEL = "hawkeye:runs_updates"
 
 _redis = None
 
@@ -49,6 +50,8 @@ async def save_run(record: dict) -> None:
     if record.get("status") == "queued":
         await r.lpush(_RUN_IDS_KEY, record["run_id"])
         await r.ltrim(_RUN_IDS_KEY, 0, _MAX_RUN_IDS - 1)
+    # Notify SSE subscribers of any run change
+    await r.publish(_RUNS_UPDATES_CHANNEL, json.dumps(record))
 
 
 async def get_run(run_id: str) -> dict | None:
@@ -80,6 +83,21 @@ async def subscribe_run(run_id: str):
     r = from_url(REDIS_URL, decode_responses=True)
     pubsub = r.pubsub()
     await pubsub.subscribe(_EVENTS_CHANNEL.format(run_id))
+    try:
+        async for message in pubsub.listen():
+            if message["type"] == "message":
+                yield json.loads(message["data"])
+    finally:
+        await pubsub.unsubscribe()
+        await r.aclose()
+
+
+async def subscribe_runs_updates():
+    """Async generator yielding run records whenever any run is created or updated."""
+    from redis.asyncio import from_url
+    r = from_url(REDIS_URL, decode_responses=True)
+    pubsub = r.pubsub()
+    await pubsub.subscribe(_RUNS_UPDATES_CHANNEL)
     try:
         async for message in pubsub.listen():
             if message["type"] == "message":

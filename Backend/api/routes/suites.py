@@ -140,11 +140,15 @@ async def list_suite_groups(project_id: str) -> dict:
     return {"groups": groups}
 
 
+class SuiteRunRequest(BaseModel):
+    model: str = "nvidia:moonshotai/kimi-k2.6"
+    triggered_by: str | None = None
+
+
 @router.post("/projects/{project_id}/suites/{suite_id}/run", status_code=202)
-async def run_suite(project_id: str, suite_id: str) -> dict:
-    from api.tasks import run_test_case
+async def run_suite(project_id: str, suite_id: str, body: SuiteRunRequest = SuiteRunRequest()) -> dict:
     from api.schemas import RunRequest
-    import uuid as _uuid
+    from api.job_queue import job_queue
     if db_enabled():
         row = await fetchrow("SELECT test_case_ids FROM test_suites WHERE id=$1 AND project_id=$2", suite_id, project_id)
         if not row:
@@ -157,9 +161,8 @@ async def run_suite(project_id: str, suite_id: str) -> dict:
         ids = suite["test_case_ids"]
     run_ids: list[str] = []
     for tc_id in ids:
-        run_id = str(_uuid.uuid4())
-        req = RunRequest(test_case_id=tc_id)
-        run_test_case.delay(run_id, req.model_dump())
+        req = RunRequest(test_case_id=tc_id, model=body.model, triggered_by=body.triggered_by)
+        run_id = job_queue.submit(req)
         run_ids.append(run_id)
     return {"suite_id": suite_id, "dispatched_run_ids": run_ids, "total": len(run_ids)}
 
