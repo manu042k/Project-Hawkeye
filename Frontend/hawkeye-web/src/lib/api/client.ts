@@ -23,6 +23,7 @@ export type RunSummary = {
   run_id: string;
   status: RunStatus;
   test_name: string | null;
+  triggered_by: string | null;
   created_at: string;
   duration_s: number | null;
   total_steps: number | null;
@@ -84,6 +85,7 @@ export type RunRequest = {
   record?: boolean;
   max_steps?: number | null;
   timeout?: number | null;
+  triggered_by?: string | null;
 };
 
 export type TestCaseSummary = {
@@ -93,8 +95,10 @@ export type TestCaseSummary = {
   version: number;
   priority: string;
   tags: string[];
+  created_by: string | null;
   last_run_status: string | null;
   last_run_at: string | null;
+  last_run_by: string | null;
   created_at: string;
   updated_at: string;
 };
