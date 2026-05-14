@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 
 import {
@@ -74,6 +75,7 @@ const DEFAULT_PROJECT = "default";
 
 export function NewRunModal({ open, onClose, initialTestCaseId }: NewRunModalProps) {
   const router = useRouter();
+  const { data: session } = useSession();
   const [testCases, setTestCases] = useState<TestCaseSummary[]>([]);
   const [tcLoading, setTcLoading] = useState(true);
 
@@ -102,6 +104,7 @@ export function NewRunModal({ open, onClose, initialTestCaseId }: NewRunModalPro
       const run = await apiClient.createRun({
         test_case_id: testCaseId,
         model,
+        triggered_by: session?.user?.email ?? null,
       });
       onClose();
       router.push(`/app/runs/live?id=${run.run_id}`);
@@ -165,7 +168,6 @@ export function NewRunModal({ open, onClose, initialTestCaseId }: NewRunModalPro
               </SelectContent>
             </Select>
           </div>
-
 
         </div>
 
