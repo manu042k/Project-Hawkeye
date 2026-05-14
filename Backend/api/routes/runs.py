@@ -1,7 +1,7 @@
 from __future__ import annotations
 import asyncio
 from pathlib import Path
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from api.job_queue import job_queue
 from api.redis_store import get_traces as _get_traces
 from api.schemas import RunListResponse, RunRequest, RunResponse
@@ -37,6 +37,7 @@ def _record_to_response(record: dict) -> RunResponse:
         run_id=record["run_id"],
         status=record["status"],
         test_name=record.get("test_name"),
+        triggered_by=record.get("triggered_by"),
         created_at=record["created_at"],
         duration_s=record.get("duration_s"),
         total_steps=record.get("total_steps"),
@@ -56,9 +57,15 @@ def _record_to_response(record: dict) -> RunResponse:
 
 
 @router.post("", response_model=RunResponse)
-async def submit_run(request: RunRequest) -> RunResponse:
+async def submit_run(request: RunRequest, http_request: Request) -> RunResponse:
     # Plan-limit check: count runs this month vs org plan limit
     _enforce_plan_limit(request)
+
+    # Capture triggered_by from header if not supplied in body
+    if not request.triggered_by:
+        user_email = http_request.headers.get("X-User-Email")
+        if user_email:
+            request = request.model_copy(update={"triggered_by": user_email})
 
     # Phase 5A: resolve test_case_id from in-memory store -> write tmp yaml path
     if request.test_case_id:
@@ -71,6 +78,9 @@ async def submit_run(request: RunRequest) -> RunResponse:
             raise HTTPException(404, f"Test case {request.test_case_id!r} not found")
         import json, tempfile, os
         spec = record["spec"]
+        # Inherit save_record from the test case spec if not explicitly set
+        if not request.record and spec.get("save_record"):
+            request = request.model_copy(update={"record": True})
         # Write spec as a temp YAML-compatible JSON file the loader can parse
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             import yaml as _yaml
