@@ -105,7 +105,7 @@ function StepTraceItem({
   const imgSrc = trace.screenshot_b64 ? `data:image/png;base64,${trace.screenshot_b64}` : null;
 
   return (
-    <div className={cn(
+    <div data-print-step className={cn(
       "rounded-xl border bg-card/40 overflow-hidden",
       isError ? "border-rose-500/30" : "border-border/60",
     )}>
@@ -207,7 +207,16 @@ export default function ArtifactDetailPage({ params }: { params: Promise<{ id: s
   const { data: traces, loading: tracesLoading } = useRunTraces(runId);
 
   function exportPdf() {
+    // Temporarily expand all step-trace items so content isn't clipped in print
+    const details = reportRef.current?.querySelectorAll<HTMLElement>("[data-print-step]");
+    const prevOverflows: string[] = [];
+    details?.forEach((el, i) => {
+      prevOverflows[i] = el.style.overflow;
+      el.style.overflow = "visible";
+    });
     window.print();
+    // Restore after print dialog closes
+    details?.forEach((el, i) => { el.style.overflow = prevOverflows[i]; });
   }
 
   if (runLoading) {
@@ -246,9 +255,19 @@ export default function ArtifactDetailPage({ params }: { params: Promise<{ id: s
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <AppTopbar title="Run Report" subtitle={run.test_name ?? runId} />
+      <div data-print-hide><AppTopbar title="Run Report" subtitle={run.test_name ?? runId} /></div>
 
-      <main ref={reportRef} className="flex-1 min-h-0 space-y-6 overflow-y-auto px-6 py-8">
+      <main ref={reportRef} data-print-main className="flex-1 min-h-0 space-y-6 overflow-y-auto px-6 py-8">
+
+        {/* Print-only header — hidden on screen */}
+        <div className="hidden print:block mb-4 pb-4 border-b border-border/60">
+          <p className="text-xs text-muted-foreground font-mono mb-1">Hawkeye · Run Report</p>
+          <h1 className="text-xl font-bold">{run.test_name ?? runId}</h1>
+          <p className="text-xs text-muted-foreground font-mono mt-1">
+            {run.run_id} · {run.created_at ? new Date(run.created_at).toLocaleString() : "—"}
+            {run.triggered_by && ` · run by ${run.triggered_by}`}
+          </p>
+        </div>
 
         {/* ── Header ─────────────────────────────────────────────────────────── */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -316,7 +335,7 @@ export default function ArtifactDetailPage({ params }: { params: Promise<{ id: s
         {videoArtifact && (() => {
           const isFail = run.status === "failed" || run.status === "errored";
           return (
-            <Card className={cn("border-border/60 bg-card/50", isFail && "border-rose-500/40")}>
+            <Card data-print-hide className={cn("border-border/60 bg-card/50", isFail && "border-rose-500/40")}>
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <Film className="size-4 text-primary" />
@@ -339,7 +358,7 @@ export default function ArtifactDetailPage({ params }: { params: Promise<{ id: s
         })()}
 
         {/* ── Execution Timeline (steps + inline screenshots) ─────────────────── */}
-        <Card className="border-border/60 bg-card/50">
+        <Card data-print-card className="border-border/60 bg-card/50">
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
               <ImageIcon className="size-4 text-primary" />
@@ -366,7 +385,7 @@ export default function ArtifactDetailPage({ params }: { params: Promise<{ id: s
 
         {/* ── Assertions ──────────────────────────────────────────────────────── */}
         {assertions.length > 0 && (
-          <Card className="border-border/60 bg-card/50">
+          <Card data-print-card className="border-border/60 bg-card/50">
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
                 Assertions
@@ -406,7 +425,7 @@ export default function ArtifactDetailPage({ params }: { params: Promise<{ id: s
         )}
 
         {/* ── Run meta ────────────────────────────────────────────────────────── */}
-        <Card className="border-border/60 bg-card/50">
+        <Card data-print-card className="border-border/60 bg-card/50">
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Run Details</CardTitle>
           </CardHeader>
