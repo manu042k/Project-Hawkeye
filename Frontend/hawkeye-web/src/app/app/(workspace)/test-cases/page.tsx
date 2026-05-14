@@ -12,6 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { apiClient, type TestCaseSummary } from "@/lib/api/client";
+import { NewRunModal } from "@/components/app/new-run-modal";
 
 const DEFAULT_PROJECT = "default";
 
@@ -28,6 +29,7 @@ export default function TestCasesPage() {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [runTcId, setRunTcId] = useState<string | null>(null);
 
   async function load(query = "") {
     setLoading(true);
@@ -156,7 +158,7 @@ export default function TestCasesPage() {
                         variant="ghost"
                         size="icon"
                         className="size-7"
-                        onClick={(e) => { e.stopPropagation(); router.push(`/app/runs/new?tc=${tc.id}`); }}
+                        onClick={(e) => { e.stopPropagation(); setRunTcId(tc.id); }}
                         title="Run"
                       >
                         <Play className="size-3.5" />
@@ -187,6 +189,14 @@ export default function TestCasesPage() {
           </div>
         )}
       </main>
+
+      {runTcId && (
+        <NewRunModal
+          open
+          onClose={() => setRunTcId(null)}
+          initialTestCaseId={runTcId}
+        />
+      )}
     </div>
   );
 }
