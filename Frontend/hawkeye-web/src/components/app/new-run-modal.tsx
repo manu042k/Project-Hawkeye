@@ -60,7 +60,7 @@ const MODEL_GROUPS = [
       { value: "nvidia:nvidia/nemotron-4-340b-instruct", label: "Nemotron 4 340B ✦ vision" },
     ],
   },
-] as const;
+];
 
 const DEFAULT_MODEL = MODEL_GROUPS[0].models[0].value;
 
@@ -135,7 +135,11 @@ export function NewRunModal({ open, onClose, initialTestCaseId }: NewRunModalPro
                 disabled={tcLoading}
               >
                 <SelectTrigger id="tc-select" className="w-full">
-                  <SelectValue placeholder={tcLoading ? "Loading…" : "Select a test case"} />
+                  <SelectValue placeholder={tcLoading ? "Loading…" : "Select a test case"}>
+                    {testCaseId
+                      ? (testCases.find((tc) => tc.id === testCaseId)?.name ?? testCaseId)
+                      : undefined}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {(testCases ?? []).map((tc) => (
@@ -152,7 +156,9 @@ export function NewRunModal({ open, onClose, initialTestCaseId }: NewRunModalPro
             <Label htmlFor="model-select">Model</Label>
             <Select value={model} onValueChange={(v) => v && setModel(v)}>
               <SelectTrigger id="model-select" className="w-full">
-                <SelectValue />
+                <SelectValue>
+                  {MODEL_GROUPS.flatMap((g) => g.models).find((m) => m.value === model)?.label ?? model}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {MODEL_GROUPS.map((group) => (
