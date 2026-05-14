@@ -19,33 +19,32 @@ from api.celery_app import celery_app, REDIS_URL
 logger = logging.getLogger(__name__)
 
 
-def _inject_vault_secrets(test_case) -> None:
-    """Resolve target.vault[] secret references and set them as env vars.
-
-    Each VaultEntry has key (env var name) and value (vault secret name).
-    Looks up the plain-text value from the in-memory vault store and sets
-    os.environ[key] so the agent and browser tooling can read credentials.
-    """
+async def _inject_vault_secrets(test_case) -> None:
+    """Resolve target.vault[] secret references and set them as env vars."""
     if not test_case.target.vault:
         return
     try:
-        from api.routes.vault import _store as _vault_store
+        from api.database import AsyncSessionLocal
+        from api.models import VaultSecret
         from api.crypto import decrypt, encryption_enabled
+        from sqlalchemy import select
         import base64
 
         project_id = test_case.project or "default"
-        secrets_by_name = {
-            s["name"]: s
-            for s in _vault_store.get(project_id, {}).values()
-        }
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(VaultSecret).where(VaultSecret.project_id == project_id)
+            )
+            secrets_list = result.scalars().all()
 
+        secrets_by_name = {s.key: s for s in secrets_list}
         for entry in test_case.target.vault:
             secret = secrets_by_name.get(entry.value)
             if secret is None:
                 logger.warning("Vault secret %r not found for key %r", entry.value, entry.key)
                 continue
-            stored = secret.get("value", "")
-            iv_b64 = secret.get("iv", "")
+            stored = secret.encrypted_value or ""
+            iv_b64 = secret.iv or ""
             if encryption_enabled() and iv_b64:
                 try:
                     plain = decrypt(base64.b64decode(stored), base64.b64decode(iv_b64))
@@ -67,6 +66,27 @@ def _utcnow() -> str:
 def run_test_case(self, run_id: str, request_dict: dict) -> dict:
     """Execute one test run. Called by Celery worker (sync entry point)."""
     return asyncio.run(_execute(self.request.id, run_id, request_dict))
+
+
+async def _resolve_tc_path(test_case_id: str) -> str | None:
+    """Look up test case spec from DB and write to a temp YAML file. Returns path or None."""
+    import tempfile
+    import yaml as _yaml
+    try:
+        from api.database import AsyncSessionLocal
+        from api.models import TestCase
+        from sqlalchemy import select
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(select(TestCase).where(TestCase.id == test_case_id))
+            tc = result.scalar_one_or_none()
+        if not tc or not tc.spec:
+            return None
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            _yaml.dump(tc.spec, f, allow_unicode=True)
+            return f.name
+    except Exception as exc:
+        logger.warning("Failed to resolve test case %r from DB: %s", test_case_id, exc)
+        return None
 
 
 async def _execute(celery_task_id: str, run_id: str, request_dict: dict) -> dict:
@@ -105,8 +125,17 @@ async def _execute(celery_task_id: str, run_id: str, request_dict: dict) -> dict
         await _update_record({"status": "running", "started_at": _utcnow()})
         await _publish("run_started", {"status": "running"})
 
-        test_case = load_test_case(request_dict["test_case_path"])
-        _inject_vault_secrets(test_case)
+        # Resolve test_case_id → test_case_path when dispatched from suite/API
+        tc_path = request_dict.get("test_case_path") or ""
+        if not tc_path and request_dict.get("test_case_id"):
+            tc_path = await _resolve_tc_path(request_dict["test_case_id"])
+            if not tc_path:
+                raise FileNotFoundError(f"Test case {request_dict['test_case_id']!r} not found in DB")
+        elif not tc_path:
+            raise ValueError("No test_case_path or test_case_id provided")
+
+        test_case = load_test_case(tc_path)
+        await _inject_vault_secrets(test_case)
         llm = get_llm(request_dict["model"])
 
         manager = RunManager(
