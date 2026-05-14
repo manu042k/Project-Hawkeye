@@ -76,17 +76,18 @@ async def submit_run(request: RunRequest, http_request: Request) -> RunResponse:
         if user_email:
             request = request.model_copy(update={"triggered_by": user_email})
 
-    # Phase 5A: resolve test_case_id from in-memory store -> write tmp yaml path
+    # Phase 5A: resolve test_case_id from DB -> write tmp yaml path
     if request.test_case_id:
-        from api.routes.test_cases_crud import _store
-        record = next(
-            (tc for proj in _store.values() for tc in proj.values() if tc["id"] == request.test_case_id),
-            None,
-        )
-        if not record:
+        from api.database import AsyncSessionLocal
+        from api.models import TestCase
+        from sqlalchemy import select
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(select(TestCase).where(TestCase.id == request.test_case_id))
+            tc = result.scalar_one_or_none()
+        if not tc:
             raise HTTPException(404, f"Test case {request.test_case_id!r} not found")
-        import json, tempfile, os
-        spec = record["spec"]
+        import tempfile
+        spec = tc.spec or {}
         # Inherit save_record from the test case spec if not explicitly set
         if not request.record and spec.get("save_record"):
             request = request.model_copy(update={"record": True})
