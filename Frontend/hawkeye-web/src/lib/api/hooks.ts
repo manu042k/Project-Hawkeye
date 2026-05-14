@@ -182,7 +182,7 @@ export function useRunTraceStream(runId: string | null): TraceStreamState {
       if (event.event_type === "run_started") setLiveStatus("running");
       if (event.event_type === "complete") {
         const s = (event.data as { status?: RunStatus }).status;
-        setLiveStatus(s ?? "passed");
+        if (s) setLiveStatus(s);
       }
       setEvents((prev) => [...prev, event]);
     };
