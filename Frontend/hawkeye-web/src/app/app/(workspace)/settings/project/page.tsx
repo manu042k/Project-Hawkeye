@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  CheckCircle2, Copy, FlaskConical, Loader2, MoreVertical,
-  Plus, Save, Trash2, Users, Zap,
+  Copy, ExternalLink, FileText, Loader2, MoreVertical,
+  Plus, Save, Trash2, Upload, Users,
 } from "lucide-react";
 
 import { AppTopbar } from "@/components/app/app-topbar";
@@ -31,15 +31,8 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { apiClient, type ProjectSummary, type ProjectMember } from "@/lib/api/client";
+import { cn } from "@/lib/utils";
 import { useProjectStore } from "@/lib/project/store";
-
-type ProjectStats = {
-  pass_rate: number;
-  total_runs: number;
-  active_runs: number;
-  test_case_count: number;
-  cost_this_month_usd: number;
-};
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, {
@@ -86,7 +79,6 @@ export default function ProjectSettingsPage() {
 
   const [tab, setTab] = useState("general");
   const [project, setProject] = useState<ProjectSummary | null>(null);
-  const [stats, setStats] = useState<ProjectStats | null>(null);
   const [members, setMembers] = useState<ProjectMember[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -103,13 +95,11 @@ export default function ProjectSettingsPage() {
   const load = useCallback(async () => {
     if (!projectId) return;
     try {
-      const [proj, s, m] = await Promise.all([
+      const [proj, m] = await Promise.all([
         apiClient.getProject(projectId),
-        apiClient.getProjectStats(projectId),
         apiClient.getProjectMembers(projectId),
       ]);
       setProject(proj);
-      setStats(s);
       setMembers(m.members);
       setEditName(proj.name);
       setEditDesc(proj.description ?? "");
@@ -241,24 +231,6 @@ export default function ProjectSettingsPage() {
           {/* ── General ──────────────────────────────────────────── */}
           {tab === "general" && (
             <>
-              {/* Stats snapshot */}
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                {[
-                  { icon: <FlaskConical className="size-4" />, label: "Test cases", value: stats?.test_case_count ?? 0, color: "text-primary" },
-                  { icon: <Zap className="size-4" />, label: "Total runs", value: stats?.total_runs ?? 0, color: "text-amber-400" },
-                  { icon: <CheckCircle2 className="size-4" />, label: "Pass rate", value: stats ? `${Math.round(stats.pass_rate * 100)}%` : "—", color: "text-emerald-400" },
-                  { icon: <Users className="size-4" />, label: "Members", value: members.length, color: "text-violet-400" },
-                ].map(({ icon, label, value, color }) => (
-                  <Card key={label} className="border-border/60 bg-card/50">
-                    <CardContent className="p-4">
-                      <div className={`mb-1 ${color}`}>{icon}</div>
-                      <p className="text-lg font-semibold tabular-nums">{value}</p>
-                      <p className="text-xs text-muted-foreground">{label}</p>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-
               {/* Identity */}
               <Card className="border-border/60 bg-card/50">
                 <CardHeader>
@@ -312,6 +284,53 @@ export default function ProjectSettingsPage() {
                       Save changes
                     </Button>
                   </form>
+                </CardContent>
+              </Card>
+
+              {/* Docs */}
+              <Card className="border-border/60 bg-card/50">
+                <CardHeader>
+                  <CardTitle className="text-sm">Documentation</CardTitle>
+                  <CardDescription className="text-xs">
+                    Attach runbooks, architecture notes, or testing guides to this project.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {/* Mock doc entries */}
+                  {[
+                    { title: "Testing strategy", type: "Runbook", url: "#" },
+                    { title: "Environment setup guide", type: "Guide", url: "#" },
+                  ].map((doc) => (
+                    <div
+                      key={doc.title}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <FileText className="size-4 shrink-0 text-muted-foreground" />
+                        <div>
+                          <p className="text-sm font-medium leading-tight">{doc.title}</p>
+                          <p className="text-xs text-muted-foreground">{doc.type}</p>
+                        </div>
+                      </div>
+                      <Button variant="ghost" size="icon" className="size-7 shrink-0 opacity-50 cursor-not-allowed" disabled>
+                        <ExternalLink className="size-3.5" />
+                      </Button>
+                    </div>
+                  ))}
+
+                  {/* Upload placeholder */}
+                  <button
+                    type="button"
+                    disabled
+                    className={cn(
+                      "w-full rounded-lg border border-dashed border-border/60 bg-muted/10 px-4 py-5",
+                      "flex flex-col items-center gap-1.5 text-center opacity-50 cursor-not-allowed",
+                    )}
+                  >
+                    <Upload className="size-5 text-muted-foreground" />
+                    <p className="text-xs font-medium">Attach a document</p>
+                    <p className="text-[11px] text-muted-foreground">PDF, Markdown, or link — coming soon</p>
+                  </button>
                 </CardContent>
               </Card>
 
