@@ -143,6 +143,24 @@ async def update_project(project_id: str, body: ProjectCreate) -> dict:
 
 @router.delete("/{project_id}")
 async def archive_project(project_id: str) -> dict:
+    from api.job_queue import job_queue
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(Project).where(Project.id == project_id))
+        project = result.scalar_one_or_none()
+        if not project:
+            raise HTTPException(404, f"Project {project_id!r} not found")
+        tc_result = await session.execute(
+            select(TestCase.id).where(TestCase.project_id == project_id)
+        )
+        tc_ids = {row[0] for row in tc_result.all()}
+
+    if tc_ids:
+        all_runs = await job_queue.list_runs()
+        active = [r for r in all_runs if r.get("test_case_id") in tc_ids and r.get("status") in ("running", "queued")]
+        if active:
+            raise HTTPException(409, f"Project has {len(active)} active run(s). Cancel them before archiving.")
+
     async with AsyncSessionLocal() as session:
         result = await session.execute(select(Project).where(Project.id == project_id))
         project = result.scalar_one_or_none()
@@ -195,7 +213,10 @@ async def list_project_runs(project_id: str) -> dict:
 
     async with AsyncSessionLocal() as session:
         tc_result = await session.execute(
-            select(TestCase.id).where(TestCase.project_id == project_id)
+            select(TestCase.id).where(
+                TestCase.project_id == project_id,
+                TestCase.status != "archived",
+            )
         )
         tc_ids = {row[0] for row in tc_result.all()}
 
@@ -262,6 +283,15 @@ async def update_project_member(project_id: str, member_id: str, body: MemberUpd
         member = result.scalar_one_or_none()
         if not member:
             raise HTTPException(404, "Member not found")
+        if member.role == "admin" and body.role != "admin":
+            admin_count_result = await session.execute(
+                select(ProjectMember).where(
+                    ProjectMember.project_id == project_id,
+                    ProjectMember.role == "admin",
+                )
+            )
+            if len(admin_count_result.scalars().all()) <= 1:
+                raise HTTPException(400, "Cannot remove the last admin from a project")
         member.role = body.role
         await session.commit()
         await session.refresh(member)
@@ -280,6 +310,15 @@ async def remove_project_member(project_id: str, member_id: str) -> dict:
         member = result.scalar_one_or_none()
         if not member:
             raise HTTPException(404, "Member not found")
+        if member.role == "admin":
+            admin_count_result = await session.execute(
+                select(ProjectMember).where(
+                    ProjectMember.project_id == project_id,
+                    ProjectMember.role == "admin",
+                )
+            )
+            if len(admin_count_result.scalars().all()) <= 1:
+                raise HTTPException(400, "Cannot remove the last admin from a project")
         await session.delete(member)
         await session.commit()
         return {"removed": True}

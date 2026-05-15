@@ -142,8 +142,13 @@ export default function ProjectSettingsPage() {
       setCurrentProject(null);
       toast.success("Project archived");
       router.push("/app");
-    } catch {
-      toast.error("Failed to archive project");
+    } catch (err) {
+      const msg = String(err);
+      if (msg.includes("409") || msg.toLowerCase().includes("active run")) {
+        toast.error("Cancel all active runs before archiving this project.");
+      } else {
+        toast.error("Failed to archive project");
+      }
     }
   }
 
@@ -175,8 +180,9 @@ export default function ProjectSettingsPage() {
     try {
       const updated = await apiClient.updateProjectMember(projectId, memberId, { role });
       setMembers((prev) => prev.map((m) => (m.id === memberId ? updated : m)));
-    } catch {
-      toast.error("Failed to update role");
+    } catch (err) {
+      const msg = String(err);
+      toast.error(msg.includes("last admin") ? "Cannot remove the last admin from a project." : "Failed to update role");
     }
   }
 
@@ -186,8 +192,9 @@ export default function ProjectSettingsPage() {
       await apiClient.removeProjectMember(projectId, memberId);
       setMembers((prev) => prev.filter((m) => m.id !== memberId));
       toast.success("Member removed");
-    } catch {
-      toast.error("Failed to remove member");
+    } catch (err) {
+      const msg = String(err);
+      toast.error(msg.includes("last admin") ? "Cannot remove the last admin from a project." : "Failed to remove member");
     }
   }
 
