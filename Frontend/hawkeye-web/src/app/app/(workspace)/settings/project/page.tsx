@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Copy, ExternalLink, FileText, Loader2, MoreVertical,
+  Bell, Copy, ExternalLink, FileText, Loader2, MoreVertical,
   Plus, Save, Trash2, Upload, Users,
 } from "lucide-react";
 
@@ -24,6 +24,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -33,6 +34,7 @@ import { toast } from "sonner";
 import { apiClient, type ProjectSummary, type ProjectMember } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 import { useProjectStore } from "@/lib/project/store";
+import { useNotificationStore, type AlertPrefs } from "@/lib/notifications/store";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, {
@@ -85,6 +87,14 @@ export default function ProjectSettingsPage() {
   const [editName, setEditName] = useState("");
   const [editDesc, setEditDesc] = useState("");
   const [saving, setSaving] = useState(false);
+
+  const { getAlertPrefs, setAlertPrefs } = useNotificationStore();
+  const alertPrefs: AlertPrefs = projectId ? getAlertPrefs(projectId) : { onFailure: true, onSuccess: false, passRateThreshold: null };
+
+  function updatePref<K extends keyof AlertPrefs>(key: K, value: AlertPrefs[K]) {
+    if (!projectId) return;
+    setAlertPrefs(projectId, { ...alertPrefs, [key]: value });
+  }
 
   const [addOpen, setAddOpen] = useState(false);
   const [memberEmail, setMemberEmail] = useState("");
@@ -227,6 +237,10 @@ export default function ProjectSettingsPage() {
                 Members
                 <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-[10px]">{members.length}</Badge>
               </TabsTrigger>
+              <TabsTrigger value="alerts" className="gap-1.5 px-4 text-xs sm:text-sm">
+                <Bell className="size-3.5" />
+                Alerts
+              </TabsTrigger>
             </TabsList>
           </Tabs>
         </div>
@@ -360,6 +374,96 @@ export default function ProjectSettingsPage() {
                       <Trash2 className="mr-1.5 size-3.5" /> Archive
                     </Button>
                   </div>
+                </CardContent>
+              </Card>
+            </>
+          )}
+
+          {/* ── Alerts ───────────────────────────────────────────── */}
+          {tab === "alerts" && (
+            <>
+              <div>
+                <h2 className="text-sm font-semibold">Alert preferences</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Control which in-app notifications you receive for this project.
+                </p>
+              </div>
+
+              <Card className="border-border/60 bg-card/50">
+                <CardHeader>
+                  <CardTitle className="text-sm">Run notifications</CardTitle>
+                  <CardDescription className="text-xs">
+                    Get notified in the bell menu when runs complete.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-medium">Notify on failure</p>
+                      <p className="text-xs text-muted-foreground">
+                        Fires when a run ends with status failed, errored, timed out, or blocked.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={alertPrefs.onFailure}
+                      onCheckedChange={(v) => updatePref("onFailure", v)}
+                    />
+                  </div>
+                  <Separator className="bg-border/40" />
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-medium">Notify on success</p>
+                      <p className="text-xs text-muted-foreground">
+                        Fires when a run ends with status passed.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={alertPrefs.onSuccess}
+                      onCheckedChange={(v) => updatePref("onSuccess", v)}
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="border-border/60 bg-card/50">
+                <CardHeader>
+                  <CardTitle className="text-sm">Pass-rate threshold</CardTitle>
+                  <CardDescription className="text-xs">
+                    Get a warning notification when the project pass rate drops below a threshold.
+                    Leave blank to disable.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <Input
+                      type="number"
+                      min={0}
+                      max={100}
+                      placeholder="e.g. 80"
+                      className="w-28"
+                      value={alertPrefs.passRateThreshold ?? ""}
+                      onChange={(e) => {
+                        const v = e.target.value === "" ? null : Math.min(100, Math.max(0, Number(e.target.value)));
+                        updatePref("passRateThreshold", v);
+                      }}
+                    />
+                    <span className="text-sm text-muted-foreground">%</span>
+                  </div>
+                  {alertPrefs.passRateThreshold !== null && (
+                    <p className="text-xs text-amber-400">
+                      You will be notified when the pass rate drops below {alertPrefs.passRateThreshold}%.
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className="border-border/60 bg-muted/10">
+                <CardContent className="flex items-start gap-3 p-4">
+                  <Bell className="mt-0.5 size-4 shrink-0 text-muted-foreground/60" />
+                  <p className="text-xs text-muted-foreground">
+                    Notifications are stored locally in your browser. Email and Slack alerts are
+                    configured in <strong>Settings → Integrations</strong>.
+                  </p>
                 </CardContent>
               </Card>
             </>

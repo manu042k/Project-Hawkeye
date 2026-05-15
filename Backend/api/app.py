@@ -7,6 +7,7 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from api.auth_middleware import AuthMiddleware
 from api.job_queue import job_queue
 from api.routes import (runs, test_cases, ws, artifacts, projects, test_cases_crud,
                         suites, vault, schedules, me, usage, billing, orgs,
@@ -95,6 +96,9 @@ _origins = [
     if o.strip()
 ]
 
+# Auth is inner (added first); CORS is outer (added second, runs first so
+# OPTIONS preflights and CORS headers are handled before auth runs).
+app.add_middleware(AuthMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_origins,
