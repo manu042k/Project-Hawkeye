@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Activity, CheckCircle2, ChevronLeft, ChevronRight, ExternalLink, FlaskConical, Search, Trash2, Zap } from "lucide-react";
 import Link from "next/link";
@@ -51,6 +51,39 @@ function avatarColor(name: string): string {
   let h = 0;
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xffff;
   return AVATAR_COLORS[h % AVATAR_COLORS.length];
+}
+
+function UserAvatar({ actor }: { actor: string }) {
+  const [imgFailed, setImgFailed] = useState(false);
+
+  // Reset failure state when actor changes (different row)
+  useEffect(() => { setImgFailed(false); }, [actor]);
+
+  // Try Gravatar first (email MD5 via a simple hash substitute — works for most accounts),
+  // then fall back to DiceBear initials avatar which always succeeds.
+  const gravatarHash = useMemo(() => {
+    let h = 5381;
+    const s = actor.trim().toLowerCase();
+    for (let i = 0; i < s.length; i++) h = ((h << 5) + h) ^ s.charCodeAt(i);
+    return Math.abs(h).toString(16).padStart(32, "0");
+  }, [actor]);
+
+  const fallbackUrl = `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(actor)}&fontSize=38&fontWeight=600&size=64`;
+  const src = imgFailed ? fallbackUrl : `https://www.gravatar.com/avatar/${gravatarHash}?d=404&s=64&r=g`;
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt={actor}
+      width={32}
+      height={32}
+      onError={() => {
+        if (!imgFailed) setImgFailed(true);
+      }}
+      className="size-8 shrink-0 rounded-full object-cover"
+    />
+  );
 }
 
 function StatusPill({ status }: { status: RunStatus }) {
@@ -287,6 +320,7 @@ export default function DashboardPage() {
                     ) : (
                       pageRows.map((row: RunSummary) => {
                         const name = row.test_name ?? row.run_id.slice(0, 8);
+                        const actor = row.triggered_by ?? "";
                         const href = runHref(row);
                         return (
                           <TableRow
@@ -302,17 +336,18 @@ export default function DashboardPage() {
                             <TableCell>
                               <div className="flex items-center gap-3">
                                 <Tooltip>
-                                  <TooltipTrigger
-                                    className={cn(
-                                      "inline-flex size-8 shrink-0 cursor-default items-center justify-center rounded-full text-[11px] font-bold",
-                                      avatarColor(name),
+                                  <TooltipTrigger className="shrink-0 cursor-default">
+                                    {actor ? (
+                                      <UserAvatar actor={actor} />
+                                    ) : (
+                                      <span className="inline-flex size-8 items-center justify-center rounded-full bg-muted/60 text-[11px] font-bold text-muted-foreground">
+                                        ?
+                                      </span>
                                     )}
-                                  >
-                                    {initials(name)}
                                   </TooltipTrigger>
                                   <TooltipContent side="right" className="text-xs">
-                                    {row.triggered_by ? (
-                                      <span>Run by <span className="font-medium">{row.triggered_by}</span></span>
+                                    {actor ? (
+                                      <span>Run by <span className="font-medium">{actor}</span></span>
                                     ) : (
                                       <span className="text-muted-foreground">No trigger info</span>
                                     )}

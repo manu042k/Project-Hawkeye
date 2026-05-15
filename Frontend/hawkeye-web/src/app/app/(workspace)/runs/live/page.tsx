@@ -443,7 +443,10 @@ function RunListItem({
       )}
     >
       <span className={cn("size-2 shrink-0 rounded-full", statusDotClass(run.status), active && "animate-pulse")} />
-      <span className="flex-1 truncate font-medium">{label}</span>
+      <span className="flex-1 min-w-0">
+        <span className="block truncate font-medium">{label}</span>
+        <span className="block font-mono text-[10px] opacity-50">{run.run_id.slice(0, 8)}</span>
+      </span>
       {time && <span className="shrink-0 font-mono text-xs opacity-70">{time}</span>}
     </button>
   );

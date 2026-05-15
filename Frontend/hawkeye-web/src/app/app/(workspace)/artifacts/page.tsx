@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Archive, CheckCircle2, Clock, Search, XCircle } from "lucide-react";
+import { Archive, CheckCircle2, ChevronLeft, ChevronRight, Clock, Search, XCircle } from "lucide-react";
 
 import { AppTopbar } from "@/components/app/app-topbar";
 import { Input } from "@/components/ui/input";
@@ -47,6 +47,8 @@ function formatDuration(s: number | null) {
   return `${Math.floor(s / 60)}m ${(s % 60).toFixed(0)}s`;
 }
 
+const PAGE_SIZE = 15;
+
 type StatusFilter = "all" | "passed" | "failed";
 
 export default function ArtifactsPage() {
@@ -54,6 +56,7 @@ export default function ArtifactsPage() {
   const { data: runs, loading } = useRuns();
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<StatusFilter>("all");
+  const [page, setPage] = useState(1);
 
   const completed = useMemo(() => {
     if (!runs) return [];
@@ -66,9 +69,19 @@ export default function ArtifactsPage() {
     let list = completed;
     if (filter === "passed") list = list.filter((r) => r.status === "passed");
     if (filter === "failed") list = list.filter((r) => r.status === "failed" || r.status === "errored");
-    if (q.trim()) list = list.filter((r) => (r.test_name ?? "").toLowerCase().includes(q.toLowerCase()));
+    if (q.trim()) list = list.filter((r) =>
+      (r.test_name ?? "").toLowerCase().includes(q.toLowerCase()) ||
+      r.run_id.toLowerCase().includes(q.toLowerCase())
+    );
     return list;
   }, [completed, filter, q]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pageRows = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  function handleQ(val: string) { setQ(val); setPage(1); }
+  function handleFilter(val: StatusFilter) { setFilter(val); setPage(1); }
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
@@ -82,13 +95,13 @@ export default function ArtifactsPage() {
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-            <Input className="pl-9" placeholder="Search runs…" value={q} onChange={(e) => setQ(e.target.value)} />
+            <Input className="pl-9" placeholder="Search runs…" value={q} onChange={(e) => handleQ(e.target.value)} />
           </div>
           <div className="flex items-center gap-1 rounded-lg border border-border/60 bg-muted/20 p-0.5">
             {(["all", "passed", "failed"] as const).map((f) => (
               <button
                 key={f}
-                onClick={() => setFilter(f)}
+                onClick={() => handleFilter(f)}
                 className={cn(
                   "rounded px-3 py-1 text-xs font-medium capitalize transition-colors",
                   filter === f ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
@@ -130,7 +143,7 @@ export default function ArtifactsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/40">
-                {filtered.map((run) => (
+                {pageRows.map((run) => (
                   <tr
                     key={run.run_id}
                     onClick={() => router.push(`/app/artifacts/${run.run_id}`)}
@@ -164,6 +177,56 @@ export default function ArtifactsPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* Pagination */}
+        {!loading && filtered.length > PAGE_SIZE && (
+          <div className="flex items-center justify-between border-t border-border/60 pt-3">
+            <p className="text-xs text-muted-foreground">
+              {(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, filtered.length)} of {filtered.length} runs
+            </p>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={safePage === 1}
+                className="inline-flex size-7 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronLeft className="size-4" />
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1)
+                .filter((p) => p === 1 || p === totalPages || Math.abs(p - safePage) <= 1)
+                .reduce<(number | "...")[]>((acc, p, idx, arr) => {
+                  if (idx > 0 && (p as number) - (arr[idx - 1] as number) > 1) acc.push("...");
+                  acc.push(p);
+                  return acc;
+                }, [])
+                .map((p, i) =>
+                  p === "..." ? (
+                    <span key={`e-${i}`} className="px-1 text-xs text-muted-foreground">…</span>
+                  ) : (
+                    <button
+                      key={p}
+                      onClick={() => setPage(p as number)}
+                      className={cn(
+                        "inline-flex size-7 items-center justify-center rounded text-xs transition-colors",
+                        safePage === p
+                          ? "bg-primary text-primary-foreground font-semibold"
+                          : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+                      )}
+                    >
+                      {p}
+                    </button>
+                  )
+                )}
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={safePage === totalPages}
+                className="inline-flex size-7 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronRight className="size-4" />
+              </button>
+            </div>
           </div>
         )}
       </main>

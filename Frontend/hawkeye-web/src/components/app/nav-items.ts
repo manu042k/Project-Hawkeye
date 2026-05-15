@@ -3,13 +3,11 @@ import {
   CreditCard,
   FlaskConical,
   FolderKanban,
-  Globe,
   Home,
   KeyRound,
   LayoutDashboard,
   PlayCircle,
   Settings,
-  Sparkles,
   User,
 } from "lucide-react";
 
@@ -36,12 +34,10 @@ export const primaryNav: AppNavItem[] = [
   { href: "/app/runs/live", label: "Live", icon: PlayCircle },
   { href: "/app/artifacts", label: "Artifacts", icon: Archive },
   { href: "/app/suites", label: "Test suites", icon: FolderKanban },
-  { href: "/app/visual-baselines", label: "Visual baselines", icon: Sparkles },
   { href: "/app/vault", label: "The Vault", icon: KeyRound },
 ];
 
 /** Account / billing live in `globalFooterNav`; workspace middle nav is execution + integrations only. */
 export const workspaceSettingsNav: AppNavItem[] = [
   { href: "/app/settings/integrations", label: "Integrations", icon: Settings },
-  { href: "/app/settings/environments", label: "Environments", icon: Globe },
 ];
