@@ -25,6 +25,7 @@ import {
 import { BrandLogo } from "@/components/brand/brand-logo";
 import { Separator } from "@/components/ui/separator";
 import { useProjectStore } from "@/lib/project/store";
+import { useNotificationStore } from "@/lib/notifications/store";
 import { cn } from "@/lib/utils";
 
 import { globalFooterNav, primaryNav, workspaceSettingsNav, type AppNavItem, type GlobalFooterNavItem } from "./nav-items";
@@ -151,9 +152,11 @@ export function UnifiedSidebar({ className }: { className?: string }) {
   }, [userEmail]);
 
   const { currentProject, getProjectForUser, setCurrentProject } = useProjectStore();
+  const setActiveEmail = useNotificationStore((s) => s.setActiveEmail);
 
-  // Restore the last project for the logged-in user when the session becomes available
+  // Restore the last project and activate per-user notifications when session loads
   useEffect(() => {
+    setActiveEmail(userEmail);
     if (userEmail && !currentProject) {
       const saved = getProjectForUser(userEmail);
       if (saved) setCurrentProject(saved);

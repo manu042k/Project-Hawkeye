@@ -20,7 +20,7 @@ import {
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { UnifiedSidebar } from "@/components/app/unified-sidebar";
 import {
-  useNotificationStore, unreadCount, type Notification, type NotifLevel,
+  useNotificationStore, useNotifications, unreadCount, type Notification, type NotifLevel,
 } from "@/lib/notifications/store";
 import { useNotificationFeeder } from "@/lib/notifications/feeder";
 
@@ -90,7 +90,8 @@ function NotifItem({ n, onRead, onRemove }: {
 }
 
 function NotificationBell() {
-  const { notifications, markRead, markAllRead, remove } = useNotificationStore();
+  const { markRead, markAllRead, remove } = useNotificationStore();
+  const notifications = useNotifications();
   const count = unreadCount(notifications);
 
   useNotificationFeeder();
