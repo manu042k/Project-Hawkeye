@@ -4,22 +4,32 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from api.redis_store import list_runs
-from api.routes.vault import _store as vault_store
 from api.artifact_store import get_store
 
 router = APIRouter(tags=["billing"])
 
 
+async def _count_vault_secrets() -> int:
+    from api.database import AsyncSessionLocal
+    from api.models import VaultSecret
+    from sqlalchemy import func, select
+    try:
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(select(func.count()).select_from(VaultSecret))
+            return result.scalar_one() or 0
+    except Exception:
+        return 0
+
+
 @router.get("/usage")
-def get_usage() -> dict:
-    runs = list_runs()
+async def get_usage() -> dict:
+    runs = await list_runs()
     total_runs = len(runs)
     passed = sum(1 for r in runs if r.get("status") == "passed")
     failed = sum(1 for r in runs if r.get("status") == "failed")
     total_cost = sum(r.get("estimated_cost_usd") or 0.0 for r in runs)
 
-    # Vault reads: proxy = total secrets across all projects
-    vault_secret_count = sum(len(v) for v in vault_store.values())
+    vault_secret_count = await _count_vault_secrets()
 
     # Artifact storage: count files in artifact store
     store = get_store()

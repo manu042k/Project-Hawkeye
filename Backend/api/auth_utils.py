@@ -73,3 +73,30 @@ async def get_current_user(request: Request) -> dict:
             return {"email": email, "name": ""}
 
     raise HTTPException(401, "Authentication required")
+
+
+async def require_project_member(project_id: str, email: str) -> None:
+    """Raise 403 if the user is not a member of the project.
+
+    Skips enforcement for 'default' project and for projects with no members
+    yet (bootstrapping — prevents lockout on fresh installs).
+    """
+    if project_id == "default":
+        return
+    from api.database import AsyncSessionLocal
+    from api.models import ProjectMember
+    from sqlalchemy import select
+    async with AsyncSessionLocal() as session:
+        any_member = await session.execute(
+            select(ProjectMember.id).where(ProjectMember.project_id == project_id).limit(1)
+        )
+        if not any_member.scalar_one_or_none():
+            return  # no members yet — allow access (bootstrapping)
+        member = await session.execute(
+            select(ProjectMember).where(
+                ProjectMember.project_id == project_id,
+                ProjectMember.user_email == email,
+            )
+        )
+        if not member.scalar_one_or_none():
+            raise HTTPException(403, "You are not a member of this project")

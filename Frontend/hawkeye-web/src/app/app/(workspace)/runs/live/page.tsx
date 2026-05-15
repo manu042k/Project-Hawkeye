@@ -3,7 +3,7 @@
 import { Suspense, useMemo, useRef, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
-import { CheckCircle2, Monitor, Plus, Terminal as TerminalIcon, XCircle } from "lucide-react";
+import { CheckCircle2, Cpu, Globe, Monitor, Plus, Terminal as TerminalIcon, User, Video, XCircle } from "lucide-react";
 
 import { AppTopbar } from "@/components/app/app-topbar";
 import { Button } from "@/components/ui/button";
@@ -14,31 +14,47 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { useRunTraceStream, useRun, useDeleteRun, useRuns } from "@/lib/api/hooks";
+import { useRunTraceStream, useRun, useDeleteRun, useProjectRuns } from "@/lib/api/hooks";
 import { NewRunModal } from "@/components/app/new-run-modal";
 import { type TraceEvent, type RunStatus, type RunSummary } from "@/lib/api/client";
+import { useProjectStore } from "@/lib/project/store";
 
 const TERMINAL = new Set<RunStatus>(["passed", "failed", "errored", "timed_out", "blocked", "cancelled"]);
 
-type LogLine = { ts: string; level: "system" | "reasoning" | "action" | "error"; message: string };
+type LogLevel = "step" | "observe" | "reasoning" | "action" | "action_err" | "error" | "complete" | "system";
+type LogLine = { ts: string; level: LogLevel; tag: string; message: string };
 
 function eventToLogLine(event: TraceEvent): LogLine | null {
   const ts = new Date(event.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   const d = event.data;
   switch (event.event_type) {
-    case "run_started": return { ts, level: "system", message: "Run started" };
-    case "step_start": return { ts, level: "system", message: `Step ${(d as { step_number?: number }).step_number ?? "?"} started` };
-    case "observe": return { ts, level: "system", message: `Observe — ${(d as { url?: string }).url ?? ""}` };
-    case "reason": return {
-      ts, level: "reasoning",
-      message: `Reason — ${(d as { input_tokens?: number }).input_tokens ?? 0} in / ${(d as { output_tokens?: number }).output_tokens ?? 0} out tokens, $${((d as { cost_usd?: number }).cost_usd ?? 0).toFixed(4)}`,
-    };
-    case "act": return {
-      ts, level: "action",
-      message: `Act — ${(d as { tool_name?: string }).tool_name ?? "?"} → ${(d as { success?: boolean }).success ? "OK" : "ERR"}`,
-    };
-    case "error": return { ts, level: "error", message: `Error — ${(d as { message?: string }).message ?? ""}` };
-    case "complete": return { ts, level: "system", message: `Complete — ${(d as { status?: string }).status ?? ""}` };
+    case "run_started":
+      return { ts, level: "system", tag: "RUN", message: "Started" };
+    case "step_start":
+      return { ts, level: "step", tag: `STEP ${(d as { step_number?: number }).step_number ?? "?"}`, message: "" };
+    case "observe":
+      return { ts, level: "observe", tag: "OBS", message: (d as { url?: string }).url ?? "" };
+    case "reason": {
+      const rd = d as { input_tokens?: number; output_tokens?: number; cost_usd?: number };
+      return {
+        ts, level: "reasoning", tag: "LLM",
+        message: `${rd.input_tokens ?? 0} in / ${rd.output_tokens ?? 0} out  ·  $${(rd.cost_usd ?? 0).toFixed(4)}`,
+      };
+    }
+    case "act": {
+      const ad = d as { tool_name?: string; success?: boolean };
+      const ok = ad.success !== false;
+      return {
+        ts, level: ok ? "action" : "action_err", tag: "ACT",
+        message: `${ad.tool_name ?? "?"} → ${ok ? "OK" : "ERR"}`,
+      };
+    }
+    case "error":
+      return { ts, level: "error", tag: "ERR", message: (d as { message?: string }).message ?? "" };
+    case "complete": {
+      const status = (d as { status?: string }).status ?? "";
+      return { ts, level: "complete", tag: "DONE", message: status };
+    }
     default: return null;
   }
 }
@@ -100,8 +116,14 @@ function formatDuration(s: number | null): string {
 
 function RunDetailPanel({ runId }: { runId: string }) {
   const { events, liveStatus } = useRunTraceStream(runId);
-  const { data: run } = useRun(runId);
+  const { data: run, refetch: refetchRun } = useRun(runId);
   const { deleteRun } = useDeleteRun();
+
+  // When the WS signals completion, immediately re-fetch the run so we get
+  // the authoritative final status (passed/failed/errored) from the server.
+  useEffect(() => {
+    if (liveStatus && TERMINAL.has(liveStatus)) refetchRun();
+  }, [liveStatus, refetchRun]);
 
   const logLines = useMemo(
     () => events.flatMap((e) => { const l = eventToLogLine(e); return l ? [l] : []; }),
@@ -118,7 +140,10 @@ function RunDetailPanel({ runId }: { runId: string }) {
     scrollRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
   }, [logLines.length]);
 
-  const status = liveStatus ?? (run?.status ?? null);
+  // Once the HTTP-polled run reaches a terminal state, trust it over the WS signal.
+  const status = (run?.status && TERMINAL.has(run.status))
+    ? run.status
+    : (liveStatus ?? run?.status ?? null);
   const isDone = status ? TERMINAL.has(status) : false;
   const rawNovncUrl = run?.novnc_url ?? null;
   const novncUrl = rawNovncUrl
@@ -126,131 +151,49 @@ function RunDetailPanel({ runId }: { runId: string }) {
     : null;
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto px-6 py-8">
-      <div className="mx-auto max-w-[1600px] space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm text-muted-foreground">
-            <span className="text-foreground/90">Test runs</span>
-            <span className="mx-2 text-border">/</span>
-            <span className="font-mono">{runId}</span>
-          </p>
-          <StatusBadge status={status} />
-        </div>
+    <div className="flex flex-1 min-h-0 flex-col overflow-hidden">
 
-        <Card className="border-border/60 bg-card/60">
-          <CardContent className="py-5">
-            <div className="flex flex-wrap items-center gap-6 text-sm">
-              <span className="text-muted-foreground">
-                <span className="font-semibold text-foreground font-mono">{stepCount}</span>
-                {run?.total_steps ? ` / ${run.total_steps} steps` : " steps"}
-              </span>
-              {run?.estimated_cost_usd != null && (
-                <span className="text-muted-foreground">
-                  {"Cost "}
-                  <span className="font-semibold text-foreground font-mono">${run.estimated_cost_usd.toFixed(4)}</span>
-                </span>
-              )}
-              {run?.total_input_tokens != null && (
-                <span className="text-muted-foreground">
-                  {"Tokens "}
-                  <span className="font-semibold text-foreground font-mono">
-                    {((run.total_input_tokens ?? 0) + (run.total_output_tokens ?? 0)).toLocaleString()}
-                  </span>
-                </span>
-              )}
-              {isDone && (
-                <Link
-                  href={`/app/artifacts/${runId}`}
-                  className={cn(buttonVariants({ variant: "default", size: "sm" }), "ml-auto")}
-                >
-                  <CheckCircle2 className="size-4" />
-                  View Report
-                </Link>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <Card className="flex flex-col overflow-hidden border-border/60 bg-card/60" style={{ height: 560 }}>
-            <CardHeader className="flex flex-row items-center gap-4 border-b border-border/60 shrink-0">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <TerminalIcon className="size-4 text-muted-foreground" aria-hidden="true" />
-                AI Execution Logs
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="bg-background/30 p-0 overflow-hidden" style={{ height: 500 }}>
-              <ScrollArea className="h-full p-5 font-mono text-sm">
-                <div className="space-y-3">
-                  {logLines.length === 0 && !isDone && (
-                    <div className="text-muted-foreground italic">Connecting to run…</div>
-                  )}
-                  {logLines.map((l, idx) => {
-                    const tone =
-                      l.level === "action" ? "text-primary" :
-                      l.level === "reasoning" ? "text-foreground" :
-                      l.level === "error" ? "text-rose-400" :
-                      "text-muted-foreground";
-                    return (
-                      <div key={idx} className="flex gap-4">
-                        <span className="w-20 shrink-0 text-muted-foreground">{l.ts}</span>
-                        <span className={tone}>{l.message}</span>
-                      </div>
-                    );
-                  })}
-                  {!isDone && (
-                    <div className="flex items-center gap-2 pt-2 text-muted-foreground">
-                      <span className="h-4 w-1.5 bg-primary/70 animate-pulse" />
-                      <span className="italic">Awaiting next action…</span>
-                    </div>
-                  )}
-                  <div ref={scrollRef} />
-                </div>
-              </ScrollArea>
-            </CardContent>
-          </Card>
-
-          <Card className="flex flex-col overflow-hidden border-border/60 bg-card/60" style={{ height: 560 }}>
-            <CardHeader className="flex flex-row items-center justify-between gap-4 border-b border-border/60 shrink-0">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Monitor className="size-4 text-muted-foreground" aria-hidden="true" />
-                Browser Feed
-              </CardTitle>
-              {novncUrl && <Badge variant="outline" className="text-xs text-emerald-400 border-emerald-500/30">Live</Badge>}
-            </CardHeader>
-            <CardContent className="bg-background/30 p-0 overflow-hidden" style={{ height: 500 }}>
-              {novncUrl ? (
-                <iframe
-                  src={novncUrl}
-                  className="w-full h-full border-0 block"
-                  title="Live browser feed"
-                />
-              ) : (
-                <div className="flex h-full flex-col items-center justify-center gap-3">
-                  <div className="inline-flex size-14 items-center justify-center rounded-full bg-muted/60">
-                    <Monitor className="size-7 text-muted-foreground/50" aria-hidden="true" />
-                  </div>
-                  <div className="text-sm font-medium text-muted-foreground">Live VNC stream</div>
-                  <div className="text-xs text-muted-foreground/70">
-                    {status === "running" ? "Awaiting sandbox URL…" : "Available during active runs"}
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        {!isDone && (
-          <div className="flex justify-end">
+      {/* ── Stats bar ──────────────────────────────────────────────── */}
+      <div className="flex shrink-0 items-center gap-4 border-b border-border/60 bg-card/40 px-5 py-3">
+        <span className="font-mono text-xs text-muted-foreground">{runId}</span>
+        <div className="h-3.5 w-px bg-border/60" />
+        <StatusBadge status={status} />
+        <div className="h-3.5 w-px bg-border/60" />
+        <span className="text-xs text-muted-foreground">
+          <span className="font-semibold text-foreground font-mono">{stepCount}</span>
+          {run?.total_steps ? `/${run.total_steps}` : ""} steps
+        </span>
+        {run?.estimated_cost_usd != null && (
+          <span className="text-xs text-muted-foreground">
+            <span className="font-semibold text-foreground font-mono">${run.estimated_cost_usd.toFixed(4)}</span> cost
+          </span>
+        )}
+        {run?.total_input_tokens != null && (
+          <span className="text-xs text-muted-foreground">
+            <span className="font-semibold text-foreground font-mono">
+              {((run.total_input_tokens ?? 0) + (run.total_output_tokens ?? 0)).toLocaleString()}
+            </span> tokens
+          </span>
+        )}
+        <div className="ml-auto flex items-center gap-2">
+          {isDone ? (
+            <Link
+              href={`/app/artifacts/${runId}`}
+              className={cn(buttonVariants({ variant: "default", size: "sm" }), "h-7 gap-1.5 text-xs")}
+            >
+              <CheckCircle2 className="size-3.5" />
+              View Report
+            </Link>
+          ) : (
             <Dialog>
               <DialogTrigger
                 className={cn(
-                  buttonVariants({ variant: "outline" }),
-                  "border-rose-500/60 text-rose-400 hover:bg-rose-500/10 hover:text-rose-300",
+                  buttonVariants({ variant: "outline", size: "sm" }),
+                  "h-7 text-xs border-rose-500/60 text-rose-400 hover:bg-rose-500/10 hover:text-rose-300",
                 )}
               >
-                <XCircle className="size-4" aria-hidden="true" />
-                Abort Test Run
+                <XCircle className="size-3.5" />
+                Abort
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
@@ -266,8 +209,204 @@ function RunDetailPanel({ runId }: { runId: string }) {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
+          )}
+        </div>
+      </div>
+
+      {/* ── Main split: logs 40% | browser 60% ─────────────────────── */}
+      <div className="flex flex-1 min-h-0 overflow-hidden">
+
+        {/* Logs — terminal style */}
+        <div className="flex w-[40%] shrink-0 flex-col border-r border-border/60 min-h-0">
+          {/* Terminal title bar */}
+          <div className="flex items-center gap-2 border-b border-border/60 bg-muted/60 px-4 py-2.5 shrink-0">
+            <div className="flex items-center gap-1.5">
+              <span className="size-2.5 rounded-full bg-rose-500/70" />
+              <span className="size-2.5 rounded-full bg-amber-500/70" />
+              <span className="size-2.5 rounded-full bg-emerald-500/70" />
+            </div>
+            <div className="flex-1 flex items-center justify-center gap-1.5">
+              <TerminalIcon className="size-3 text-muted-foreground/60" />
+              <span className="text-[11px] font-medium text-muted-foreground/70 tracking-wide">agent · execution log</span>
+            </div>
           </div>
-        )}
+
+          {/* Terminal body */}
+          <ScrollArea className="flex-1 min-h-0 bg-muted/20">
+            <div className="p-3 font-mono text-[11px] leading-relaxed space-y-0.5">
+              {logLines.length === 0 && !isDone && (
+                <div className="text-muted-foreground/40 italic px-1">connecting…</div>
+              )}
+              {logLines.map((l, idx) => {
+                const tagCfg: Record<LogLevel, { chip: string; msg: string }> = {
+                  step:       { chip: "bg-muted text-muted-foreground",
+                                msg:  "text-foreground/70 font-semibold" },
+                  observe:    { chip: "bg-sky-500/15 text-sky-600 dark:text-sky-400",
+                                msg:  "text-sky-700 dark:text-sky-400/80" },
+                  reasoning:  { chip: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
+                                msg:  "text-amber-800 dark:text-amber-200/70" },
+                  action:     { chip: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
+                                msg:  "text-emerald-700 dark:text-emerald-400" },
+                  action_err: { chip: "bg-rose-500/15 text-rose-600 dark:text-rose-400",
+                                msg:  "text-rose-600 dark:text-rose-400" },
+                  error:      { chip: "bg-rose-500/20 text-rose-700 dark:text-rose-300 font-bold",
+                                msg:  "text-rose-700 dark:text-rose-300" },
+                  complete:   { chip: "bg-violet-500/15 text-violet-700 dark:text-violet-300",
+                                msg:  "text-violet-700 dark:text-violet-300" },
+                  system:     { chip: "bg-muted text-muted-foreground/70",
+                                msg:  "text-muted-foreground/70" },
+                };
+                const cfg = tagCfg[l.level];
+
+                if (l.level === "step") {
+                  return (
+                    <div key={idx} className="flex items-center gap-2 py-1.5 mt-1">
+                      <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold tracking-wider ${cfg.chip}`}>
+                        {l.tag}
+                      </span>
+                      <span className="flex-1 h-px bg-border/60" />
+                      <span className="text-muted-foreground/40 text-[10px]">{l.ts}</span>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div key={idx} className="flex items-start gap-2 px-1 py-0.5 rounded hover:bg-muted/40 transition-colors">
+                    <span className="shrink-0 text-muted-foreground/40 w-[4.2rem] pt-0.5 tabular-nums">{l.ts}</span>
+                    <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold tracking-wider leading-none ${cfg.chip}`}>
+                      {l.tag}
+                    </span>
+                    <span className={`${cfg.msg} break-all`}>{l.message}</span>
+                  </div>
+                );
+              })}
+
+              {!isDone && (
+                <div className="flex items-center gap-2 px-1 py-1 text-muted-foreground/40">
+                  <span className="text-muted-foreground/50">$</span>
+                  <span className="h-3.5 w-1.5 bg-muted-foreground/50 animate-pulse rounded-sm" />
+                </div>
+              )}
+              <div ref={scrollRef} />
+            </div>
+          </ScrollArea>
+        </div>
+
+        {/* Config + Browser feed */}
+        <div className="flex flex-1 min-h-0 flex-col overflow-y-auto">
+
+          {/* ── Config list ──────────────────────────────────────────────── */}
+          <div className="shrink-0 border-b border-border/60 bg-card/30 px-5 py-4 space-y-3">
+
+            {/* Section label */}
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
+              Run Configuration
+            </p>
+
+            {/* Key-value rows */}
+            <div className="space-y-0 divide-y divide-border/40 rounded-lg border border-border/50 overflow-hidden text-sm">
+
+              <div className="flex items-center gap-3 px-3 py-2.5 bg-background/50">
+                <span className="w-28 shrink-0 text-xs text-muted-foreground/60">Test case</span>
+                <span className="font-medium text-foreground truncate">{run?.test_name ?? <span className="text-muted-foreground/40 italic">loading…</span>}</span>
+              </div>
+
+              <div className="flex items-center gap-3 px-3 py-2.5 bg-background/30">
+                <span className="w-28 shrink-0 text-xs text-muted-foreground/60">Browser</span>
+                <span className="inline-flex items-center gap-1.5 text-foreground/80">
+                  <Globe className="size-3 text-muted-foreground/50" />
+                  <span className="capitalize text-sm">{run?.browser_used ?? "chromium"}</span>
+                </span>
+              </div>
+
+              <div className="flex items-center gap-3 px-3 py-2.5 bg-background/50">
+                <span className="w-28 shrink-0 text-xs text-muted-foreground/60">Recording</span>
+                {run?.recording ? (
+                  <span className="inline-flex items-center gap-1.5 text-rose-400">
+                    <Video className="size-3" />
+                    <span className="text-sm font-medium">On</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 text-muted-foreground/60">
+                    <Video className="size-3" />
+                    <span className="text-sm">Off</span>
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-3 px-3 py-2.5 bg-background/30">
+                <span className="w-28 shrink-0 text-xs text-muted-foreground/60">Viewport</span>
+                <span className="font-mono text-sm text-foreground/80">
+                  {run?.viewport
+                    ? `${run.viewport.width} × ${run.viewport.height}${run.viewport.device_scale_factor && run.viewport.device_scale_factor !== 1 ? ` @${run.viewport.device_scale_factor}x` : ""}`
+                    : "—"}
+                </span>
+              </div>
+
+              <div className="flex items-start gap-3 px-3 py-2.5 bg-background/50">
+                <span className="w-28 shrink-0 text-xs text-muted-foreground/60 pt-0.5">Model</span>
+                <span className="font-mono text-xs text-foreground/70 break-all leading-relaxed">
+                  {run?.model_used ?? "—"}
+                </span>
+              </div>
+
+              {run?.max_steps_override != null && (
+                <div className="flex items-center gap-3 px-3 py-2.5 bg-background/50">
+                  <span className="w-28 shrink-0 text-xs text-muted-foreground/60">Max steps</span>
+                  <span className="font-mono text-sm text-foreground/80">{run.max_steps_override}</span>
+                </div>
+              )}
+
+              {run?.timeout_override != null && (
+                <div className="flex items-center gap-3 px-3 py-2.5 bg-background/30">
+                  <span className="w-28 shrink-0 text-xs text-muted-foreground/60">Timeout</span>
+                  <span className="font-mono text-sm text-foreground/80">{run.timeout_override}s</span>
+                </div>
+              )}
+
+              <div className="flex items-center gap-3 px-3 py-2.5 bg-background/50">
+                <span className="w-28 shrink-0 text-xs text-muted-foreground/60">Triggered by</span>
+                <span className="inline-flex items-center gap-1.5 text-foreground/70">
+                  <User className="size-3 text-muted-foreground/50" />
+                  <span className="text-sm truncate">{run?.triggered_by ?? "—"}</span>
+                </span>
+              </div>
+
+            </div>
+          </div>
+
+          {/* ── Browser feed ─────────────────────────────────────────────── */}
+          <div className="shrink-0">
+            <div className="flex items-center justify-between border-b border-border/60 bg-muted/20 px-4 py-2.5">
+              <div className="flex items-center gap-2">
+                <Monitor className="size-3.5 text-muted-foreground" />
+                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Browser Feed</span>
+              </div>
+              {novncUrl && (
+                <span className="flex items-center gap-1.5 text-[10px] font-semibold text-emerald-400">
+                  <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  Live
+                </span>
+              )}
+            </div>
+            <div className="p-3">
+              {novncUrl ? (
+                <BrowserFeedFrame url={novncUrl} />
+              ) : (
+                <div className="flex flex-col items-center justify-center gap-3 py-12">
+                  <div className="inline-flex size-12 items-center justify-center rounded-full bg-muted/30">
+                    <Monitor className="size-6 text-muted-foreground/30" />
+                  </div>
+                  <p className="text-xs text-muted-foreground/50">
+                    {status === "running" ? "Awaiting sandbox…" : "Available during active runs"}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+
+        </div>
+
       </div>
     </div>
   );
@@ -305,7 +444,10 @@ function RunListItem({
       )}
     >
       <span className={cn("size-2 shrink-0 rounded-full", statusDotClass(run.status), active && "animate-pulse")} />
-      <span className="flex-1 truncate font-medium">{label}</span>
+      <span className="flex-1 min-w-0">
+        <span className="block truncate font-medium">{label}</span>
+        <span className="block font-mono text-[10px] opacity-50">{run.run_id.slice(0, 8)}</span>
+      </span>
       {time && <span className="shrink-0 font-mono text-xs opacity-70">{time}</span>}
     </button>
   );
@@ -322,7 +464,8 @@ function LiveExecutionInner() {
   const [newRunOpen, setNewRunOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
 
-  const { data: runs } = useRuns();
+  const projectId = useProjectStore((s) => s.currentProject?.id ?? null);
+  const { data: runs } = useProjectRuns(projectId);
 
   // Tick every second to update elapsed times for active runs
   useEffect(() => {
@@ -340,6 +483,14 @@ function LiveExecutionInner() {
     return runs
       .filter((r) => isActive(r.status))
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  }, [runs]);
+
+  // Auto-select the first ACTIVE run when the page loads without an id in the URL
+  useEffect(() => {
+    if (selectedRunId || !runs) return;
+    const first = activeRuns[0];
+    if (first) selectRun(first.run_id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runs]);
 
   const completedCount = runs ? runs.filter((r) => !isActive(r.status)).length : 0;
@@ -428,6 +579,47 @@ function LiveExecutionInner() {
     </div>
   );
 }
+
+const BROWSER_W = 1280;
+const BROWSER_H = 720;
+const ASPECT = BROWSER_H / BROWSER_W; // 0.5625 (16:9)
+
+function BrowserFeedFrame({ url }: { url: string }) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [height, setHeight] = useState(0);
+
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const obs = new ResizeObserver(([entry]) => {
+      const w = entry.contentRect.width;
+      const scale = w / BROWSER_W;
+      setHeight(w * ASPECT);
+      const iframe = iframeRef.current;
+      if (!iframe) return;
+      iframe.style.width = `${BROWSER_W}px`;
+      iframe.style.height = `${BROWSER_H}px`;
+      iframe.style.transform = `scale(${scale})`;
+      iframe.style.transformOrigin = "top left";
+    });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+
+  return (
+    // Container is exactly as tall as the scaled iframe — no black void
+    <div ref={wrapRef} className="relative w-full overflow-hidden rounded-lg" style={{ height }}>
+      <iframe
+        ref={iframeRef}
+        src={url}
+        title="Live browser feed"
+        style={{ position: "absolute", top: 0, left: 0, border: "none" }}
+      />
+    </div>
+  );
+}
+
 
 export default function LiveExecutionPage() {
   return (

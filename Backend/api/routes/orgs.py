@@ -11,10 +11,18 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+import re
+
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from api.db import db_enabled, fetch, fetchrow, execute
+
+_UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
+
+def _db(org_id: str) -> bool:
+    """Only hit the DB when db is enabled AND org_id looks like a real UUID."""
+    return db_enabled() and bool(_UUID_RE.match(org_id))
 
 router = APIRouter(tags=["orgs"])
 
@@ -121,7 +129,7 @@ async def accept_invitation(token: str) -> dict:
 
 @router.get("/orgs/{org_id}")
 async def get_org(org_id: str) -> dict:
-    if db_enabled():
+    if _db(org_id):
         row = await fetchrow("SELECT * FROM organizations WHERE id=$1", org_id)
         if not row:
             raise HTTPException(404, "Organization not found")
@@ -134,7 +142,7 @@ async def get_org(org_id: str) -> dict:
 
 @router.patch("/orgs/{org_id}")
 async def update_org(org_id: str, body: OrgUpdate) -> dict:
-    if db_enabled():
+    if _db(org_id):
         parts: list[str] = []; args: list[Any] = []; idx = 1
         if body.name is not None:
             parts.append(f"name=${idx}"); args.append(body.name); idx += 1
@@ -158,7 +166,7 @@ async def update_org(org_id: str, body: OrgUpdate) -> dict:
 
 @router.get("/orgs/{org_id}/members")
 async def list_members(org_id: str) -> dict:
-    if db_enabled():
+    if _db(org_id):
         rows = await fetch(
             """SELECT u.id, u.email, u.name, u.avatar_url, m.role, m.joined_at
                FROM memberships m JOIN users u ON u.id = m.user_id
@@ -176,7 +184,7 @@ async def update_member_role(org_id: str, user_id: str, body: RoleUpdate) -> dic
     valid_roles = ("owner", "admin", "developer", "viewer")
     if body.role not in valid_roles:
         raise HTTPException(422, f"Invalid role. Must be one of: {valid_roles}")
-    if db_enabled():
+    if _db(org_id):
         tag = await execute("UPDATE memberships SET role=$3 WHERE org_id=$1 AND user_id=$2", org_id, user_id, body.role)
         if tag == "UPDATE 0":
             raise HTTPException(404, "Member not found")
@@ -190,7 +198,7 @@ async def update_member_role(org_id: str, user_id: str, body: RoleUpdate) -> dic
 
 @router.delete("/orgs/{org_id}/members/{user_id}")
 async def remove_member(org_id: str, user_id: str) -> dict:
-    if db_enabled():
+    if _db(org_id):
         tag = await execute("DELETE FROM memberships WHERE org_id=$1 AND user_id=$2", org_id, user_id)
         if tag == "DELETE 0":
             raise HTTPException(404, "Member not found")

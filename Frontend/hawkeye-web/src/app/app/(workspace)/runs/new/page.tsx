@@ -14,7 +14,8 @@ import { cn } from "@/lib/utils";
 import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { useTestCases, useCreateRun } from "@/lib/api/hooks";
-import { apiClient, type TestCaseInfo } from "@/lib/api/client";
+import { apiClient, type TestCaseInfo, type Environment } from "@/lib/api/client";
+import { useProjectStore } from "@/lib/project/store";
 
 const MODEL_PRESETS = [
   { value: "nvidia:moonshotai/kimi-k2.6", label: "NVIDIA – Kimi K2.6 (recommended)" },
@@ -25,6 +26,7 @@ const MODEL_PRESETS = [
 ];
 
 function NewRunPageInner() {
+  const projectId = useProjectStore((s) => s.currentProject?.id ?? "default");
   const searchParams = useSearchParams();
   const preselectedTcId = searchParams.get("tc"); // from /test-cases/:id "Run" button
 
@@ -41,9 +43,16 @@ function NewRunPageInner() {
   const [timeoutSeconds, setTimeoutSeconds] = useState(300);
   const [record, setRecord] = useState(false);
   const [dbCases, setDbCases] = useState<Array<{ id: string; name: string }>>([]);
+  const [environments, setEnvironments] = useState<Environment[]>([]);
+  const [environmentId, setEnvironmentId] = useState<string>("");
 
   useEffect(() => {
-    apiClient.listProjectTestCases("default").then((res) => setDbCases(res.test_cases)).catch(() => {});
+    apiClient.listProjectTestCases(projectId).then((res) => setDbCases(res.test_cases)).catch(() => {});
+    apiClient.listEnvironments(projectId).then((res) => {
+      setEnvironments(res.environments);
+      const def = res.environments.find((e) => e.is_default);
+      if (def) setEnvironmentId(def.id);
+    }).catch(() => {});
   }, []);
 
   const isDbCase = selectedValue.startsWith("db:");
@@ -70,10 +79,11 @@ function NewRunPageInner() {
 
   function handleLaunch() {
     if (!selectedValue) return;
+    const envId = environmentId || undefined;
     if (isDbCase && selectedDbId) {
-      createRun({ test_case_id: selectedDbId, model, browser, record, max_steps: maxSteps, timeout: timeoutSeconds });
+      createRun({ test_case_id: selectedDbId, model, browser, record, max_steps: maxSteps, timeout: timeoutSeconds, environment_id: envId });
     } else {
-      createRun({ test_case_path: selectedYamlPath, model, browser, record, max_steps: maxSteps, timeout: timeoutSeconds });
+      createRun({ test_case_path: selectedYamlPath, model, browser, record, max_steps: maxSteps, timeout: timeoutSeconds, environment_id: envId });
     }
   }
 
@@ -102,7 +112,15 @@ function NewRunPageInner() {
             <div className="space-y-6 lg:col-span-8">
               <div className="space-y-2">
                 <Label>Test Case</Label>
-                {tcLoading && dbCases.length === 0 ? (
+                {!tcLoading && dbCases.length === 0 && (testCases ?? []).length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-border/60 bg-muted/10 px-4 py-5 text-center">
+                    <p className="text-sm font-medium">No test cases in this project</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Create a test case first, then come back to run it.</p>
+                    <Link href="/app/test-cases" className={cn(buttonVariants({ variant: "outline", size: "sm" }), "mt-3 gap-1.5")}>
+                      Go to Test Cases
+                    </Link>
+                  </div>
+                ) : tcLoading && dbCases.length === 0 ? (
                   <div className="h-11 rounded-md border border-border/60 bg-muted/30 animate-pulse" />
                 ) : (
                   <Select
@@ -194,6 +212,25 @@ function NewRunPageInner() {
                       </SelectContent>
                     </Select>
                   </div>
+
+                  {environments.length > 0 && (
+                    <div className="space-y-2">
+                      <Label>Environment</Label>
+                      <Select value={environmentId} onValueChange={(v) => setEnvironmentId(v)}>
+                        <SelectTrigger className="h-11 w-full">
+                          <SelectValue placeholder="None (use test case URL)" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">None (use test case URL)</SelectItem>
+                          {environments.map((e) => (
+                            <SelectItem key={e.id} value={e.id}>
+                              {e.name}{e.is_default ? " (default)" : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
 
                   <div className="space-y-2">
                     <Label>Max Steps</Label>

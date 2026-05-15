@@ -8,7 +8,7 @@ celery_app = Celery(
     "hawkeye",
     broker=REDIS_URL,
     backend=REDIS_URL,
-    include=["api.tasks"],
+    include=["api.tasks", "api.tasks_beat"],
 )
 celery_app.conf.update(
     task_serializer="json",

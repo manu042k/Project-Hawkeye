@@ -11,9 +11,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { apiClient, type SuiteSummary, type TestCaseSummary, type RunSummary } from "@/lib/api/client";
+import { useProjectStore } from "@/lib/project/store";
 import { toast } from "sonner";
-
-const DEFAULT_PROJECT = "default";
 const CRON_PRESETS = [
   { label: "Every hour",    value: "0 * * * *" },
   { label: "Every 6h",     value: "0 */6 * * *" },
@@ -25,6 +24,7 @@ type Tab = "tests" | "schedule" | "history";
 
 export default function SuiteDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: suiteId } = use(params);
+  const projectId = useProjectStore((s) => s.currentProject?.id ?? "default");
   const router = useRouter();
 
   const [tab, setTab] = useState<Tab>("tests");
@@ -43,8 +43,8 @@ export default function SuiteDetailPage({ params }: { params: Promise<{ id: stri
     setLoading(true);
     try {
       const [suiteData, casesData] = await Promise.all([
-        apiClient.getSuite(DEFAULT_PROJECT, suiteId),
-        apiClient.listProjectTestCases(DEFAULT_PROJECT, { status: "active" }),
+        apiClient.getSuite(projectId, suiteId),
+        apiClient.listProjectTestCases(projectId, { status: "active" }),
       ]);
       setSuite(suiteData);
       setAllCases(casesData.test_cases);
@@ -58,7 +58,7 @@ export default function SuiteDetailPage({ params }: { params: Promise<{ id: stri
 
   async function loadSchedule() {
     try {
-      const s = await apiClient.getSuiteSchedule(DEFAULT_PROJECT, suiteId);
+      const s = await apiClient.getSuiteSchedule(projectId, suiteId);
       setSchedule(s);
       if (s.cron_expr) setCronExpr(s.cron_expr);
       setSchedEnabled(s.enabled);
@@ -67,7 +67,7 @@ export default function SuiteDetailPage({ params }: { params: Promise<{ id: stri
 
   async function loadRuns() {
     try {
-      const res = await apiClient.getSuiteRuns(DEFAULT_PROJECT, suiteId);
+      const res = await apiClient.getSuiteRuns(projectId, suiteId);
       setSuiteRuns(res.runs);
     } catch { /* non-fatal */ }
   }
@@ -77,7 +77,7 @@ export default function SuiteDetailPage({ params }: { params: Promise<{ id: stri
 
   async function handleRunAll() {
     try {
-      await apiClient.runSuite(DEFAULT_PROJECT, suiteId);
+      await apiClient.runSuite(projectId, suiteId);
       toast.success("Suite queued — check Live for progress");
     } catch {
       toast.error("Failed to run suite");
@@ -88,7 +88,7 @@ export default function SuiteDetailPage({ params }: { params: Promise<{ id: stri
     if (!suite) return;
     setAddingId(tcId);
     try {
-      const res = await apiClient.addSuiteMember(DEFAULT_PROJECT, suiteId, tcId);
+      const res = await apiClient.addSuiteMember(projectId, suiteId, tcId);
       setSuite({ ...suite, test_case_ids: res.test_case_ids, test_count: res.test_case_ids.length });
       toast.success("Added to suite");
     } catch (e: unknown) {
@@ -102,7 +102,7 @@ export default function SuiteDetailPage({ params }: { params: Promise<{ id: stri
   async function handleRemoveMember(tcId: string) {
     if (!suite) return;
     try {
-      const res = await apiClient.removeSuiteMember(DEFAULT_PROJECT, suiteId, tcId);
+      const res = await apiClient.removeSuiteMember(projectId, suiteId, tcId);
       setSuite({ ...suite, test_case_ids: res.test_case_ids, test_count: res.test_case_ids.length });
       toast.success("Removed from suite");
     } catch {
@@ -113,7 +113,7 @@ export default function SuiteDetailPage({ params }: { params: Promise<{ id: stri
   async function handleSaveSchedule() {
     setSchedSaving(true);
     try {
-      const s = await apiClient.setSuiteSchedule(DEFAULT_PROJECT, suiteId, { cron_expr: cronExpr, enabled: schedEnabled });
+      const s = await apiClient.setSuiteSchedule(projectId, suiteId, { cron_expr: cronExpr, enabled: schedEnabled });
       setSchedule(s);
       toast.success("Schedule saved");
     } catch {

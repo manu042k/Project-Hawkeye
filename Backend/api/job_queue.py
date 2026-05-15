@@ -35,6 +35,8 @@ class JobQueue:
             "novnc_url": None,
             "error_message": None,
             "celery_task_id": None,
+            "triggered_by": request.triggered_by,
+            "test_case_id": request.test_case_id,
             "created_at": _utcnow(),
             "started_at": None,
             "completed_at": None,

@@ -67,8 +67,13 @@ export const authOptions: NextAuthOptions = {
       if (user?.access_token) {
         token.access_token = user.access_token;
       }
-      // OAuth sign-in: exchange identity with backend (server-side, uses HMAC proof)
-      if (account && account.provider !== "credentials" && !token.access_token) {
+      // Remember the provider on first sign-in so we can retry on refresh
+      if (account) {
+        token.provider = account.provider;
+      }
+      // OAuth: exchange identity with backend — retry on every refresh until we succeed
+      // (handles the case where the backend was temporarily down during first sign-in)
+      if (token.provider !== "credentials" && token.email && !token.access_token) {
         const email = token.email ?? "";
         const name = (token.name ?? "") as string;
         try {
@@ -85,7 +90,7 @@ export const authOptions: NextAuthOptions = {
             token.access_token = data.access_token;
           }
         } catch {
-          // non-fatal in dev — falls back to X-User-Email header
+          // non-fatal — falls back to X-User-Email header on next request
         }
       }
       return token;

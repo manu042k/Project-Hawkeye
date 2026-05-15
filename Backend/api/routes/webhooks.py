@@ -50,21 +50,17 @@ async def trigger_webhook(project_token: str, body: TriggerRequest) -> dict:
         raise HTTPException(401, "Invalid webhook token")
 
     # Resolve suite
-    if db_enabled():
-        suite_row = await fetchrow(
-            "SELECT * FROM test_suites WHERE id=$1 AND project_id=$2", body.suite_id, project_id
+    from api.database import AsyncSessionLocal
+    from api.models import TestSuite
+    from sqlalchemy import select
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(TestSuite).where(TestSuite.id == body.suite_id, TestSuite.project_id == project_id)
         )
-        if not suite_row:
-            raise HTTPException(404, "Suite not found")
-        tc_ids = suite_row["test_case_ids"]
-        if isinstance(tc_ids, str):
-            tc_ids = json.loads(tc_ids)
-    else:
-        from api.routes.suites import _store as suite_store
-        suite = suite_store.get(project_id, {}).get(body.suite_id)
-        if not suite:
-            raise HTTPException(404, "Suite not found")
-        tc_ids = suite.get("test_case_ids", [])
+        suite = result.scalar_one_or_none()
+    if not suite:
+        raise HTTPException(404, "Suite not found")
+    tc_ids = suite.test_case_ids or []
 
     # Dispatch one Celery task per test case
     from api.tasks import run_test_case

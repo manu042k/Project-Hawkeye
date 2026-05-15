@@ -1,13 +1,15 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
+
+from api.auth_utils import get_current_user
 
 router = APIRouter(tags=["auth"])
 
 
 @router.get("/me")
-def get_me(request: Request) -> dict:
-    email = request.headers.get("X-User-Email", "anonymous")
+async def get_me(user: dict = Depends(get_current_user)) -> dict:
     return {
-        "email": email,
-        "authenticated": email != "anonymous",
-        "role": "admin" if email != "anonymous" else "guest",
+        "email": user["email"],
+        "name": user.get("name", ""),
+        "authenticated": True,
+        "role": "admin",
     }

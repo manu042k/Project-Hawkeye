@@ -14,78 +14,61 @@ _GUIDED_GOAL_SECTION = """\
 ## Goal
 {goal}
 
-## Steps (guided checkpoints)
-Mode: {mode}
-
-Complete these checkpoints in order (or adapt if the UI requires it):
+## Checkpoints — execute ONE AT A TIME in strict order
 {checkpoints}
 
-After completing each checkpoint, write "[S<id> complete]" in your response
-(e.g. "[S1 complete]") so progress is tracked."""
+### Checkpoint execution rules (MANDATORY)
+1. Read the current checkpoint's Description to know WHAT to do.
+2. Perform ONLY the actions needed for that checkpoint.
+3. After acting, verify the Success Signal is true before declaring completion.
+4. Write "[S<id> complete]" (e.g. "[S1 complete]") in your response the moment
+   you confirm the success signal — then immediately move to the next checkpoint.
+5. Do NOT repeat or redo a checkpoint you already marked complete.
+6. Do NOT navigate back to earlier pages once a checkpoint is done.
+7. If a checkpoint's condition is ALREADY MET when you arrive, mark it complete
+   immediately and proceed — do not perform its action again."""
 
-_CHECKPOINT_ITEM = "- [{id}] {description}\n  Success signal: {success_signal}"
+_CHECKPOINT_ITEM = """\
+[{id}]
+  Do: {description}
+  ✓ Done when: {success_signal}"""
+
+_EXTRA_DETAILS_SECTION = """\
+## Extra context
+{extra_details}"""
 
 _TOOL_CONVENTIONS = """\
 ## Tool-use conventions
 - Call `browser_snapshot` to read the current accessibility tree before clicking.
   Each interactive element has a `[ref=...]` label — use that exact ref value.
-- Take ONE snapshot per step to decide your next action. Do NOT take multiple
-  snapshots in a row — each snapshot uses budget. If you cannot see what you
-  need, SCROLL DOWN using browser_press_key (key: 'PageDown') and then take
-  a fresh snapshot to see what appeared.
-- The snapshot may be truncated on large pages — this is normal. Scroll down
-  to reveal more content rather than retrying the snapshot with different params.
-- After typing in a search box, press Enter via `browser_press_key` (key: 'Enter').
-- Dismiss any cookie banners, popups, or login prompts before proceeding.
-- When a search results page loads: press PageDown once (browser_press_key, key: 'PageDown'),
-  then take a snapshot and click the first product title or link you can see.
-- Use `wait_for_stable` when the page may still be loading after navigation.
-- Call `report_step_result` to log intermediate assertion outcomes.
+- Take ONE snapshot per step. If the snapshot is truncated, scroll down with
+  browser_press_key (key: 'PageDown') to reveal more — do NOT snapshot again.
+- After typing in a search box, use browser_type with submit=True OR follow
+  with browser_press_key (key: 'Enter') to submit.
+- Dismiss cookie banners, popups, or login prompts before proceeding.
+- Use `report_step_result` only to log a checkpoint outcome.
+- Do NOT call `browser_navigate` to go back to a page you already left.
 
 ## Completing the goal — CRITICAL
-- Emit "[S<id> complete]" in the SAME response where you perform the final
-  action for that checkpoint. Do not wait for the next step.
-- When ALL checkpoints are complete and the overall goal is achieved, emit
-  `<GOAL_COMPLETE>` as PLAIN TEXT with NO tool call. Stop browsing immediately.
-- For scroll tasks: when "Scrolls on current page" reaches 3 or more, the scroll
-  goal is met. Emit `<GOAL_COMPLETE>` as plain text WITHOUT making a tool call.
-- If you are stuck and cannot make progress after trying 2 different approaches,
-  write `<GOAL_BLOCKED>` followed by a brief explanation.
-- If the site forces a login wall that you cannot dismiss or bypass, immediately
-  write `<GOAL_BLOCKED>: Site requires login` — do NOT loop trying to close it."""
+- Write "[S<id> complete]" in the SAME response as the final action for that
+  checkpoint (e.g. "[S1 complete]"). Do not wait for the next observe step.
+- If a checkpoint's success signal is already satisfied on arrival, write
+  "[S<id> complete]" immediately without repeating any action.
+- When ALL checkpoints are done and the overall goal is achieved, emit
+  `<GOAL_COMPLETE>` as PLAIN TEXT with NO tool call.
+- For scroll tasks: track "Scrolls on current page" shown in your context.
+  When it reaches the required count, emit `<GOAL_COMPLETE>` immediately.
+- If stuck after 2 different attempts, write `<GOAL_BLOCKED>` + explanation.
+- If a login wall cannot be dismissed, write `<GOAL_BLOCKED>: Site requires login`."""
 
 _CONSTRAINTS_SECTION = """\
 ## Constraints
-- Max steps: {max_steps} (you will be stopped if you exceed this).
-- Navigation policy: {navigation_policy}.
-  {navigation_policy_detail}
-- Forbidden actions: {forbidden_actions}
-- Required behaviors: {required_behaviors}"""
-
-_NAVIGATION_POLICY_DETAILS = {
-    "interact_only": (
-        "Navigate exclusively by clicking links, buttons, and UI elements. "
-        "Do NOT use browser_navigate to type URLs directly — discover paths "
-        "through the UI as a real user would."
-    ),
-    "explicit_urls_allowed": (
-        "You may use browser_navigate to go directly to URLs mentioned in "
-        "the goal or step data fields."
-    ),
-}
+- Max steps: {max_steps} (you will be stopped if you exceed this)."""
 
 _APP_CONTEXT_SECTION = """\
 ## Application context
 Page type: {page_type} (informs how wait_for_stable behaves).
 {app_description}"""
-
-_HINTS_SECTION = """\
-## Hints
-{hints}"""
-
-_KNOWN_ISSUES_SECTION = """\
-## Known issues to ignore
-{known_issues}"""
 
 
 def build_system_prompt(test_case: TestCase) -> str:
@@ -101,10 +84,13 @@ def build_system_prompt(test_case: TestCase) -> str:
         "Interact with the browser ONLY through the provided tools."
     )
 
+    goal = test_case.goal
+    steps = goal.steps
+
     # --- Goal / guided steps section ---
-    if test_case.steps is None:
+    if steps is None or not steps.checkpoints:
         parts.append(
-            _UNGUIDED_GOAL_SECTION.format(goal=test_case.goal.strip())
+            _UNGUIDED_GOAL_SECTION.format(goal=goal.objective.strip())
         )
     else:
         checkpoint_lines = "\n".join(
@@ -113,57 +99,34 @@ def build_system_prompt(test_case: TestCase) -> str:
                 description=cp.description,
                 success_signal=cp.success_signal,
             )
-            for cp in test_case.steps.checkpoints
+            for cp in steps.checkpoints
         )
         parts.append(
             _GUIDED_GOAL_SECTION.format(
-                goal=test_case.goal.strip(),
-                mode=test_case.steps.mode,
+                goal=goal.objective.strip(),
                 checkpoints=checkpoint_lines,
             )
         )
+
+    # --- Extra details (optional) ---
+    if goal.extra_details:
+        parts.append(_EXTRA_DETAILS_SECTION.format(extra_details=goal.extra_details.strip()))
 
     # --- Tool conventions ---
     parts.append(_TOOL_CONVENTIONS)
 
     # --- Constraints ---
-    nav_policy = test_case.constraints.navigation_policy
-    forbidden = test_case.constraints.forbidden_actions
-    required = test_case.constraints.required_behaviors
-    parts.append(
-        _CONSTRAINTS_SECTION.format(
-            max_steps=test_case.constraints.max_steps,
-            navigation_policy=nav_policy,
-            navigation_policy_detail=_NAVIGATION_POLICY_DETAILS.get(
-                nav_policy, nav_policy
-            ),
-            forbidden_actions=(
-                "\n  - ".join([""] + forbidden) if forbidden else "(none)"
-            ),
-            required_behaviors=(
-                "\n  - ".join([""] + required) if required else "(none)"
-            ),
-        )
-    )
+    constraints = goal.constraints
+    parts.append(_CONSTRAINTS_SECTION.format(max_steps=constraints.max_steps))
 
     # --- App context ---
-    ctx = test_case.context
-    app_desc = ctx.app_description.strip() if ctx.app_description else ""
+    target = test_case.target
+    app_desc = target.app_description.strip() if target.app_description else ""
     parts.append(
         _APP_CONTEXT_SECTION.format(
-            page_type=ctx.page_type,
+            page_type=target.page_type,
             app_description=app_desc,
         ).strip()
     )
-
-    # --- Hints (optional) ---
-    if ctx.hints:
-        hints_text = "\n".join(f"- {h}" for h in ctx.hints)
-        parts.append(_HINTS_SECTION.format(hints=hints_text))
-
-    # --- Known issues (optional) ---
-    if ctx.known_issues:
-        issues_text = "\n".join(f"- {i}" for i in ctx.known_issues)
-        parts.append(_KNOWN_ISSUES_SECTION.format(known_issues=issues_text))
 
     return "\n\n".join(parts)

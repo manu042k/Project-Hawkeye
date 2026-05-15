@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Activity, CheckCircle2, ChevronLeft, ChevronRight, ExternalLink, FlaskConical, Search, Trash2, Zap } from "lucide-react";
 import Link from "next/link";
@@ -9,9 +9,10 @@ import { AppTopbar } from "@/components/app/app-topbar";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 import { useProjectStore } from "@/lib/project/store";
-import { useRuns, useDeleteRun } from "@/lib/api/hooks";
+import { useProjectRuns, useDeleteRun } from "@/lib/api/hooks";
 import { type RunStatus, type RunSummary } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 
@@ -50,6 +51,39 @@ function avatarColor(name: string): string {
   let h = 0;
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xffff;
   return AVATAR_COLORS[h % AVATAR_COLORS.length];
+}
+
+function UserAvatar({ actor }: { actor: string }) {
+  const [imgFailed, setImgFailed] = useState(false);
+
+  // Reset failure state when actor changes (different row)
+  useEffect(() => { setImgFailed(false); }, [actor]);
+
+  // Try Gravatar first (email MD5 via a simple hash substitute — works for most accounts),
+  // then fall back to DiceBear initials avatar which always succeeds.
+  const gravatarHash = useMemo(() => {
+    let h = 5381;
+    const s = actor.trim().toLowerCase();
+    for (let i = 0; i < s.length; i++) h = ((h << 5) + h) ^ s.charCodeAt(i);
+    return Math.abs(h).toString(16).padStart(32, "0");
+  }, [actor]);
+
+  const fallbackUrl = `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(actor)}&fontSize=38&fontWeight=600&size=64`;
+  const src = imgFailed ? fallbackUrl : `https://www.gravatar.com/avatar/${gravatarHash}?d=404&s=64&r=g`;
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt={actor}
+      width={32}
+      height={32}
+      onError={() => {
+        if (!imgFailed) setImgFailed(true);
+      }}
+      className="size-8 shrink-0 rounded-full object-cover"
+    />
+  );
 }
 
 function StatusPill({ status }: { status: RunStatus }) {
@@ -97,7 +131,7 @@ export default function DashboardPage() {
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "passed" | "failed">("all");
   const [page, setPage] = useState(1);
-  const { data: runs, loading, error } = useRuns();
+  const { data: runs, loading, error, refetch } = useProjectRuns(project?.id ?? null);
   const { deleteRun } = useDeleteRun();
 
   const metrics = useMemo(() => {
@@ -105,10 +139,11 @@ export default function DashboardPage() {
     const total = runs.length;
     const passed = runs.filter((r) => r.status === "passed").length;
     const active = runs.filter((r) => ACTIVE.has(r.status)).length;
-    const passRate = total > 0 ? `${Math.round((passed / total) * 100)}%` : "—";
+    const completed = runs.filter((r) => TERMINAL.has(r.status)).length;
+    const passRate = completed > 0 ? `${Math.round((passed / completed) * 100)}%` : "—";
     return [
-      { label: "Total Runs",  value: String(total),  delta: `${passed} passed`,               tone: "primary" as const, icon: Activity },
-      { label: "Pass Rate",   value: passRate,       delta: `${passed} / ${total}`,            tone: "success" as const, icon: CheckCircle2 },
+      { label: "Total Runs",  value: String(total),  delta: `${passed} passed`,                  tone: "primary" as const, icon: Activity },
+      { label: "Pass Rate",   value: passRate,       delta: `${passed} / ${completed} completed`, tone: "success" as const, icon: CheckCircle2 },
       { label: "Active Runs", value: String(active), delta: active > 0 ? "In progress" : "Idle", tone: "warning" as const, icon: Zap },
     ];
   }, [runs]);
@@ -135,9 +170,10 @@ export default function DashboardPage() {
     router.push(runHref(run));
   }
 
-  function handleDelete(e: React.MouseEvent, runId: string) {
+  async function handleDelete(e: React.MouseEvent, runId: string) {
     e.stopPropagation();
-    deleteRun(runId);
+    await deleteRun(runId);
+    refetch();
   }
 
   const METRIC_TONE: Record<string, string> = {
@@ -286,6 +322,7 @@ export default function DashboardPage() {
                     ) : (
                       pageRows.map((row: RunSummary) => {
                         const name = row.test_name ?? row.run_id.slice(0, 8);
+                        const actor = row.triggered_by ?? "";
                         const href = runHref(row);
                         return (
                           <TableRow
@@ -300,15 +337,24 @@ export default function DashboardPage() {
                             {/* Test Case column: avatar + name + run ID */}
                             <TableCell>
                               <div className="flex items-center gap-3">
-                                <div
-                                  className={cn(
-                                    "inline-flex size-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold",
-                                    avatarColor(name),
-                                  )}
-                                  aria-hidden
-                                >
-                                  {initials(name)}
-                                </div>
+                                <Tooltip>
+                                  <TooltipTrigger className="shrink-0 cursor-default">
+                                    {actor ? (
+                                      <UserAvatar actor={actor} />
+                                    ) : (
+                                      <span className="inline-flex size-8 items-center justify-center rounded-full bg-muted/60 text-[11px] font-bold text-muted-foreground">
+                                        ?
+                                      </span>
+                                    )}
+                                  </TooltipTrigger>
+                                  <TooltipContent side="right" className="text-xs">
+                                    {actor ? (
+                                      <span>Run by <span className="font-medium">{actor}</span></span>
+                                    ) : (
+                                      <span className="text-muted-foreground">No trigger info</span>
+                                    )}
+                                  </TooltipContent>
+                                </Tooltip>
                                 <div className="min-w-0">
                                   <p className="truncate text-sm font-medium">{name}</p>
                                   <p className="font-mono text-[10px] text-muted-foreground">{row.run_id.slice(0, 8)}</p>
