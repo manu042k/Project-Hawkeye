@@ -220,7 +220,10 @@ async def _execute(celery_task_id: str, run_id: str, request_dict: dict) -> dict
                 from orchestrator.reporting.report_generator import write_screenshot_files
                 from api.artifact_store import get_store
                 artifact_dir = result.trace_path.parent
-                write_screenshot_files(traces, artifact_dir)
+                capture = test_case.on_failure.capture
+                save_screenshots = capture.get("screenshot", True) if isinstance(capture, dict) else getattr(capture, "screenshot", True)
+                if save_screenshots:
+                    write_screenshot_files(traces, artifact_dir)
                 store = get_store()
                 manifest: list[dict] = []
                 for path in sorted(artifact_dir.rglob("*")):

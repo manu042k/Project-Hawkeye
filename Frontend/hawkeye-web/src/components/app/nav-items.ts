@@ -1,5 +1,6 @@
 import {
   Archive,
+  Building2,
   CreditCard,
   FlaskConical,
   FolderKanban,
@@ -42,4 +43,5 @@ export const primaryNav: AppNavItem[] = [
 export const workspaceSettingsNav: AppNavItem[] = [
   { href: "/app/settings/project", label: "Project", icon: Layers },
   { href: "/app/settings/integrations", label: "Integrations", icon: Settings },
+  { href: "/app/settings/org", label: "Organization", icon: Building2 },
 ];

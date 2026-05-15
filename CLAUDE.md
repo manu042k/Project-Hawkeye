@@ -215,7 +215,7 @@ FINALIZE         REASON                             │
 |---|---|
 | OBSERVE | Timeout check → wait_for_stable → browser_snapshot (MCP) → CDP screenshot |
 | REASON | Build observation → trim context (24K, last 3 pairs) → llm.ainvoke() with retry/backoff |
-| GUARD_RAILS | Block policy violations; currently stub (no-op) — always passes to ACT |
+| GUARD_RAILS | Block policy violations; enforces navigation domain policy — blocks `browser_navigate` to cross-domain URLs, injects `ToolMessage` rejection and sets `guard_blocked=True` |
 | ACT | Execute first tool call; dispatch `browser_*` → MCP, others → tool_registry |
 | GOAL_CHECK | Parse `<GOAL_COMPLETE>` / `<GOAL_BLOCKED>` / `[Sn complete]` signals |
 | ERROR_HANDLER | Classify error; MCP reconnect (3 attempts); inject recovery message |
@@ -424,10 +424,11 @@ class TestCase(BaseModel):
 - No eval dataset JSONL writing
 - No benchmark comparison harness
 
-#### Track F — Organization Management ⚠ PARTIAL
+#### Track F — Organization Management ✓ COMPLETE
 - `api/routes/orgs.py` — full org + member + invitation CRUD ✓
 - `GET /api/orgs/me`, `PATCH /api/orgs/me`, member CRUD, invitation flow ✓
-- **Gap:** No frontend org settings page (no `/app/settings/orgs` or `/app/settings/members` route)
+- `src/app/app/(workspace)/settings/org/page.tsx` — org settings UI with three tabs: General (edit name/billing email, plan badge), Members (role dropdowns, remove), Invitations (list pending, revoke, invite-member dialog)
+- `nav-items.ts` — Organization link added to `workspaceSettingsNav`
 
 #### Track G — Frontend Polish ✓ DONE
 - Live execution sidebar (`runs/live/page.tsx`) now shows both test name and run ID (8-char truncated) per row
@@ -444,24 +445,21 @@ class TestCase(BaseModel):
 - **Environment selector**: `RunRequest` has `environment_id` field; new run page fetches environments and renders a selector that auto-selects the project default.
 - **In-app notifications**: Zustand-persisted `useNotificationStore`; bell menu in topbar; `useNotificationFeeder` fires on run terminal transitions; per-project alert prefs (onFailure, onSuccess, passRateThreshold).
 - **Project Overview tab**: `settings/project/page.tsx` now opens on an Overview tab showing stats cards (total runs, pass rate, test cases, cost) and a recent-runs table (last 5).
+- **On-failure capture flag**: `api/tasks.py` gates `write_screenshot_files` behind `test_case.on_failure.capture.screenshot` — no screenshots written when disabled.
+- **Guard-rails navigation policy**: `orchestrator/agent/nodes/guard_rails.py` now blocks `browser_navigate` calls targeting cross-domain URLs; injects `ToolMessage` rejection with `tool_call_id` to keep conversation valid; routes back to OBSERVE → FINALIZE.
+- **SQLAlchemy `suite` column**: `api/models.py` `TestCase` model now includes `suite = Column(String(128), nullable=True)` — resolves non-fatal "column suite does not exist" warning from orchestrator DB layer.
+- **Org management UI**: `src/app/app/(workspace)/settings/org/page.tsx` — three-tab org settings page (General / Members / Invitations) with invite dialog, role management, and revocation.
 
 ---
 
-## Known Gaps (from HLD_LLD.md §8)
+## Known Gaps
 
-These gaps exist between the design spec and current implementation:
+These are the remaining gaps between the design spec and current implementation:
 
 | Area | Gap | File to Change |
 |---|---|---|
-| TestCaseCreate API schema | `api/routes/test_cases_crud.py` still uses old flat schema; needs nested `goal_config` block matching `_template.yaml` | `api/routes/test_cases_crud.py` |
-| Agent prompt — step details | Step `description` + `success_signal` not injected into system prompt per checkpoint | `orchestrator/agent/prompt_builder.py` |
-| Agent prompt — extra_details | `goal.extra_details` and `target.app_description` not passed to prompt builder | `orchestrator/agent/prompt_builder.py` |
-| On-failure capture flags | `test_case.on_failure.capture` flags not checked — always captures everything | `orchestrator/agent/finalize.py` |
-| Guard-rails policies | `forbidden_actions` / `navigation_policy` removed from template schema; guard_rails node is a no-op stub | `orchestrator/agent/nodes/guard_rails.py` |
-| Frontend TestCaseSpec type | `src/lib/api/client.ts` `TestCaseSpec` may not match nested `goal_config` structure | `src/lib/api/client.ts` |
-| Orchestrator DB layer | `orchestrator/db/` asyncpg layer has its own schema (different from SQLAlchemy models) — `DB upsert_test_case failed: column "suite" does not exist` (non-fatal) | `orchestrator/db/` |
-| Org management UI | No frontend pages for org-level member management and invite flow | `src/app/app/(workspace)/settings/` |
 | Vault secrets for SauceDemo | `standard_user` / `secret_sauce` vault entries must be added manually via UI for SauceDemo tests to pass credential injection | Vault UI |
+| Orchestrator DB layer | `orchestrator/db/` asyncpg layer uses its own schema separate from SQLAlchemy models — non-fatal warning on upsert (suite column now exists in SQLAlchemy model but asyncpg schema may still differ) | `orchestrator/db/` |
 
 ---
 

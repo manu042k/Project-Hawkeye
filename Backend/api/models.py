@@ -46,6 +46,7 @@ class TestCase(Base):
     priority = Column(String(10), default="P1")
     tags = Column(JSON, default=list)
     spec = Column(JSON, nullable=False)
+    suite = Column(String(128), nullable=True)
     created_by = Column(String(255), nullable=True)
     last_run_status = Column(String(50), nullable=True)
     last_run_at = Column(DateTime(timezone=True), nullable=True)
