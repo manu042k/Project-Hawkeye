@@ -382,13 +382,26 @@ class TestCase(BaseModel):
 
 ### Phase 6 — Production Hardening 🔧 IN PROGRESS (current branch: `feat/phase6-api-changes`)
 
-#### Track A — PostgreSQL Persistence ⚠ PARTIAL
-- `api/db.py` — asyncpg pool singleton + `get_conn()` FastAPI dependency ✓
-- `api/crypto.py` — AES-256-GCM vault encryption ✓
-- `api/auth_utils.py` — JWT, password hashing, HMAC verification ✓
-- Auth, environments, integrations, orgs routes: dual-path (DB when available, in-memory fallback) ✓
-- **Gap:** vault, test_cases_crud, suites, schedules routes still in-memory only — DB wiring not complete
-- **Gap:** No SQL migration files; no `api/schema.sql`
+#### Track A — SQLAlchemy Persistence ✓ COMPLETE
+- **NEW**: `api/models.py` — SQLAlchemy 2.0 async ORM models: `Project`, `TestCase`, `TestSuite`, `SuiteSchedule`, `VaultSecret`
+- **NEW**: `api/database.py` — `AsyncSessionLocal`, `async_sessionmaker`, `create_async_engine`; auto-detects `postgresql://` → `postgresql+asyncpg://`; SQLite fallback (`sqlite+aiosqlite:///./hawkeye.db`) when no `HAWKEYE_DB_URL`
+- `api/app.py` lifespan: calls `init_db()` (creates tables) + seeds default project + 4 YAML test cases on startup
+- All 5 routes fully migrated to SQLAlchemy: `projects.py`, `suites.py`, `schedules.py`, `vault.py`, `test_cases_crud.py`
+- `api/routes/runs.py` — replaced `_store` import with SQLAlchemy `TestCase` lookup
+- `api/routes/webhooks.py` — replaced `_store as suite_store` import with SQLAlchemy query
+- `api/routes/usage.py` — vault count now async via SQLAlchemy
+- `api/tasks.py` — `_resolve_tc_path()`: fetches test case spec from DB, writes temp YAML for Celery worker; `_inject_vault_secrets()` reads from SQLAlchemy; viewport + test_name + triggered_by stored in Redis record after test case loads
+- `api/tasks_beat.py` — `_check_and_fire()` and `_fire_suite()` rewritten to use SQLAlchemy
+- Dependencies added: `sqlalchemy[asyncio]>=2.0.0`, `aiosqlite>=0.20.0`
+- `HAWKEYE_DB_URL=postgresql://hawkeye:hawkeye@localhost:5432/hawkeye` in `Backend/.env` (not committed)
+
+#### Track A+ — Celery Worker Stability ✓ FIXED
+- **Fixed**: `api/redis_store.py` — global `_redis` singleton caused "Future attached to a different loop" crash in Celery prefork workers (each task creates a new event loop via `asyncio.run()`). `get_redis()` now detects event loop change and recreates connection pool. `save_traces()` accepts optional `client=` kwarg.
+- **Fixed**: `api/tasks.py` — passes `client=r` to `save_traces()` to use the per-task Redis client, bypassing the stale global entirely. Prevented passing runs from being marked `errored`.
+- **Fixed**: Suite runs now correctly pass `triggered_by` (read from `X-User-Email` header) and viewport into the Redis run record.
+
+#### Track A++ — Live Log Lag ✓ FIXED
+- **Fixed**: `orchestrator/agent/nodes/observe.py`, `reason.py`, `act.py` — `collector._emit()` uses `asyncio.create_task()` which only schedules Redis publish at the next await point, causing each log event to appear one operation late. Added `await asyncio.sleep(0)` after every `on_step_start`, `on_observe`, `on_reason`, `on_act` call to flush the pending task immediately before the next operation begins.
 
 #### Track B — Stripe Billing ✓ COMPLETE
 - Full checkout, portal, webhook handler with Stripe SDK
@@ -396,7 +409,7 @@ class TestCase(BaseModel):
 - Stub mode when `STRIPE_SECRET_KEY` absent
 
 #### Track C — Celery Beat Scheduling ✓ COMPLETE
-- `api/tasks_beat.py` — `check_due_schedules()` task fires every minute
+- `api/tasks_beat.py` — `tick_schedules()` task fires every minute; reads `SuiteSchedule` via SQLAlchemy
 - `celery beat` service in docker-compose with `croniter` dependency
 
 #### Track D — GitHub CI Integration ✓ COMPLETE
@@ -416,6 +429,9 @@ class TestCase(BaseModel):
 - `GET /api/orgs/me`, `PATCH /api/orgs/me`, member CRUD, invitation flow ✓
 - **Gap:** No frontend org settings page (no `/app/settings/orgs` or `/app/settings/members` route)
 
+#### Track G — Frontend Polish ✓ DONE
+- Live execution sidebar (`runs/live/page.tsx`) now shows both test name and run ID (8-char truncated) per row
+
 ---
 
 ## Known Gaps (from HLD_LLD.md §8)
@@ -425,14 +441,15 @@ These gaps exist between the design spec and current implementation:
 | Area | Gap | File to Change |
 |---|---|---|
 | TestCaseCreate API schema | `api/routes/test_cases_crud.py` still uses old flat schema; needs nested `goal_config` block matching `_template.yaml` | `api/routes/test_cases_crud.py` |
-| Vault secret resolution | `target.vault[]` key references not resolved against vault before agent execution | `api/tasks.py` |
+| Vault secret resolution | `target.vault[]` key references resolved via `_inject_vault_secrets()` in `api/tasks.py` but only at task execution time — not validated at dispatch | `api/tasks.py` |
 | Agent prompt — step details | Step `description` + `success_signal` not injected into system prompt per checkpoint | `orchestrator/agent/prompt_builder.py` |
 | Agent prompt — extra_details | `goal.extra_details` and `target.app_description` not passed to prompt builder | `orchestrator/agent/prompt_builder.py` |
 | On-failure capture flags | `test_case.on_failure.capture` flags not checked — always captures everything | `orchestrator/agent/finalize.py` |
 | Guard-rails policies | `forbidden_actions` / `navigation_policy` removed from template schema; guard_rails node is a no-op stub | `orchestrator/agent/nodes/guard_rails.py` |
 | Frontend TestCaseSpec type | `src/lib/api/client.ts` `TestCaseSpec` may not match nested `goal_config` structure | `src/lib/api/client.ts` |
-| PostgreSQL full wiring | vault, test_cases, suites, schedules routes still in-memory only | `api/routes/*.py` |
+| Orchestrator DB layer | `orchestrator/db/` asyncpg layer has its own schema (different from SQLAlchemy models) — `DB upsert_test_case failed: column "suite" does not exist` (non-fatal) | `orchestrator/db/` |
 | Org management UI | No frontend pages for org settings, member management, invite flow | `src/app/app/(workspace)/settings/` |
+| Vault secrets for SauceDemo | `standard_user` / `secret_sauce` vault entries must be added manually via UI for SauceDemo tests to pass credential injection | Vault UI |
 
 ---
 
