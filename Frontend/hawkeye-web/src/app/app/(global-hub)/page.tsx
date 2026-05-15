@@ -3,7 +3,6 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { ArrowRight, CheckCircle2, FlaskConical, Plus, Settings, Zap } from "lucide-react";
-import Link from "next/link";
 
 import { AppTopbar } from "@/components/app/app-topbar";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -306,14 +305,18 @@ function ProjectSelectorContent() {
                           Open workspace
                           <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
                         </div>
-                        <Link
-                          href={`/app/projects/${p.id}`}
-                          onClick={(e) => e.stopPropagation()}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setCurrentProject({ id: p.id, name: p.name, environment: "staging", lastRunOk: null });
+                            router.push("/app/settings/project");
+                          }}
                           className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
                           title="Project settings"
                         >
                           <Settings className="size-3.5" />
-                        </Link>
+                        </button>
                       </div>
                     </div>
                   </div>

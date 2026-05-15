@@ -9,6 +9,7 @@ import {
   PlayCircle,
   Settings,
   User,
+  Layers,
 } from "lucide-react";
 
 export type AppNavItem = {
@@ -39,5 +40,6 @@ export const primaryNav: AppNavItem[] = [
 
 /** Account / billing live in `globalFooterNav`; workspace middle nav is execution + integrations only. */
 export const workspaceSettingsNav: AppNavItem[] = [
+  { href: "/app/settings/project", label: "Project", icon: Layers },
   { href: "/app/settings/integrations", label: "Integrations", icon: Settings },
 ];

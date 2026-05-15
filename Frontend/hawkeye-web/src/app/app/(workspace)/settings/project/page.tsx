@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   CheckCircle2,
@@ -18,7 +18,6 @@ import {
 
 import { AppTopbar } from "@/components/app/app-topbar";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -43,11 +42,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { apiClient, type ProjectSummary, type ProjectMember, type RunSummary, type RunStatus } from "@/lib/api/client";
+import { useProjectStore } from "@/lib/project/store";
 import { cn } from "@/lib/utils";
 
 type ProjectStats = {
@@ -59,7 +60,6 @@ type ProjectStats = {
 };
 
 const TERMINAL = new Set<RunStatus>(["passed", "failed", "errored", "timed_out", "blocked", "cancelled"]);
-
 
 function statusColor(s: RunStatus): string {
   if (s === "passed") return "text-emerald-400";
@@ -77,18 +77,20 @@ function initials(email: string, name: string | null): string {
   return email.slice(0, 2).toUpperCase();
 }
 
-export default function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id: projectId } = use(params);
+export default function ProjectSettingsPage() {
   const router = useRouter();
-  const [tab, setTab] = useState("overview");
+  const currentProject = useProjectStore((s) => s.currentProject);
+  const setCurrentProject = useProjectStore((s) => s.setCurrentProject);
+  const projectId = currentProject?.id ?? null;
 
+  const [tab, setTab] = useState("overview");
   const [project, setProject] = useState<ProjectSummary | null>(null);
   const [stats, setStats] = useState<ProjectStats | null>(null);
   const [members, setMembers] = useState<ProjectMember[]>([]);
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Settings form state
+  // Settings form
   const [editName, setEditName] = useState("");
   const [editDesc, setEditDesc] = useState("");
   const [saving, setSaving] = useState(false);
@@ -101,6 +103,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [addingMember, setAddingMember] = useState(false);
 
   const load = useCallback(async () => {
+    if (!projectId) return;
     try {
       const [proj, s, m, r] = await Promise.all([
         apiClient.getProject(projectId),
@@ -115,20 +118,27 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       setEditName(proj.name);
       setEditDesc(proj.description ?? "");
     } catch {
-      toast.error("Failed to load project");
+      toast.error("Failed to load project details");
     } finally {
       setLoading(false);
     }
   }, [projectId]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (!projectId) { router.push("/app"); return; }
+    load();
+  }, [projectId, load, router]);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
+    if (!projectId) return;
     setSaving(true);
     try {
       const updated = await apiClient.updateProject(projectId, { name: editName, description: editDesc });
       setProject(updated);
+      if (currentProject) {
+        setCurrentProject({ ...currentProject, name: updated.name });
+      }
       toast.success("Project updated");
     } catch {
       toast.error("Failed to update project");
@@ -138,9 +148,11 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   }
 
   async function handleArchive() {
+    if (!projectId) return;
     if (!confirm("Archive this project? It will be hidden from the project list.")) return;
     try {
       await apiClient.archiveProject(projectId);
+      setCurrentProject(null);
       toast.success("Project archived");
       router.push("/app");
     } catch {
@@ -150,7 +162,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
   async function handleAddMember(e: React.FormEvent) {
     e.preventDefault();
-    if (!memberEmail.trim()) return;
+    if (!projectId || !memberEmail.trim()) return;
     setAddingMember(true);
     try {
       const m = await apiClient.addProjectMember(projectId, {
@@ -172,6 +184,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   }
 
   async function handleRoleChange(memberId: string, role: string) {
+    if (!projectId) return;
     try {
       const updated = await apiClient.updateProjectMember(projectId, memberId, { role });
       setMembers((prev) => prev.map((m) => (m.id === memberId ? updated : m)));
@@ -181,6 +194,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   }
 
   async function handleRemoveMember(memberId: string) {
+    if (!projectId) return;
     try {
       await apiClient.removeProjectMember(projectId, memberId);
       setMembers((prev) => prev.filter((m) => m.id !== memberId));
@@ -203,12 +217,9 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <AppTopbar
-        breadcrumbs={[
-          { label: "Projects", href: "/app" },
-          { label: project.name },
-        ]}
-        title={project.name}
-        subtitle={project.slug}
+        title="Project"
+        subtitle={project.name}
+        breadcrumbs={[{ label: "Settings" }, { label: "Project" }]}
       />
 
       {/* Tab bar */}
@@ -234,10 +245,9 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       <main className="flex-1 min-h-0 overflow-y-auto px-6 py-8">
         <div className="mx-auto max-w-5xl space-y-6">
 
-          {/* ── Overview ───────────────────────────────────────────── */}
+          {/* ── Overview ─────────────────────────────────────────── */}
           {tab === "overview" && (
             <>
-              {/* Stats */}
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <Card className="border-border/60 bg-card/50">
                   <CardContent className="flex items-center gap-3 p-4">
@@ -287,7 +297,6 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 </Card>
               </div>
 
-              {/* Project info */}
               <Card className="border-border/60 bg-card/50">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium text-muted-foreground">Project details</CardTitle>
@@ -302,7 +311,6 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 </CardContent>
               </Card>
 
-              {/* Recent runs */}
               <Card className="border-border/60 bg-card/50">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium text-muted-foreground">Recent runs</CardTitle>
@@ -345,7 +353,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             </>
           )}
 
-          {/* ── Members ────────────────────────────────────────────── */}
+          {/* ── Members ──────────────────────────────────────────── */}
           {tab === "members" && (
             <Card className="border-border/60 bg-card/50">
               <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -427,7 +435,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             </Card>
           )}
 
-          {/* ── Settings ───────────────────────────────────────────── */}
+          {/* ── Settings ─────────────────────────────────────────── */}
           {tab === "settings" && (
             <div className="space-y-6">
               <Card className="border-border/60 bg-card/50">
