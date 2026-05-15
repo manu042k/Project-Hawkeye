@@ -14,7 +14,7 @@ export function BrandLogo({
   return (
     <span className={cn("relative inline-flex", className)}>
       <Image
-        src="/colored-logo.png"
+        src="/logo.png"
         alt={alt}
         width={40}
         height={40}
@@ -22,7 +22,7 @@ export function BrandLogo({
         className="block h-auto w-full dark:hidden"
       />
       <Image
-        src="/transparent-logo.png"
+        src="/logo.png"
         alt={alt}
         width={40}
         height={40}
@@ -32,4 +32,3 @@ export function BrandLogo({
     </span>
   );
 }
-
