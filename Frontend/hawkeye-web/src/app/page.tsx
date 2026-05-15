@@ -3,7 +3,6 @@ import {
   ArrowRight,
   CheckCircle2,
   Sparkles,
-  Zap,
   Eye,
   BrainCircuit,
   Globe,
@@ -13,20 +12,32 @@ import {
   Activity,
   Gauge,
   ShieldCheck,
+  Play,
 } from "lucide-react";
 
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { BrandLogo } from "@/components/brand/brand-logo";
+import { TerminalTrace } from "@/components/landing/terminal-trace";
 
-function loginUrl(pathAfterAuth: string) {
-  return `/auth/login?${new URLSearchParams({ callbackUrl: pathAfterAuth }).toString()}`;
-}
+const CONTACT_EMAIL = "hello@hawkeye.dev";
+// Replace with your actual YouTube video ID when available
+const YOUTUBE_VIDEO_ID = "Tzs1F4A5kKs";
 
 const FEATURES = [
   {
@@ -34,36 +45,54 @@ const FEATURES = [
     title: "Visual agent",
     description:
       "Takes a full screenshot at every step and reasons about what it sees — no selectors, no recorded scripts, no flakiness.",
+    iconBg: "bg-blue-500/10",
+    iconColor: "text-blue-400",
+    iconRing: "ring-blue-500/20",
   },
   {
     icon: BrainCircuit,
     title: "Any vision LLM",
     description:
       "Run tests with GPT-4o, Claude Sonnet, Gemini, NVIDIA NIM, or a local Ollama model. Swap without changing a single test.",
+    iconBg: "bg-violet-500/10",
+    iconColor: "text-violet-400",
+    iconRing: "ring-violet-500/20",
   },
   {
     icon: Globe,
     title: "Multi-browser",
     description:
       "Chromium, Firefox, and WebKit. Run the same test case across all three with a single config change.",
+    iconBg: "bg-emerald-500/10",
+    iconColor: "text-emerald-400",
+    iconRing: "ring-emerald-500/20",
   },
   {
     icon: CalendarClock,
     title: "Suites & scheduling",
     description:
       "Group test cases into suites, run them all at once, or schedule on a cron. Trigger automatically on every git push.",
+    iconBg: "bg-amber-500/10",
+    iconColor: "text-amber-400",
+    iconRing: "ring-amber-500/20",
   },
   {
     icon: Lock,
     title: "Encrypted vault",
     description:
       "AES-256-GCM encrypted secrets injected into tests at runtime. Never visible in logs or screenshots.",
+    iconBg: "bg-rose-500/10",
+    iconColor: "text-rose-400",
+    iconRing: "ring-rose-500/20",
   },
   {
     icon: GitBranch,
     title: "Figma visual diff",
     description:
       "Compare agent screenshots against your Figma design files pixel-by-pixel to catch regressions before they ship.",
+    iconBg: "bg-cyan-500/10",
+    iconColor: "text-cyan-400",
+    iconRing: "ring-cyan-500/20",
   },
 ];
 
@@ -72,7 +101,10 @@ export default function Home() {
     <div className="min-h-full bg-background text-foreground">
       <header className="sticky top-0 z-50 w-full border-b border-border/60 bg-background/70 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-6 py-4">
-          <Link href="/" className="flex items-center gap-2 font-semibold tracking-tight">
+          <Link
+            href="/"
+            className="flex items-center gap-2 font-semibold tracking-tight"
+          >
             <span className="inline-flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-border/60">
               <BrandLogo className="w-5" alt="Hawkeye" priority />
             </span>
@@ -80,28 +112,49 @@ export default function Home() {
           </Link>
 
           <nav className="hidden items-center gap-8 text-sm md:flex">
-            <a className="text-muted-foreground transition-colors hover:text-foreground" href="#features">
+            <a
+              className="text-muted-foreground transition-colors hover:text-foreground"
+              href="#demo"
+            >
+              Demo
+            </a>
+            <a
+              className="text-muted-foreground transition-colors hover:text-foreground"
+              href="#features"
+            >
               Features
             </a>
-            <a className="text-muted-foreground transition-colors hover:text-foreground" href="#why">
+            <a
+              className="text-muted-foreground transition-colors hover:text-foreground"
+              href="#why"
+            >
               Why Hawkeye
             </a>
-            <a className="text-muted-foreground transition-colors hover:text-foreground" href="#faq">
+            <Link
+              className="text-muted-foreground transition-colors hover:text-foreground"
+              href="/blog"
+            >
+              Blog
+            </Link>
+            <a
+              className="text-muted-foreground transition-colors hover:text-foreground"
+              href="#faq"
+            >
               FAQ
             </a>
           </nav>
 
           <div className="flex items-center gap-3">
             <ThemeToggle className="hidden md:inline-flex" />
-            <Link
-              href={loginUrl("/app")}
+            <a
+              href={`mailto:${CONTACT_EMAIL}`}
               className={cn(
                 buttonVariants({ variant: "default" }),
-                "shadow-[0_0_20px_rgba(173,198,255,0.15)]"
+                "shadow-[0_0_20px_rgba(173,198,255,0.15)]",
               )}
             >
-              Demo
-            </Link>
+              Get in touch
+            </a>
           </div>
         </div>
       </header>
@@ -118,7 +171,10 @@ export default function Home() {
           <div className="relative z-10 mx-auto max-w-7xl">
             <div className="mx-auto max-w-3xl text-center">
               <div className="mx-auto mb-6 inline-flex items-center gap-2 rounded-full border border-border/70 bg-card/40 px-3 py-1 text-sm text-muted-foreground shadow-sm">
-                <Badge className="h-5 rounded-full px-2 text-[10px] font-semibold uppercase tracking-wider" variant="secondary">
+                <Badge
+                  className="h-5 rounded-full px-2 text-[10px] font-semibold uppercase tracking-wider"
+                  variant="secondary"
+                >
                   AI-Powered QA
                 </Badge>
                 <span>Autonomous agents. Real browsers. No scripts.</span>
@@ -127,75 +183,55 @@ export default function Home() {
 
               <h1 className="text-balance text-5xl font-semibold tracking-tight sm:text-6xl">
                 AI agents that test your app
-                <span className="bg-gradient-to-r from-primary to-[#4d8eff] bg-clip-text text-transparent"> the way humans do</span>.
+                <span className="bg-gradient-to-r from-primary to-[#4d8eff] bg-clip-text text-transparent">
+                  {" "}
+                  the way humans do
+                </span>
+                .
               </h1>
 
               <p className="mx-auto mt-5 max-w-2xl text-pretty text-lg text-muted-foreground sm:text-xl">
-                Hawkeye sends vision-capable AI agents into your web app. They screenshot every step, reason about what they see, and catch regressions before your users do — no brittle recorded scripts required.
+                Hawkeye sends vision-capable AI agents into your web app. They
+                screenshot every step, reason about what they see, and catch
+                regressions before your users do — no brittle recorded scripts
+                required.
               </p>
 
               <div className="mt-8 flex flex-col items-stretch justify-center gap-3 sm:flex-row sm:items-center">
-                <Link
-                  href={loginUrl("/app")}
+                <a
+                  href={`mailto:${CONTACT_EMAIL}`}
                   className={cn(
                     buttonVariants({ variant: "default", size: "lg" }),
-                    "h-11 px-7 shadow-[0_0_20px_rgba(173,198,255,0.25)]"
+                    "h-11 px-7 shadow-[0_0_20px_rgba(173,198,255,0.25)]",
                   )}
                 >
-                  Try the demo
-                </Link>
-                <Link href="#features" className={cn(buttonVariants({ variant: "outline", size: "lg" }), "h-11 px-7")}>
+                  Request a demo
+                </a>
+                <a
+                  href="#demo"
+                  className={cn(
+                    buttonVariants({ variant: "outline", size: "lg" }),
+                    "h-11 px-7",
+                  )}
+                >
                   <Sparkles className="size-4" aria-hidden="true" />
-                  See how it works
-                </Link>
+                  Watch it in action
+                </a>
               </div>
             </div>
 
-            {/* Live execution preview */}
+            {/* Product preview cards */}
             <div id="product" className="mt-14 grid gap-4 md:grid-cols-12">
               <Card className="border-border/60 bg-card/50 md:col-span-7">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base">Live execution</CardTitle>
-                  <CardDescription>Follow agent decisions step-by-step — screenshot, reasoning, action, result.</CardDescription>
+                  <CardDescription>
+                    Follow agent decisions step-by-step — screenshot, reasoning,
+                    action, result.
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="rounded-xl border border-border/60 bg-background/30 p-4 font-mono text-sm text-muted-foreground">
-                    <div className="flex items-center gap-2 text-xs">
-                      <span className="size-2.5 rounded-full bg-rose-500/80" />
-                      <span className="size-2.5 rounded-full bg-amber-500/80" />
-                      <span className="size-2.5 rounded-full bg-emerald-500/80" />
-                      <span className="ml-2">agent trace</span>
-                    </div>
-                    <Separator className="my-3 bg-border/60" />
-                    <div className="space-y-2">
-                      <div>
-                        <span className="text-foreground/90">[Observe]</span> Screenshot captured. Accessibility tree parsed.
-                      </div>
-                      <div>
-                        <span className="text-primary">[Reason]</span> Checkout CTA visible. Proceeding to click.
-                      </div>
-                      <div>
-                        <span className="text-amber-400">[Act]</span> browser_click(&quot;button[data-test=&apos;checkout&apos;]&quot;)
-                      </div>
-                      <div>
-                        <span className="text-foreground/90">[Observe]</span> Order confirmation page rendered.
-                      </div>
-                      <div className="flex items-center gap-2 pt-1">
-                        <span className="h-4 w-1.5 bg-primary/70 animate-pulse" />
-                        <span className="italic">running assertion checks…</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-                    <Link href={loginUrl("/app/runs/live")} className={cn(buttonVariants({ variant: "default" }), "justify-center")}>
-                      <Zap className="size-4" aria-hidden="true" />
-                      Watch it live
-                    </Link>
-                    <Link href={loginUrl("/app/runs/new")} className={cn(buttonVariants({ variant: "outline" }), "justify-center")}>
-                      Configure a run
-                    </Link>
-                  </div>
+                  <TerminalTrace />
                 </CardContent>
               </Card>
 
@@ -203,51 +239,116 @@ export default function Home() {
                 <Card className="border-border/60 bg-card/50">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-base">Test suites</CardTitle>
-                    <CardDescription>Group runs, schedule with cron, trigger on git push.</CardDescription>
+                    <CardDescription>
+                      Group runs, schedule with cron, trigger on git push.
+                    </CardDescription>
                   </CardHeader>
-                  <CardContent className="flex items-center justify-between">
+                  <CardContent>
                     <div className="text-sm text-muted-foreground">
-                      <div className="font-semibold text-foreground">Checkout Flow</div>
-                      <div className="font-mono text-xs">14 tests · 85% pass · runs nightly</div>
+                      <div className="font-semibold text-foreground">
+                        Checkout Flow
+                      </div>
+                      <div className="font-mono text-xs">
+                        14 tests · 85% pass · runs nightly
+                      </div>
                     </div>
-                    <Link href={loginUrl("/app/suites")} className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
-                      Open
-                    </Link>
                   </CardContent>
                 </Card>
 
                 <Card className="border-border/60 bg-card/50">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-base">Visual baselines</CardTitle>
-                    <CardDescription>Pixel-diff against Figma or approved screenshots.</CardDescription>
+                    <CardTitle className="text-base">
+                      Visual baselines
+                    </CardTitle>
+                    <CardDescription>
+                      Pixel-diff against Figma or approved screenshots.
+                    </CardDescription>
                   </CardHeader>
-                  <CardContent className="flex items-center justify-between">
+                  <CardContent>
                     <div className="text-sm text-muted-foreground">
-                      <div className="font-semibold text-foreground">3 regressions flagged</div>
-                      <div className="font-mono text-xs">awaiting review · 2 projects</div>
+                      <div className="font-semibold text-foreground">
+                        3 regressions flagged
+                      </div>
+                      <div className="font-mono text-xs">
+                        awaiting review · 2 projects
+                      </div>
                     </div>
-                    <Link href={loginUrl("/app/visual-baselines")} className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
-                      Review
-                    </Link>
                   </CardContent>
                 </Card>
 
                 <Card className="border-border/60 bg-card/50">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-base">Vault</CardTitle>
-                    <CardDescription>AES-256 encrypted secrets. Injected at runtime.</CardDescription>
+                    <CardDescription>
+                      AES-256 encrypted secrets. Injected at runtime.
+                    </CardDescription>
                   </CardHeader>
-                  <CardContent className="flex items-center justify-between">
+                  <CardContent>
                     <div className="text-sm text-muted-foreground">
-                      <div className="font-semibold text-foreground">PROD_STRIPE_SECRET_KEY</div>
-                      <div className="font-mono text-xs">••••••••••••••••••••</div>
+                      <div className="font-semibold text-foreground">
+                        PROD_STRIPE_SECRET_KEY
+                      </div>
+                      <div className="font-mono text-xs">
+                        ••••••••••••••••••••
+                      </div>
                     </div>
-                    <Link href={loginUrl("/app/vault")} className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
-                      Manage
-                    </Link>
                   </CardContent>
                 </Card>
               </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Video demo */}
+        <section id="demo" className="px-6 py-20 sm:py-24">
+          <div className="mx-auto max-w-5xl">
+            <div className="mx-auto mb-10 max-w-3xl text-center">
+              <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+                See Hawkeye in action
+              </h2>
+              <p className="mt-3 text-muted-foreground sm:text-lg">
+                Watch an AI agent navigate a real web app — screenshot by
+                screenshot, decision by decision.
+              </p>
+            </div>
+
+            <div className="relative overflow-hidden rounded-2xl border border-border/60 bg-card/50 shadow-[0_0_40px_rgba(173,198,255,0.08)]">
+              {YOUTUBE_VIDEO_ID ? (
+                <div className="aspect-video w-full">
+                  <iframe
+                    className="h-full w-full"
+                    src={`https://www.youtube.com/embed/${YOUTUBE_VIDEO_ID}?rel=0&modestbranding=1`}
+                    title="Hawkeye demo"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                  />
+                </div>
+              ) : (
+                <div className="aspect-video w-full flex flex-col items-center justify-center gap-6 bg-gradient-to-br from-card/80 via-background/60 to-card/80">
+                  <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(600px_circle_at_50%_50%,_rgba(173,198,255,0.12),_transparent_70%)]" />
+                  <div className="relative z-10 flex flex-col items-center gap-4 text-center px-6">
+                    <div className="inline-flex size-20 items-center justify-center rounded-full bg-primary/10 ring-1 ring-primary/30 shadow-[0_0_30px_rgba(173,198,255,0.2)]">
+                      <Play
+                        className="size-8 text-primary fill-primary"
+                        aria-hidden="true"
+                      />
+                    </div>
+                    <p className="text-lg font-medium text-foreground/80">
+                      Demo video coming soon
+                    </p>
+                    <p className="text-sm text-muted-foreground max-w-sm">
+                      Want an early walkthrough?{" "}
+                      <a
+                        href={`mailto:${CONTACT_EMAIL}`}
+                        className="text-primary underline underline-offset-4 hover:text-primary/80"
+                      >
+                        Reach out
+                      </a>{" "}
+                      and we&apos;ll walk you through it live.
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </section>
@@ -256,24 +357,46 @@ export default function Home() {
         <section id="features" className="px-6 py-20 sm:py-24">
           <div className="mx-auto max-w-7xl">
             <div className="mx-auto mb-12 max-w-3xl text-center">
-              <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">Everything you need to ship confidently</h2>
+              <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+                Everything you need to ship confidently
+              </h2>
               <p className="mt-3 text-muted-foreground sm:text-lg">
-                One platform for writing, running, scheduling, and reviewing AI-driven QA tests.
+                One platform for writing, running, scheduling, and reviewing
+                AI-driven QA tests.
               </p>
             </div>
 
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-              {FEATURES.map(({ icon: Icon, title, description }) => (
-                <Card key={title} className="border-border/60 bg-card/70 transition-colors hover:border-border">
-                  <CardHeader className="pb-3">
-                    <div className="mb-3 inline-flex size-11 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-border/60">
-                      <Icon className="size-5" aria-hidden="true" />
-                    </div>
-                    <CardTitle className="text-base">{title}</CardTitle>
-                    <CardDescription>{description}</CardDescription>
-                  </CardHeader>
-                </Card>
-              ))}
+              {FEATURES.map(
+                ({
+                  icon: Icon,
+                  title,
+                  description,
+                  iconBg,
+                  iconColor,
+                  iconRing,
+                }) => (
+                  <Card
+                    key={title}
+                    className="border-border/60 bg-card/70 transition-colors hover:border-border"
+                  >
+                    <CardHeader className="pb-3">
+                      <div
+                        className={cn(
+                          "mb-3 inline-flex size-11 items-center justify-center rounded-lg ring-1",
+                          iconBg,
+                          iconColor,
+                          iconRing,
+                        )}
+                      >
+                        <Icon className="size-5" aria-hidden="true" />
+                      </div>
+                      <CardTitle className="text-base">{title}</CardTitle>
+                      <CardDescription>{description}</CardDescription>
+                    </CardHeader>
+                  </Card>
+                ),
+              )}
             </div>
           </div>
         </section>
@@ -282,45 +405,51 @@ export default function Home() {
         <section id="why" className="px-6 py-20 sm:py-24 bg-card/20">
           <div className="mx-auto max-w-7xl">
             <div className="mx-auto mb-12 max-w-3xl text-center">
-              <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">Why autonomous, not scripted</h2>
+              <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+                Why autonomous, not scripted
+              </h2>
               <p className="mt-3 text-muted-foreground sm:text-lg">
-                Traditional test frameworks break when your UI changes. Hawkeye agents adapt — because they see, not select.
+                Traditional test frameworks break when your UI changes. Hawkeye
+                agents adapt — because they see, not select.
               </p>
             </div>
 
             <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
               <Card className="border-border/60 bg-card/70 transition-colors hover:border-border">
                 <CardHeader className="pb-3">
-                  <div className="mb-3 inline-flex size-12 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-border/60">
+                  <div className="mb-3 inline-flex size-12 items-center justify-center rounded-lg bg-blue-500/10 text-blue-400 ring-1 ring-blue-500/20">
                     <Eye className="size-5" aria-hidden="true" />
                   </div>
                   <CardTitle>Vision over selectors</CardTitle>
                   <CardDescription>
-                    Agents screenshot and reason about the page on every step. A button moving 10px doesn&apos;t break your test.
+                    Agents screenshot and reason about the page on every step. A
+                    button moving 10px doesn&apos;t break your test.
                   </CardDescription>
                 </CardHeader>
               </Card>
 
               <Card className="border-border/60 bg-card/70 transition-colors hover:border-border">
                 <CardHeader className="pb-3">
-                  <div className="mb-3 inline-flex size-12 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-border/60">
+                  <div className="mb-3 inline-flex size-12 items-center justify-center rounded-lg bg-amber-500/10 text-amber-400 ring-1 ring-amber-500/20">
                     <Gauge className="size-5" aria-hidden="true" />
                   </div>
                   <CardTitle>Fast feedback loops</CardTitle>
                   <CardDescription>
-                    Tests run in parallel across browsers. Results stream live. Review and rerun in seconds, not minutes.
+                    Tests run in parallel across browsers. Results stream live.
+                    Review and rerun in seconds, not minutes.
                   </CardDescription>
                 </CardHeader>
               </Card>
 
               <Card className="border-border/60 bg-card/70 transition-colors hover:border-border">
                 <CardHeader className="pb-3">
-                  <div className="mb-3 inline-flex size-12 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-border/60">
+                  <div className="mb-3 inline-flex size-12 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/20">
                     <Activity className="size-5" aria-hidden="true" />
                   </div>
                   <CardTitle>Full observability</CardTitle>
                   <CardDescription>
-                    Every step is traced — screenshot, reasoning, action, tokens, latency, cost. No black boxes.
+                    Every step is traced — screenshot, reasoning, action,
+                    tokens, latency, cost. No black boxes.
                   </CardDescription>
                 </CardHeader>
               </Card>
@@ -330,10 +459,15 @@ export default function Home() {
               <Card className="border-border/60 bg-card/40">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-base">
-                    <ShieldCheck className="size-4 text-primary" aria-hidden="true" />
+                    <ShieldCheck
+                      className="size-4 text-rose-400"
+                      aria-hidden="true"
+                    />
                     Built for real products
                   </CardTitle>
-                  <CardDescription>The full stack you need for production QA — not a toy demo.</CardDescription>
+                  <CardDescription>
+                    The full stack you need for production QA — not a toy demo.
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="text-sm text-muted-foreground">
                   <ul className="space-y-2">
@@ -343,7 +477,10 @@ export default function Home() {
                       "Cron scheduling with branch filters",
                     ].map((t) => (
                       <li key={t} className="flex items-center gap-2">
-                        <CheckCircle2 className="size-4 shrink-0 text-emerald-400" aria-hidden="true" />
+                        <CheckCircle2
+                          className="size-4 shrink-0 text-emerald-400"
+                          aria-hidden="true"
+                        />
                         {t}
                       </li>
                     ))}
@@ -354,10 +491,15 @@ export default function Home() {
               <Card className="border-border/60 bg-card/40">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-base">
-                    <BrainCircuit className="size-4 text-primary" aria-hidden="true" />
+                    <BrainCircuit
+                      className="size-4 text-violet-400"
+                      aria-hidden="true"
+                    />
                     Model-agnostic
                   </CardTitle>
-                  <CardDescription>Bring your own LLM or use ours. Switch any time.</CardDescription>
+                  <CardDescription>
+                    Bring your own LLM or use ours. Switch any time.
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="text-sm text-muted-foreground">
                   <ul className="space-y-2">
@@ -367,7 +509,10 @@ export default function Home() {
                       "Per-run model selection — no lock-in",
                     ].map((t) => (
                       <li key={t} className="flex items-center gap-2">
-                        <CheckCircle2 className="size-4 shrink-0 text-emerald-400" aria-hidden="true" />
+                        <CheckCircle2
+                          className="size-4 shrink-0 text-emerald-400"
+                          aria-hidden="true"
+                        />
                         {t}
                       </li>
                     ))}
@@ -384,18 +529,32 @@ export default function Home() {
             <Card className="relative overflow-hidden border-border/60 bg-card/70 p-8 text-center shadow-[0_0_40px_rgba(173,198,255,0.10)] sm:p-12">
               <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-primary/10 via-transparent to-primary/10" />
               <div className="relative z-10">
-                <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">Ready to stop guessing and start shipping?</h2>
+                <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+                  Ready to stop guessing and start shipping?
+                </h2>
                 <p className="mx-auto mt-3 max-w-2xl text-muted-foreground sm:text-lg">
-                  Try the live demo — run an AI agent against a real web app, watch the trace stream, review results.
+                  Reach out and we&apos;ll walk you through a live demo of
+                  Hawkeye running against your app.
                 </p>
 
                 <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-                  <Link href={loginUrl("/app")} className={cn(buttonVariants({ variant: "default", size: "lg" }), "h-11 px-7")}>
-                    Open demo
-                  </Link>
-                  <span className="text-sm text-muted-foreground sm:px-2">or</span>
-                  <a className="text-sm text-foreground/90 underline underline-offset-4 hover:text-foreground" href="mailto:hello@hawkeye.dev">
-                    Talk to us
+                  <a
+                    href={`mailto:${CONTACT_EMAIL}`}
+                    className={cn(
+                      buttonVariants({ variant: "default", size: "lg" }),
+                      "h-11 px-7",
+                    )}
+                  >
+                    Request a demo
+                  </a>
+                  <span className="text-sm text-muted-foreground sm:px-2">
+                    or
+                  </span>
+                  <a
+                    href="#demo"
+                    className="text-sm text-foreground/90 underline underline-offset-4 hover:text-foreground"
+                  >
+                    Watch the video
                   </a>
                 </div>
               </div>
@@ -407,40 +566,70 @@ export default function Home() {
         <section id="faq" className="px-6 pb-24">
           <div className="mx-auto max-w-4xl">
             <div className="mb-10 text-center">
-              <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">FAQ</h2>
-              <p className="mt-3 text-muted-foreground">Common questions about how Hawkeye works.</p>
+              <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+                FAQ
+              </h2>
+              <p className="mt-3 text-muted-foreground">
+                Common questions about how Hawkeye works.
+              </p>
             </div>
             <Card className="border-border/60 bg-card/50">
               <CardContent className="p-6">
                 <Accordion>
                   <AccordionItem value="item-1">
-                    <AccordionTrigger>How does the agent navigate a web app?</AccordionTrigger>
+                    <AccordionTrigger>
+                      How does the agent navigate a web app?
+                    </AccordionTrigger>
                     <AccordionContent>
-                      At every step the agent takes a full screenshot via Chrome DevTools Protocol and reads the accessibility tree via Playwright MCP. Both are sent to a vision-capable LLM which decides what to do next — click, type, navigate, or assert. No selectors are hardcoded.
+                      At every step the agent takes a full screenshot via Chrome
+                      DevTools Protocol and reads the accessibility tree via
+                      Playwright MCP. Both are sent to a vision-capable LLM
+                      which decides what to do next — click, type, navigate, or
+                      assert. No selectors are hardcoded.
                     </AccordionContent>
                   </AccordionItem>
                   <AccordionItem value="item-2">
-                    <AccordionTrigger>Which LLMs are supported?</AccordionTrigger>
+                    <AccordionTrigger>
+                      Which LLMs are supported?
+                    </AccordionTrigger>
                     <AccordionContent>
-                      GPT-4o, Claude Sonnet, Gemini Pro Vision, NVIDIA NIM (cloud), and Ollama (local). You pick the model per run — no migration needed to switch. Text-only models are supported too; they skip the screenshot and use the accessibility tree alone.
+                      GPT-4o, Claude Sonnet, Gemini Pro Vision, NVIDIA NIM
+                      (cloud), and Ollama (local). You pick the model per run —
+                      no migration needed to switch. Text-only models are
+                      supported too; they skip the screenshot and use the
+                      accessibility tree alone.
                     </AccordionContent>
                   </AccordionItem>
                   <AccordionItem value="item-3">
-                    <AccordionTrigger>Can I trigger runs from CI/CD?</AccordionTrigger>
+                    <AccordionTrigger>
+                      Can I trigger runs from CI/CD?
+                    </AccordionTrigger>
                     <AccordionContent>
-                      Yes. Hawkeye listens for GitHub push webhooks and can run a suite automatically on every push to a configured branch. You can also trigger runs via the REST API or schedule them with a cron expression in the dashboard.
+                      Yes. Hawkeye listens for GitHub push webhooks and can run
+                      a suite automatically on every push to a configured
+                      branch. You can also trigger runs via the REST API or
+                      schedule them with a cron expression in the dashboard.
                     </AccordionContent>
                   </AccordionItem>
                   <AccordionItem value="item-4">
-                    <AccordionTrigger>How are secrets handled?</AccordionTrigger>
+                    <AccordionTrigger>
+                      How are secrets handled?
+                    </AccordionTrigger>
                     <AccordionContent>
-                      Secrets are stored AES-256-GCM encrypted in the vault. They are injected into test cases at runtime and never written to logs or screenshots. Each secret has explicit reveal and copy controls in the UI.
+                      Secrets are stored AES-256-GCM encrypted in the vault.
+                      They are injected into test cases at runtime and never
+                      written to logs or screenshots. Each secret has explicit
+                      reveal and copy controls in the UI.
                     </AccordionContent>
                   </AccordionItem>
                   <AccordionItem value="item-5">
-                    <AccordionTrigger>What browsers does it support?</AccordionTrigger>
+                    <AccordionTrigger>
+                      What browsers does it support?
+                    </AccordionTrigger>
                     <AccordionContent>
-                      Chromium, Firefox, and WebKit (Safari engine) via Playwright. You can run the same test case across all three browsers from a single configuration.
+                      Chromium, Firefox, and WebKit (Safari engine) via
+                      Playwright. You can run the same test case across all
+                      three browsers from a single configuration.
                     </AccordionContent>
                   </AccordionItem>
                 </Accordion>
@@ -460,19 +649,36 @@ export default function Home() {
           </div>
 
           <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
-            <a className="opacity-80 transition-opacity hover:opacity-100" href="#privacy">
+            <a
+              className="opacity-80 transition-opacity hover:opacity-100"
+              href="#privacy"
+            >
               Privacy Policy
             </a>
-            <a className="opacity-80 transition-opacity hover:opacity-100" href="#terms">
+            <a
+              className="opacity-80 transition-opacity hover:opacity-100"
+              href="#terms"
+            >
               Terms of Service
             </a>
-            <a className="opacity-80 transition-opacity hover:opacity-100" href="#changelog">
+            <a
+              className="opacity-80 transition-opacity hover:opacity-100"
+              href="#changelog"
+            >
               Changelog
             </a>
-            <a className="opacity-80 transition-opacity hover:opacity-100" href="#status">
+            <a
+              className="opacity-80 transition-opacity hover:opacity-100"
+              href="#status"
+            >
               Status
             </a>
-            <a className="opacity-80 transition-opacity hover:opacity-100" href="https://github.com" target="_blank" rel="noopener noreferrer">
+            <a
+              className="opacity-80 transition-opacity hover:opacity-100"
+              href="https://github.com"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
               GitHub
             </a>
           </div>
