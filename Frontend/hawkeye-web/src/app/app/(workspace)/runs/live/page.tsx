@@ -14,9 +14,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { useRunTraceStream, useRun, useDeleteRun, useRuns } from "@/lib/api/hooks";
+import { useRunTraceStream, useRun, useDeleteRun, useProjectRuns } from "@/lib/api/hooks";
 import { NewRunModal } from "@/components/app/new-run-modal";
 import { type TraceEvent, type RunStatus, type RunSummary } from "@/lib/api/client";
+import { useProjectStore } from "@/lib/project/store";
 
 const TERMINAL = new Set<RunStatus>(["passed", "failed", "errored", "timed_out", "blocked", "cancelled"]);
 
@@ -463,7 +464,8 @@ function LiveExecutionInner() {
   const [newRunOpen, setNewRunOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
 
-  const { data: runs } = useRuns();
+  const projectId = useProjectStore((s) => s.currentProject?.id ?? null);
+  const { data: runs } = useProjectRuns(projectId);
 
   // Tick every second to update elapsed times for active runs
   useEffect(() => {
