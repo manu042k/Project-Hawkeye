@@ -52,12 +52,6 @@ export default function Home() {
           </nav>
 
           <div className="flex items-center gap-3">
-            <Link
-              href="/auth/login"
-              className="hidden text-sm font-medium text-muted-foreground transition-colors hover:text-foreground md:block"
-            >
-              Sign In
-            </Link>
             <ThemeToggle className="hidden md:inline-flex" />
             <Link
               href={loginUrl("/app")}
@@ -66,7 +60,7 @@ export default function Home() {
                 "shadow-[0_0_20px_rgba(173,198,255,0.15)]"
               )}
             >
-              Get Started
+              Demo
             </Link>
           </div>
         </div>
