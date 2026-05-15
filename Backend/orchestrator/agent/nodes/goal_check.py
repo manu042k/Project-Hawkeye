@@ -46,7 +46,7 @@ def goal_check_node(state: AgentState) -> dict:
     # --- Checkpoint completions ---
     completed = list(state.get("completed_checkpoints", []))
     test_case = state["test_case"]
-    steps = test_case.steps
+    steps = test_case.goal.steps
 
     new_completions = [f"S{m}" for m in _CHECKPOINT_RE.findall(agent_text)]
     for cp_id in new_completions:
@@ -66,7 +66,7 @@ def goal_check_node(state: AgentState) -> dict:
 
     # --- Auto-complete for unguided tests when all content assertions pass ---
     # Requires step >= 3 so we don't complete on the start page before any navigation.
-    if test_case.steps is None and state.get("step_number", 0) >= 3 and state.get("page_snapshot"):
+    if test_case.goal.steps is None and state.get("step_number", 0) >= 3 and state.get("page_snapshot"):
         snapshot = state.get("page_snapshot", "")
         text_present_assertions = [
             a for a in test_case.assertions
@@ -99,8 +99,8 @@ def goal_check_node(state: AgentState) -> dict:
         })
         return updates
 
-    # --- Strict mode: fail if a checkpoint is explicitly marked failed ---
-    if steps and steps.mode == "strict":
+    # --- Fail if a checkpoint is explicitly marked failed (guided tests only) ---
+    if steps:
         if re.search(r"\[S\w+\s+failed\]", agent_text, re.IGNORECASE):
             updates.update({
                 "goal_complete": True,

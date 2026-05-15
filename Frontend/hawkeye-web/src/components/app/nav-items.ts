@@ -1,5 +1,6 @@
 import {
   Archive,
+  Building2,
   CreditCard,
   FlaskConical,
   FolderKanban,
@@ -8,8 +9,8 @@ import {
   LayoutDashboard,
   PlayCircle,
   Settings,
-  Sparkles,
   User,
+  Layers,
 } from "lucide-react";
 
 export type AppNavItem = {
@@ -35,11 +36,12 @@ export const primaryNav: AppNavItem[] = [
   { href: "/app/runs/live", label: "Live", icon: PlayCircle },
   { href: "/app/artifacts", label: "Artifacts", icon: Archive },
   { href: "/app/suites", label: "Test suites", icon: FolderKanban },
-  { href: "/app/visual-baselines", label: "Visual baselines", icon: Sparkles },
   { href: "/app/vault", label: "The Vault", icon: KeyRound },
 ];
 
 /** Account / billing live in `globalFooterNav`; workspace middle nav is execution + integrations only. */
 export const workspaceSettingsNav: AppNavItem[] = [
+  { href: "/app/settings/project", label: "Project", icon: Layers },
   { href: "/app/settings/integrations", label: "Integrations", icon: Settings },
+  { href: "/app/settings/org", label: "Organization", icon: Building2 },
 ];

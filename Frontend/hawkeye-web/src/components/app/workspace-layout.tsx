@@ -8,8 +8,8 @@ import { useProjectStore } from "@/lib/project/store";
 
 function ProjectShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mx-auto flex h-dvh w-full max-w-[1600px] overflow-hidden">
-      <div className="hidden h-full min-h-0 shrink-0 md:block">
+    <div data-print-root className="mx-auto flex h-dvh w-full max-w-[1600px] overflow-hidden">
+      <div data-print-hide className="hidden h-full min-h-0 shrink-0 md:block">
         <AppSidebar />
       </div>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{children}</div>

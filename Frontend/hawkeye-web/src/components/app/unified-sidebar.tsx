@@ -1,7 +1,7 @@
 "use client";
 
 import type { ComponentType } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
@@ -25,6 +25,7 @@ import {
 import { BrandLogo } from "@/components/brand/brand-logo";
 import { Separator } from "@/components/ui/separator";
 import { useProjectStore } from "@/lib/project/store";
+import { useNotificationStore } from "@/lib/notifications/store";
 import { cn } from "@/lib/utils";
 
 import { globalFooterNav, primaryNav, workspaceSettingsNav, type AppNavItem, type GlobalFooterNavItem } from "./nav-items";
@@ -141,12 +142,26 @@ export function UnifiedSidebar({ className }: { className?: string }) {
   const pathname = usePathname();
   const hash = useHash();
   const { data: session, status } = useSession();
+  const userEmail = session?.user?.email ?? null;
 
-  useEffect(() => {
-    setAuthUser(session?.user?.email ?? null);
+  // useLayoutEffect fires before any useEffect in the tree — guarantees _authToken
+  // is set before page-level useEffects that call apiFetch.
+  useLayoutEffect(() => {
+    setAuthUser(userEmail);
     setAuthToken((session as { access_token?: string })?.access_token ?? null);
-  }, [session?.user?.email]);
-  const currentProject = useProjectStore((s) => s.currentProject);
+  }, [userEmail]);
+
+  const { currentProject, getProjectForUser, setCurrentProject } = useProjectStore();
+  const setActiveEmail = useNotificationStore((s) => s.setActiveEmail);
+
+  // Restore the last project and activate per-user notifications when session loads
+  useEffect(() => {
+    setActiveEmail(userEmail);
+    if (userEmail && !currentProject) {
+      const saved = getProjectForUser(userEmail);
+      if (saved) setCurrentProject(saved);
+    }
+  }, [userEmail]); // eslint-disable-line react-hooks/exhaustive-deps
   const hub = isGlobalHubPath(pathname);
 
   let hubKey: HubKey = "projects";
@@ -225,7 +240,7 @@ export function UnifiedSidebar({ className }: { className?: string }) {
                   active={pathname === "/app" || pathname === "/app/"}
                 />
                 <Link
-                  href="/app/dashboard"
+                  href={userEmail && getProjectForUser(userEmail) ? "/app/dashboard" : "/app"}
                   className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium tracking-tight text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
                 >
                   <Layers className="size-4 shrink-0" aria-hidden />

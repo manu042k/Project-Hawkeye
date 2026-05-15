@@ -22,13 +22,15 @@ function initState<T>(): ApiState<T> {
 
 export function useRuns(): ApiState<RunSummary[]> & { refetch: () => void } {
   const [state, setState] = useState<ApiState<RunSummary[]>>(initState);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const runsMapRef = useRef<Map<string, RunSummary>>(new Map());
+  const esRef = useRef<EventSource | null>(null);
 
-  const fetch = useCallback(async () => {
+  const refetch = useCallback(async () => {
     try {
       const data = await apiClient.getRuns();
       const seen = new Set<string>();
       const unique = data.runs.filter((r) => !seen.has(r.run_id) && seen.add(r.run_id));
+      runsMapRef.current = new Map(unique.map((r) => [r.run_id, r]));
       setState({ data: unique, loading: false, error: null });
     } catch (e) {
       setState((prev) => ({ ...prev, loading: false, error: String(e) }));
@@ -36,14 +38,66 @@ export function useRuns(): ApiState<RunSummary[]> & { refetch: () => void } {
   }, []);
 
   useEffect(() => {
-    fetch();
-    intervalRef.current = setInterval(fetch, 10_000);
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, [fetch]);
+    const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
+    const es = new EventSource(`${API_BASE}/api/runs/stream`);
+    esRef.current = es;
 
-  return { ...state, refetch: fetch };
+    es.addEventListener("snapshot", (e) => {
+      const runs: RunSummary[] = JSON.parse(e.data);
+      runsMapRef.current = new Map(runs.map((r) => [r.run_id, r]));
+      setState({ data: runs, loading: false, error: null });
+    });
+
+    es.addEventListener("run_update", (e) => {
+      const run: RunSummary = JSON.parse(e.data);
+      runsMapRef.current.set(run.run_id, run);
+      const updated = Array.from(runsMapRef.current.values());
+      setState({ data: updated, loading: false, error: null });
+    });
+
+    es.onerror = () => {
+      // SSE disconnected — fall back to a single fetch then retry
+      setState((prev) => ({ ...prev, error: null }));
+      refetch();
+      es.close();
+      // Reconnect after 3s
+      setTimeout(() => {
+        esRef.current = null;
+      }, 3_000);
+    };
+
+    return () => {
+      es.close();
+      esRef.current = null;
+    };
+  }, [refetch]);
+
+  return { ...state, refetch };
+}
+
+export function useProjectRuns(projectId: string | null): ApiState<RunSummary[]> & { refetch: () => void } {
+  const [state, setState] = useState<ApiState<RunSummary[]>>(initState);
+
+  const refetch = useCallback(async () => {
+    if (!projectId) { setState({ data: [], loading: false, error: null }); return; }
+    try {
+      const data = await apiClient.getProjectRuns(projectId);
+      setState({ data: data.runs, loading: false, error: null });
+    } catch (e) {
+      // Suppress 401 — apiFetch already triggers signOut; don't overwrite state
+      if (String(e).includes("Unauthorized")) return;
+      setState((prev) => ({ ...prev, loading: false, error: String(e) }));
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    setState(initState);
+    refetch();
+    const t = setInterval(refetch, 5_000);
+    return () => clearInterval(t);
+  }, [refetch]);
+
+  return { ...state, refetch };
 }
 
 export function useRun(id: string | null): ApiState<RunSummary> & { refetch: () => void } {
@@ -182,7 +236,7 @@ export function useRunTraceStream(runId: string | null): TraceStreamState {
       if (event.event_type === "run_started") setLiveStatus("running");
       if (event.event_type === "complete") {
         const s = (event.data as { status?: RunStatus }).status;
-        setLiveStatus(s ?? "passed");
+        if (s) setLiveStatus(s);
       }
       setEvents((prev) => [...prev, event]);
     };

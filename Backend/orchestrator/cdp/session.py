@@ -184,15 +184,31 @@ class CdpSession:
         return results
 
     async def take_screenshot(self) -> bytes:
-        """Capture the current page as PNG bytes via CDP."""
+        """Capture the current page as PNG bytes via CDP.
+
+        Attempts one reconnect if the WebSocket dropped (e.g. after navigation).
+        """
         import base64
+        if not self._connected:
+            try:
+                await self.connect()
+            except Exception as exc:
+                logger.debug("take_screenshot: reconnect failed: %s", exc)
+                return b""
         try:
             result = await self._send("Page.captureScreenshot", {"format": "png"})
             data = result.get("data", "")
             return base64.b64decode(data) if data else b""
-        except Exception as exc:
-            logger.warning("take_screenshot failed: %s", exc)
-            return b""
+        except Exception:
+            # WebSocket may have just dropped — try one reconnect then retry
+            try:
+                await self.connect()
+                result = await self._send("Page.captureScreenshot", {"format": "png"})
+                data = result.get("data", "")
+                return base64.b64decode(data) if data else b""
+            except Exception as exc:
+                logger.warning("take_screenshot failed: %s", exc)
+                return b""
 
     # ------------------------------------------------------------------
     # JS evaluation
@@ -281,7 +297,7 @@ class CdpSession:
         except Exception as exc:
             logger.warning("CDP receive loop error: %s", exc)
         finally:
-            # Fail any pending commands
+            self._connected = False
             for future in self._pending_commands.values():
                 if not future.done():
                     future.set_exception(CdpConnectionError("CDP connection closed"))
@@ -354,6 +370,34 @@ class CdpSession:
                 self._console_messages.append(
                     ConsoleMessage(level=level, text=text)
                 )
+
+    async def close_blank_tabs(self) -> int:
+        """Close all page targets at about:blank via the CDP HTTP API.
+
+        Called after MCP navigates to the target URL. The sandbox always starts
+        at about:blank; if MCP created its own page, the blank tab is orphaned
+        and safe to close. If MCP reused the blank tab, it is now at the target
+        URL and won't appear in this query. Returns number of tabs closed.
+        """
+        if self._cdp_url.startswith("ws"):
+            return 0
+        import httpx
+        http_url = self._cdp_url.rstrip("/")
+        closed = 0
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(f"{http_url}/json/list")
+                resp.raise_for_status()
+                for target in resp.json():
+                    if target.get("type") == "page" and target.get("url") == "about:blank":
+                        target_id = target.get("id", "")
+                        if target_id:
+                            await client.get(f"{http_url}/json/close/{target_id}")
+                            closed += 1
+                            logger.debug("Closed blank tab %s", target_id)
+        except Exception as exc:
+            logger.debug("close_blank_tabs: %s (non-fatal)", exc)
+        return closed
 
     async def _resolve_ws_url(self) -> str:
         """Fetch /json/list from the CDP HTTP endpoint and return the WS URL

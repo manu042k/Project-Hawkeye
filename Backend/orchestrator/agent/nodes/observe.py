@@ -37,29 +37,31 @@ async def observe_node(
 
     # --- Timeout checks ---
     elapsed = time.time() - state["run_start_time"]
-    if elapsed >= test_case.constraints.timeout_seconds:
+    constraints = test_case.goal.constraints
+    if elapsed >= constraints.timeout_seconds:
         return {
             "step_number": step_number,
             "status": "timed_out",
             "goal_complete": True,
             "termination_reason": (
                 f"Wall-clock timeout after {elapsed:.1f}s "
-                f"(limit {test_case.constraints.timeout_seconds}s)"
+                f"(limit {constraints.timeout_seconds}s)"
             ),
         }
 
-    if step_number > test_case.constraints.max_steps:
+    if step_number > constraints.max_steps:
         return {
             "step_number": step_number,
             "status": "timed_out",
             "goal_complete": True,
             "termination_reason": (
-                f"Exceeded max_steps={test_case.constraints.max_steps}"
+                f"Exceeded max_steps={constraints.max_steps}"
             ),
         }
 
     current_checkpoint = state.get("current_checkpoint")
     collector.on_step_start(step_number, current_checkpoint)
+    await asyncio.sleep(0)  # flush create_task'd publish before next await
 
     # --- wait_for_stable ---
     wait_ms = 0
@@ -68,7 +70,7 @@ async def observe_node(
             from orchestrator.tools.wait_for_stable import wait_for_stable
             result = await wait_for_stable(
                 cdp_session=cdp_session,
-                page_type=test_case.context.page_type,
+                page_type=test_case.target.page_type,
                 timeout_ms=_WAIT_FOR_STABLE_TIMEOUT_MS,
             )
             wait_ms = result.wait_duration_ms
@@ -135,6 +137,16 @@ async def observe_node(
         except Exception as exc:
             logger.warning("Screenshot capture failed (non-fatal): %s", exc)
 
+    # Trim very large snapshots — pages like Wikipedia produce 1M+ char trees
+    # that overwhelm the LLM context. Keep the first 40K chars which covers
+    # all interactive elements on any typical viewport.
+    _SNAPSHOT_MAX_CHARS = 40_000
+    if len(snapshot_text) > _SNAPSHOT_MAX_CHARS:
+        snapshot_text = snapshot_text[:_SNAPSHOT_MAX_CHARS] + (
+            f"\n\n[SNAPSHOT TRUNCATED at {_SNAPSHOT_MAX_CHARS} chars — "
+            "scroll down or navigate to see more content]"
+        )
+
     collector.on_observe(
         url=current_url,
         title=page_title,
@@ -142,6 +154,7 @@ async def observe_node(
         snapshot_chars=len(snapshot_text),
         screenshot_b64=screenshot_b64,
     )
+    await asyncio.sleep(0)  # flush publish before LLM call starts
 
     base_update: dict = {
         "step_number": step_number,
@@ -156,7 +169,7 @@ async def observe_node(
     # Auto-complete for unguided tests: if all text_present assertions are already
     # satisfied by the current snapshot, mark the goal as passed without requiring
     # the LLM to emit <GOAL_COMPLETE>. Only check after step 3 to skip the start page.
-    if test_case.steps is None and step_number >= 3 and snapshot_text:
+    if test_case.goal.steps is None and step_number >= 3 and snapshot_text:
         text_assertions = [
             a for a in test_case.assertions
             if a.type == "content" and a.params.get("check") == "text_present"

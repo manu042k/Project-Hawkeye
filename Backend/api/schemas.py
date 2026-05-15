@@ -25,12 +25,15 @@ class RunRequest(BaseModel):
     figma_token: str | None = Field(default=None, description="Figma personal access token.")
     max_steps: int | None = Field(default=None, description="Override max steps from test case.")
     timeout: int | None = Field(default=None, description="Override timeout seconds from test case.")
+    triggered_by: str | None = Field(default=None, description="Email / identity of the user who triggered this run.")
+    environment_id: str | None = Field(default=None, description="Environment ID to use for this run.")
 
 
 class RunResponse(BaseModel):
     run_id: str
     status: str
     test_name: str | None = None
+    triggered_by: str | None = None
     created_at: str
     duration_s: float | None = None
     total_steps: int | None = None
@@ -46,6 +49,12 @@ class RunResponse(BaseModel):
     error_count: int | None = None
     tool_call_count: int | None = None
     artifact_manifest: list[dict] | None = None
+    browser_used: str | None = None
+    model_used: str | None = None
+    recording: bool | None = None
+    max_steps_override: int | None = None
+    timeout_override: int | None = None
+    viewport: dict | None = None
 
 
 class RunListResponse(BaseModel):

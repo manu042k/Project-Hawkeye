@@ -53,49 +53,55 @@
   --font-sans: var(--font-inter);
   --font-mono: var(--font-jetbrains-mono);
 
-  --background: #f8fafc;
-  --foreground: #0f172a;
+  /* Page canvas — barely-there blue tint so pure-white cards pop */
+  --background: #f3f6fb;
+  --foreground: #0d1526;
 
+  /* Surfaces — pure white gives clear depth against the page bg */
   --card: #ffffff;
-  --card-foreground: #0f172a;
+  --card-foreground: #0d1526;
 
   --popover: #ffffff;
-  --popover-foreground: #0f172a;
+  --popover-foreground: #0d1526;
 
-  --primary: #005ac2; /* inverse-primary */
+  /* Brand blue */
+  --primary: #1a65cc;
   --primary-foreground: #ffffff;
 
-  --secondary: #e2e8f0;
-  --secondary-foreground: #0f172a;
+  /* Light blue tint for secondary / hover states */
+  --secondary: #e4edf8;
+  --secondary-foreground: #0d1526;
 
-  --muted: #f1f5f9;
-  --muted-foreground: #475569;
+  --muted: #ecf0f8;
+  --muted-foreground: #4a6080;
 
-  --accent: #e2e8f0;
-  --accent-foreground: #0f172a;
+  --accent: #e4edf8;
+  --accent-foreground: #0d1526;
 
   --destructive: #dc2626;
 
-  --border: #e2e8f0;
-  --input: #e2e8f0;
-  --ring: #005ac2;
+  /* Borders: cool blue-grey — visible but not harsh */
+  --border: #b8cce0;
+  --input: #ccdaeb;
+  --ring: #1a65cc;
 
-  --chart-1: #005ac2;
-  --chart-2: #0f172a;
+  --chart-1: #1a65cc;
+  --chart-2: #0d1526;
   --chart-3: #df7412;
-  --chart-4: #475569;
+  --chart-4: #4a6080;
   --chart-5: #8c909f;
 
   --radius: 0.5rem;
 
+  /* Sidebar: pure white with matching blue-grey border */
   --sidebar: #ffffff;
-  --sidebar-foreground: #0f172a;
-  --sidebar-primary: #005ac2;
+  --sidebar-foreground: #0d1526;
+  --sidebar-primary: #1a65cc;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #f1f5f9;
-  --sidebar-accent-foreground: #0f172a;
-  --sidebar-border: #e2e8f0;
-  --sidebar-ring: #005ac2;
+  --sidebar-accent: #ecf0f8;
+  --sidebar-accent-foreground: #0d1526;
+  --sidebar-border: #b8cce0;
+  --sidebar-ring: #1a65cc;
 }
 
 .dark {
@@ -142,5 +148,57 @@
   }
   html {
     @apply font-sans;
+  }
+  /* Light mode: give all card surfaces a soft shadow for depth */
+  :root [data-slot="card"] {
+    box-shadow: 0 1px 4px 0 rgb(26 101 204 / 0.07), 0 1px 2px -1px rgb(0 0 0 / 0.04);
+  }
+}
+
+@layer utilities {
+  /* Cards get a shadow for depth instead of relying solely on border */
+  .shadow-card {
+    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.04);
+  }
+}
+
+@media print {
+  [data-print-hide] {
+    display: none !important;
+  }
+
+  body,
+  html {
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  [data-print-root] {
+    display: block !important;
+    height: auto !important;
+    max-width: 100% !important;
+    overflow: visible !important;
+  }
+
+  [data-print-main] {
+    display: block !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  @page {
+    margin: 1.5cm 1.2cm;
+    size: A4 portrait;
+  }
+
+  [data-print-step],
+  [data-print-card] {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 }

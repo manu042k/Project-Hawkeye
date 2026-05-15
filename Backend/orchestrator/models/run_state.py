@@ -62,12 +62,21 @@ class StepTrace:
     estimated_cost_usd: float = 0.0
 
 
-# Groq API pricing per million tokens. Ollama models are local/free → $0.00.
+# Pricing per million tokens. Ollama/vLLM models are local/free → $0.00.
 MODEL_PRICING: dict[str, dict[str, float]] = {
-    "openai/gpt-oss-120b":     {"input_per_mtok": 0.90, "output_per_mtok": 0.90},
-    "openai/gpt-oss-20b":      {"input_per_mtok": 0.10, "output_per_mtok": 0.10},
-    "llama-3.3-70b-versatile": {"input_per_mtok": 0.59, "output_per_mtok": 0.79},
-    "llama-3.1-8b-instant":    {"input_per_mtok": 0.05, "output_per_mtok": 0.08},
+    # Groq / OpenRouter hosted models
+    "openai/gpt-oss-120b":          {"input_per_mtok": 0.90,  "output_per_mtok": 0.90},
+    "openai/gpt-oss-20b":           {"input_per_mtok": 0.10,  "output_per_mtok": 0.10},
+    "openai/gpt-4o-mini":           {"input_per_mtok": 0.15,  "output_per_mtok": 0.60},
+    "openai/gpt-4o":                {"input_per_mtok": 2.50,  "output_per_mtok": 10.00},
+    "llama-3.3-70b-versatile":      {"input_per_mtok": 0.59,  "output_per_mtok": 0.79},
+    "llama-3.1-8b-instant":         {"input_per_mtok": 0.05,  "output_per_mtok": 0.08},
+    # NVIDIA NIM models
+    "moonshotai/kimi-k2.6":         {"input_per_mtok": 0.50,  "output_per_mtok": 2.50},
+    "meta/llama-3.1-70b-instruct":  {"input_per_mtok": 0.35,  "output_per_mtok": 0.40},
+    "meta/llama-3.1-8b-instruct":   {"input_per_mtok": 0.05,  "output_per_mtok": 0.05},
+    "nvidia/llama-3.1-nemotron-70b-instruct": {"input_per_mtok": 0.35, "output_per_mtok": 0.40},
+    "mistralai/mistral-large-2-instruct":     {"input_per_mtok": 2.00, "output_per_mtok": 6.00},
 }
 
 _MOST_EXPENSIVE = max(
@@ -83,16 +92,22 @@ def compute_step_cost(model: str, usage: dict) -> float:
     If the model string is unrecognized and non-Ollama, falls back to the most
     expensive known Groq pricing and logs a WARNING so the caller notices.
     """
-    # Ollama models have the format "name:tag" (e.g. "qwen3.5:2b") or "ollama:name:tag".
-    # They do NOT contain "/", which is the separator used in Groq model IDs.
-    # Also catch explicit "ollama:" prefix.
-    normalized = model.removeprefix("ollama:")
-    if "/" not in normalized:
-        # Bare name like "qwen3.5:2b" or "llama3" — Ollama local model.
+    # Local models (Ollama / vLLM) are free. Ollama = "ollama:<name>" or bare "<name>:<tag>"
+    # with no slash. vLLM = "vllm:<name>".
+    for _local_prefix in ("ollama:", "vllm:"):
+        if model.startswith(_local_prefix):
+            return 0.0
+    # Bare "name:tag" with no slash → Ollama local model.
+    if "/" not in model and ":" in model:
         return 0.0
 
-    # Groq models: strip "groq:" prefix if present, then look up.
-    lookup = normalized.removeprefix("groq:")
+    # Strip provider prefix to get the bare model name for pricing lookup.
+    lookup = model
+    for _prefix in ("groq:", "openrouter:", "nvidia:", "openai:"):
+        if lookup.startswith(_prefix):
+            lookup = lookup.removeprefix(_prefix)
+            break
+
     pricing = MODEL_PRICING.get(lookup)
     if pricing is None:
         warnings.warn(

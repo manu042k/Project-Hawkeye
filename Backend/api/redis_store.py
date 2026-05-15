@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 import json
 import os
 from typing import Any
@@ -10,22 +11,34 @@ _EVENTS_CHANNEL = "hawkeye:events:{}"
 _TRACES_KEY = "hawkeye:traces:{}"
 _MAX_RUN_IDS = 100
 _RUN_TTL_S = 60 * 60 * 24 * 7  # 7 days
+_RUNS_UPDATES_CHANNEL = "hawkeye:runs_updates"
 
 _redis = None
+_redis_loop: asyncio.AbstractEventLoop | None = None
 
 
 async def get_redis():
-    global _redis
-    if _redis is None:
+    global _redis, _redis_loop
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    if _redis is None or _redis_loop is not loop:
+        if _redis is not None:
+            try:
+                await _redis.aclose()
+            except Exception:
+                pass
         from redis.asyncio import from_url
         _redis = from_url(REDIS_URL, decode_responses=True)
+        _redis_loop = loop
     return _redis
 
 
-async def save_traces(run_id: str, traces: list[dict]) -> None:
+async def save_traces(run_id: str, traces: list[dict], *, client=None) -> None:
     if not traces:
         return
-    r = await get_redis()
+    r = client if client is not None else await get_redis()
     key = _TRACES_KEY.format(run_id)
     pipe = r.pipeline()
     pipe.delete(key)
@@ -49,6 +62,8 @@ async def save_run(record: dict) -> None:
     if record.get("status") == "queued":
         await r.lpush(_RUN_IDS_KEY, record["run_id"])
         await r.ltrim(_RUN_IDS_KEY, 0, _MAX_RUN_IDS - 1)
+    # Notify SSE subscribers of any run change
+    await r.publish(_RUNS_UPDATES_CHANNEL, json.dumps(record))
 
 
 async def get_run(run_id: str) -> dict | None:
@@ -69,6 +84,15 @@ async def list_runs() -> list[dict]:
     return [json.loads(v) for v in values if v]
 
 
+async def delete_run(run_id: str) -> bool:
+    r = await get_redis()
+    deleted = await r.delete(_RUN_KEY.format(run_id))
+    if deleted:
+        # Remove from the IDs list so it no longer appears in list_runs
+        await r.lrem(_RUN_IDS_KEY, 0, run_id)
+    return bool(deleted)
+
+
 async def publish_event(run_id: str, event: dict) -> None:
     r = await get_redis()
     await r.publish(_EVENTS_CHANNEL.format(run_id), json.dumps(event))
@@ -80,6 +104,21 @@ async def subscribe_run(run_id: str):
     r = from_url(REDIS_URL, decode_responses=True)
     pubsub = r.pubsub()
     await pubsub.subscribe(_EVENTS_CHANNEL.format(run_id))
+    try:
+        async for message in pubsub.listen():
+            if message["type"] == "message":
+                yield json.loads(message["data"])
+    finally:
+        await pubsub.unsubscribe()
+        await r.aclose()
+
+
+async def subscribe_runs_updates():
+    """Async generator yielding run records whenever any run is created or updated."""
+    from redis.asyncio import from_url
+    r = from_url(REDIS_URL, decode_responses=True)
+    pubsub = r.pubsub()
+    await pubsub.subscribe(_RUNS_UPDATES_CHANNEL)
     try:
         async for message in pubsub.listen():
             if message["type"] == "message":

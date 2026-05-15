@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 
 import {
@@ -17,25 +18,16 @@ import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
 
 import { apiClient, type TestCaseSummary } from "@/lib/api/client";
-
-const MODEL_OPTIONS = [
-  { value: "openrouter:openai/gpt-4o", label: "GPT-4o" },
-  { value: "openrouter:anthropic/claude-3.5-sonnet", label: "Claude 3.5 Sonnet" },
-  { value: "openrouter:openai/gpt-oss-120b:free", label: "GPT-OSS 120B (Free)" },
-  { value: "groq:llama-3.3-70b-versatile", label: "Llama 3.3 70B (Groq)" },
-] as const;
-
-const BROWSER_OPTIONS = [
-  { value: "chromium", label: "Chromium" },
-  { value: "firefox", label: "Firefox" },
-  { value: "webkit", label: "WebKit" },
-] as const;
+import { useProjectStore } from "@/lib/project/store";
+import { MODEL_GROUPS, DEFAULT_MODEL, ALL_MODELS } from "@/lib/models";
 
 interface NewRunModalProps {
   open: boolean;
@@ -43,26 +35,25 @@ interface NewRunModalProps {
   initialTestCaseId?: string;
 }
 
-const DEFAULT_PROJECT = "default";
-
 export function NewRunModal({ open, onClose, initialTestCaseId }: NewRunModalProps) {
+  const projectId = useProjectStore((s) => s.currentProject?.id ?? "default");
   const router = useRouter();
+  const { data: session } = useSession();
   const [testCases, setTestCases] = useState<TestCaseSummary[]>([]);
   const [tcLoading, setTcLoading] = useState(true);
 
   const [testCaseId, setTestCaseId] = useState("");
-  const [model, setModel] = useState(MODEL_OPTIONS[0].value);
-  const [browser, setBrowser] = useState("chromium");
-  const [record, setRecord] = useState(false);
+  const [model, setModel] = useState<string>(DEFAULT_MODEL);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
+    if (initialTestCaseId) { setTcLoading(false); return; }
     apiClient
-      .listProjectTestCases(DEFAULT_PROJECT, { status: "active" })
+      .listProjectTestCases(projectId, { status: "active" })
       .then((res) => setTestCases(res.test_cases))
       .catch(() => {})
       .finally(() => setTcLoading(false));
-  }, []);
+  }, [initialTestCaseId]);
 
   useEffect(() => {
     if (initialTestCaseId) setTestCaseId(initialTestCaseId);
@@ -75,8 +66,7 @@ export function NewRunModal({ open, onClose, initialTestCaseId }: NewRunModalPro
       const run = await apiClient.createRun({
         test_case_id: testCaseId,
         model,
-        browser,
-        record,
+        triggered_by: session?.user?.email ?? null,
       });
       onClose();
       router.push(`/app/runs/live?id=${run.run_id}`);
@@ -92,84 +82,59 @@ export function NewRunModal({ open, onClose, initialTestCaseId }: NewRunModalPro
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Configure &amp; run test</DialogTitle>
-          <DialogDescription>
-            Choose a test case, model, and browser, then launch.
-          </DialogDescription>
+          <DialogDescription>Choose a test case and model, then launch.</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="tc-select">Test case</Label>
-            <Select
-              value={testCaseId}
-              onValueChange={(v) => v !== null && setTestCaseId(v)}
-              disabled={tcLoading}
-            >
-              <SelectTrigger id="tc-select" className="w-full">
-                <SelectValue placeholder={tcLoading ? "Loading…" : "Select a test case"} />
-              </SelectTrigger>
-              <SelectContent>
-                {(testCases ?? []).map((tc) => (
-                  <SelectItem key={tc.id} value={tc.id}>
-                    {tc.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {!initialTestCaseId && (
+            <div className="space-y-1.5">
+              <Label htmlFor="tc-select">Test case</Label>
+              <Select
+                value={testCaseId}
+                onValueChange={(v) => v !== null && setTestCaseId(v)}
+                disabled={tcLoading}
+              >
+                <SelectTrigger id="tc-select" className="w-full">
+                  <SelectValue placeholder={tcLoading ? "Loading…" : "Select a test case"}>
+                    {testCaseId
+                      ? (testCases.find((tc) => tc.id === testCaseId)?.name ?? testCaseId)
+                      : undefined}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent className="w-[var(--radix-select-trigger-width)]">
+                  {(testCases ?? []).map((tc) => (
+                    <SelectItem key={tc.id} value={tc.id}>{tc.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <Label htmlFor="model-select">Model</Label>
-            <Select value={model} onValueChange={(v) => v !== null && setModel(v as typeof model)}>
+            <Select value={model} onValueChange={(v) => v && setModel(v)}>
               <SelectTrigger id="model-select" className="w-full">
-                <SelectValue />
+                <SelectValue>
+                  {ALL_MODELS.find((m) => m.value === model)?.label ?? model}
+                </SelectValue>
               </SelectTrigger>
-              <SelectContent>
-                {MODEL_OPTIONS.map((m) => (
-                  <SelectItem key={m.value} value={m.value}>
-                    {m.label}
-                  </SelectItem>
+              <SelectContent className="w-[var(--radix-select-trigger-width)]">
+                {MODEL_GROUPS.map((group) => (
+                  <SelectGroup key={group.label}>
+                    <SelectLabel>{group.label}</SelectLabel>
+                    {group.models.map((m) => (
+                      <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                    ))}
+                  </SelectGroup>
                 ))}
               </SelectContent>
             </Select>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="browser-select">Browser</Label>
-            <Select value={browser} onValueChange={(v) => v !== null && setBrowser(v)}>
-              <SelectTrigger id="browser-select" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {BROWSER_OPTIONS.map((b) => (
-                  <SelectItem key={b.value} value={b.value}>
-                    {b.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="record-check"
-              checked={record}
-              onChange={(e) => setRecord(e.target.checked)}
-              className="size-4 rounded border-border"
-            />
-            <Label htmlFor="record-check">Record video</Label>
           </div>
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={submitting}>
-            Cancel
-          </Button>
-          <Button
-            onClick={handleSubmit}
-            disabled={!testCaseId || submitting || tcLoading}
-          >
+          <Button variant="outline" onClick={onClose} disabled={submitting}>Cancel</Button>
+          <Button onClick={handleSubmit} disabled={!testCaseId || submitting}>
             {submitting ? "Starting…" : "Run test"}
           </Button>
         </DialogFooter>

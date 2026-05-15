@@ -30,10 +30,11 @@ goal:
     max_retries_per_action: 2
 
   extra_details: |
-    After typing in the search box, press Enter or click the search button.
-    If auto-redirected directly to the article, proceed straight to scrolling.
-    Scroll through the article 3 times using PageDown, then emit <GOAL_COMPLETE>.
-    Do not keep scrolling indefinitely.
+    Search homepage is https://www.wikipedia.org — this has the main search box.
+    After searching, you will land on en.wikipedia.org/wiki/Artificial_intelligence.
+    Once you are on the article page DO NOT navigate away. Do not go back to any homepage.
+    Scroll through the article 3 times using PageDown, then immediately emit <GOAL_COMPLETE>.
+    Do not re-search, do not navigate to Main_Page, do not repeat the search loop.
 
   steps:
     checkpoints:
@@ -56,11 +57,11 @@ goal:
 
       - id: S3
         description: |
-          Scroll down through the article content using PageDown 3 times
-          to read through multiple sections.
+          Use the scroll_page tool with direction="down" and times=3 to
+          scroll through the article content in a single call.
         success_signal: |
-          The page has scrolled down showing additional sections of the
-          article beyond the introduction.
+          scroll_page returns confirming 3 viewport scrolls completed.
+          The page has scrolled down showing content beyond the introduction.
 
       - id: S4
         description: |

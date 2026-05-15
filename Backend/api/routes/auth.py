@@ -1,6 +1,7 @@
 """Auth endpoints: register, login, oauth-token exchange."""
 from __future__ import annotations
 
+import os
 import uuid
 from datetime import datetime, timezone
 
@@ -19,9 +20,32 @@ router = APIRouter(tags=["auth"])
 
 _users: dict[str, dict] = {}  # email -> {id, email, name, pw_hash, created_at}
 
+_DEV_EMAIL = os.environ.get("HAWKEYE_DEV_EMAIL", "admin@hawkeye.dev")
+_DEV_PASSWORD = os.environ.get("HAWKEYE_DEV_PASSWORD", "admin123")
+
 
 def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _seed_dev_user() -> None:
+    """Seed a default dev user when running without DB and no users exist."""
+    from api.db import db_enabled
+    if db_enabled():
+        return
+    email = _DEV_EMAIL.lower().strip()
+    if email not in _users:
+        _users[email] = {
+            "id": str(uuid.uuid4()),
+            "email": email,
+            "name": "Dev Admin",
+            "pw_hash": hash_password(_DEV_PASSWORD),
+            "created_at": _utcnow(),
+        }
+        import logging
+        logging.getLogger("hawkeye.auth").info(
+            "Dev user seeded — email: %s  password: %s", email, _DEV_PASSWORD
+        )
 
 
 class RegisterRequest(BaseModel):
