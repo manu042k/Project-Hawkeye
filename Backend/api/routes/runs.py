@@ -2,7 +2,8 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
+from api.auth_utils import get_current_user
 from fastapi.responses import StreamingResponse
 from api.job_queue import job_queue
 from api.redis_store import get_traces as _get_traces
@@ -66,15 +67,15 @@ def _record_to_response(record: dict) -> RunResponse:
 
 
 @router.post("", response_model=RunResponse)
-async def submit_run(request: RunRequest, http_request: Request) -> RunResponse:
+async def submit_run(request: RunRequest, http_request: Request, user: dict = Depends(get_current_user)) -> RunResponse:
     # Plan-limit check: count runs this month vs org plan limit
     _enforce_plan_limit(request)
 
-    # Capture triggered_by from header if not supplied in body
+    # Capture triggered_by from JWT user, header, or body — in that priority order
     if not request.triggered_by:
-        user_email = http_request.headers.get("X-User-Email")
-        if user_email:
-            request = request.model_copy(update={"triggered_by": user_email})
+        email = http_request.headers.get("X-User-Email") or user.get("email")
+        if email:
+            request = request.model_copy(update={"triggered_by": email})
 
     # Phase 5A: resolve test_case_id from DB -> write tmp yaml path
     if request.test_case_id:

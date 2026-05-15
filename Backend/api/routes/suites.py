@@ -160,7 +160,7 @@ async def run_suite(project_id: str, suite_id: str, http_request: Request, body:
     from api.schemas import RunRequest
     from api.job_queue import job_queue
     from api.models import TestCase
-    triggered_by = body.triggered_by or http_request.headers.get("X-User-Email")
+    triggered_by = body.triggered_by or http_request.headers.get("X-User-Email") or user.get("email")
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(TestSuite).where(TestSuite.id == suite_id, TestSuite.project_id == project_id)
