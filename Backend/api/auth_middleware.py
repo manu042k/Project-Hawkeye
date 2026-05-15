@@ -8,17 +8,29 @@ from starlette.types import ASGIApp
 
 from api.auth_utils import get_current_user
 
-# Routes that bypass authentication entirely
+# Prefix-based public routes — no auth required
 _PUBLIC = (
     "/api/auth/",           # login, register, oauth-token
     "/api/webhooks/",       # GitHub HMAC-verified push webhook
     "/api/billing/webhook", # Stripe signature-verified webhook
     "/api/ws/",             # WebSocket — auth is handled at the stream level
+    "/api/runs/stream",     # SSE endpoint — EventSource cannot set custom headers
     "/health",
     "/docs",
     "/openapi.json",
     "/redoc",
 )
+
+
+def _is_artifact_file(path: str) -> bool:
+    # /api/runs/{run_id}/artifacts/{filename} — loaded directly by <video>/<img> tags
+    # The manifest listing is /artifacts (no trailing slash segment), files have one more segment.
+    parts = [p for p in path.split("/") if p]
+    try:
+        idx = parts.index("artifacts")
+        return idx < len(parts) - 1  # there is a filename after "artifacts"
+    except ValueError:
+        return False
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -31,7 +43,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         path = request.url.path
+
         if any(path == p.rstrip("/") or path.startswith(p) for p in _PUBLIC):
+            return await call_next(request)
+
+        # Artifact files are fetched directly by browser media elements
+        if _is_artifact_file(path):
             return await call_next(request)
 
         try:
