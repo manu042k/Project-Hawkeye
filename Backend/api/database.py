@@ -31,5 +31,24 @@ AsyncSessionLocal: async_sessionmaker[AsyncSession] = async_sessionmaker(
 
 async def init_db() -> None:
     from api.models import Base
+    from sqlalchemy import text
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Additive migrations — safe to run on every startup (idempotent)
+        _dialect = conn.engine.dialect.name
+        if _dialect == "postgresql":
+            migrations = [
+                "ALTER TABLE test_cases ADD COLUMN IF NOT EXISTS suite VARCHAR(128)",
+                "ALTER TABLE test_cases ADD COLUMN IF NOT EXISTS suite_id VARCHAR(36)",
+            ]
+        else:
+            # SQLite does not support IF NOT EXISTS on ADD COLUMN — check first
+            migrations = []
+            result = await conn.execute(text("PRAGMA table_info(test_cases)"))
+            existing = {row[1] for row in result.fetchall()}
+            if "suite" not in existing:
+                migrations.append("ALTER TABLE test_cases ADD COLUMN suite VARCHAR(128)")
+            if "suite_id" not in existing:
+                migrations.append("ALTER TABLE test_cases ADD COLUMN suite_id VARCHAR(36)")
+        for stmt in migrations:
+            await conn.execute(text(stmt))

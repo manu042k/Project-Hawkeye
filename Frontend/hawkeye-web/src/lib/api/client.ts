@@ -278,25 +278,50 @@ export type TraceEvent = {
 // Module-level session state — set by the sidebar on session change
 let _authEmail: string | null = null;
 let _authToken: string | null = null;
+// True once the sidebar has called setAuthUser with a real email — guards against
+// signing out on 401s that race with session loading on initial page mount.
+let _sessionReady = false;
 
-export function setAuthUser(email: string | null) { _authEmail = email; }
+export function setAuthUser(email: string | null) {
+  _authEmail = email;
+  if (email) _sessionReady = true;
+}
 export function setAuthToken(token: string | null) { _authToken = token; }
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const authHeaders: Record<string, string> = {};
-  if (_authToken) {
-    authHeaders["Authorization"] = `Bearer ${_authToken}`;
+
+  let token = _authToken;
+  // If the sidebar hasn't propagated the token yet (child effects run before parent
+  // effects in React), read the session directly from NextAuth's client-side cache.
+  if (!token && typeof window !== "undefined") {
+    const { getSession } = await import("next-auth/react");
+    const session = await getSession();
+    const s = session as { access_token?: string } | null;
+    if (s?.access_token) {
+      token = s.access_token;
+      setAuthToken(token);
+    }
+    if (session?.user?.email && !_authEmail) {
+      setAuthUser(session.user.email);
+    }
+  }
+
+  if (token) {
+    authHeaders["Authorization"] = `Bearer ${token}`;
   } else if (_authEmail) {
     // Dev fallback when backend has no HAWKEYE_AUTH_SECRET configured
     authHeaders["X-User-Email"] = _authEmail;
   }
+
   const res = await fetch(`${API_URL}${path}`, {
     headers: { "Content-Type": "application/json", ...authHeaders, ...init?.headers },
     ...init,
   });
   if (res.status === 401) {
-    // Token expired or missing — sign out and redirect to login on the client side
-    if (typeof window !== "undefined") {
+    // Only sign out if the session was already confirmed — avoids signing out during
+    // the race between page mount and the sidebar receiving the NextAuth session.
+    if (typeof window !== "undefined" && _sessionReady) {
       const { signOut } = await import("next-auth/react");
       signOut({ callbackUrl: "/auth/login" });
     }
