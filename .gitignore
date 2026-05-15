@@ -223,6 +223,9 @@ __marimo__/
 .DS_Store
 .env
 
+# Eval results
+Backend/eval_results
+
 # Playwright MCP logs/state (local)
 .playwright-mcp/
 
