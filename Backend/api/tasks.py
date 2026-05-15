@@ -136,6 +136,18 @@ async def _execute(celery_task_id: str, run_id: str, request_dict: dict) -> dict
 
         test_case = load_test_case(tc_path)
         await _inject_vault_secrets(test_case)
+
+        # Store test name + viewport so the live page can display them immediately
+        _viewport = None
+        if hasattr(test_case, "target") and test_case.target and test_case.target.viewport:
+            v = test_case.target.viewport
+            _viewport = {"width": v.width, "height": v.height}
+        await _update_record({
+            "test_name": getattr(test_case, "name", None),
+            "viewport": _viewport,
+            "triggered_by": request_dict.get("triggered_by"),
+        })
+
         llm = get_llm(request_dict["model"])
 
         manager = RunManager(

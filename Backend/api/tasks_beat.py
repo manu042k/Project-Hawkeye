@@ -28,38 +28,30 @@ def tick_schedules() -> dict:
 
 
 async def _check_and_fire() -> dict:
-    from api.routes.schedules import _schedules as mem_schedules
-    from api.db import db_enabled, fetch, execute
-    from api.tasks import run_test_case  # noqa: F401 (ensure task is registered)
+    from api.database import AsyncSessionLocal
+    from api.models import SuiteSchedule
+    from sqlalchemy import select
 
     now = datetime.now(timezone.utc)
     fired: list[str] = []
 
-    if db_enabled():
-        schedules = await fetch("SELECT * FROM suite_schedules WHERE enabled=true")
-    else:
-        schedules = list(mem_schedules.values())
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(SuiteSchedule).where(SuiteSchedule.enabled == True))  # noqa: E712
+        schedules = result.scalars().all()
 
     for sched in schedules:
-        if not sched.get("enabled", True):
+        cron_expr = sched.cron or ""
+        last_triggered = sched.last_triggered_at.isoformat() if sched.last_triggered_at else None
+        if not _is_due(cron_expr, last_triggered, now):
             continue
-        cron_expr = sched.get("cron", "")
-        if not _is_due(cron_expr, sched.get("last_triggered_at"), now):
-            continue
-        suite_id = str(sched.get("suite_id", sched.get("id", "")))
-        project_id = str(sched.get("project_id", ""))
-        fired_runs = await _fire_suite(suite_id, project_id, str(sched.get("branch", "main")))
+        fired_runs = await _fire_suite(str(sched.suite_id), str(sched.project_id), sched.branch or "main")
         fired.extend(fired_runs)
-        # Update last_triggered_at
-        if db_enabled():
-            await execute(
-                "UPDATE suite_schedules SET last_triggered_at=$2 WHERE id=$1",
-                str(sched["id"]), now.isoformat(),
-            )
-        else:
-            sched_id = str(sched["id"])
-            if sched_id in mem_schedules:
-                mem_schedules[sched_id]["last_triggered_at"] = now.isoformat()
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(select(SuiteSchedule).where(SuiteSchedule.id == sched.id))
+            s = result.scalar_one_or_none()
+            if s:
+                s.last_triggered_at = now
+                await session.commit()
 
     logger.info("tick_schedules: %d run(s) fired", len(fired))
     return {"fired_run_ids": fired, "checked_at": now.isoformat()}
@@ -89,31 +81,21 @@ def _is_due(cron_expr: str, last_triggered_at: str | None, now: datetime) -> boo
 
 async def _fire_suite(suite_id: str, project_id: str, branch: str) -> list[str]:
     """Dispatch Celery run_test_case tasks for every test case in the suite."""
-    from api.routes.suites import _suites as mem_suites
-    from api.db import db_enabled, fetchrow
-    import json
+    from api.database import AsyncSessionLocal
+    from api.models import TestSuite
     from api.job_queue import job_queue
+    from sqlalchemy import select
 
     run_ids: list[str] = []
-    if db_enabled():
-        row = await fetchrow("SELECT * FROM test_suites WHERE id=$1", suite_id)
-        if not row:
-            return run_ids
-        tc_ids = row["test_case_ids"]
-        if isinstance(tc_ids, str):
-            tc_ids = json.loads(tc_ids)
-    else:
-        suite = mem_suites.get(suite_id)
-        if not suite:
-            return run_ids
-        tc_ids = suite.get("test_case_ids", [])
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(TestSuite).where(TestSuite.id == suite_id))
+        suite = result.scalar_one_or_none()
+    if not suite:
+        return run_ids
 
-    for tc_id in tc_ids:
-        from api.tasks import run_test_case
-        import uuid as _uuid
-        run_id = str(_uuid.uuid4())
+    for tc_id in (suite.test_case_ids or []):
         req = RunRequest(test_case_id=tc_id)
-        run_test_case.delay(run_id, req.model_dump())
+        run_id = job_queue.submit(req)
         run_ids.append(run_id)
         logger.info("Beat: dispatched run %s for tc %s (suite %s)", run_id, tc_id, suite_id)
 

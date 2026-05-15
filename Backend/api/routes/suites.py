@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import select, update
 
@@ -155,9 +154,10 @@ class SuiteRunRequest(BaseModel):
 
 
 @router.post("/projects/{project_id}/suites/{suite_id}/run", status_code=202)
-async def run_suite(project_id: str, suite_id: str, body: SuiteRunRequest = SuiteRunRequest()) -> dict:
+async def run_suite(project_id: str, suite_id: str, http_request: Request, body: SuiteRunRequest = SuiteRunRequest()) -> dict:
     from api.schemas import RunRequest
     from api.job_queue import job_queue
+    triggered_by = body.triggered_by or http_request.headers.get("X-User-Email")
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(TestSuite).where(TestSuite.id == suite_id, TestSuite.project_id == project_id)
@@ -168,7 +168,7 @@ async def run_suite(project_id: str, suite_id: str, body: SuiteRunRequest = Suit
         ids = suite.test_case_ids or []
     run_ids: list[str] = []
     for tc_id in ids:
-        req = RunRequest(test_case_id=tc_id, model=body.model, triggered_by=body.triggered_by)
+        req = RunRequest(test_case_id=tc_id, model=body.model, triggered_by=triggered_by)
         run_id = job_queue.submit(req)
         run_ids.append(run_id)
     return {"suite_id": suite_id, "dispatched_run_ids": run_ids, "total": len(run_ids)}
