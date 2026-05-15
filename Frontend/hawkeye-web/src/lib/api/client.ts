@@ -278,39 +278,38 @@ export type TraceEvent = {
 // Module-level session state — set by the sidebar on session change
 let _authEmail: string | null = null;
 let _authToken: string | null = null;
-// True once the sidebar has called setAuthUser with a real email — guards against
-// signing out on 401s that race with session loading on initial page mount.
 let _sessionReady = false;
+
+// Promise that resolves once the sidebar has propagated a confirmed session
+// (token or email). apiFetch awaits this before making requests so that
+// page-level useEffects never fire with empty credentials.
+let _authReadyResolve: (() => void) | null = null;
+const _authReady = new Promise<void>(resolve => { _authReadyResolve = resolve; });
+
+function _resolveAuth() {
+  if (_authReadyResolve) { _authReadyResolve(); _authReadyResolve = null; }
+}
 
 export function setAuthUser(email: string | null) {
   _authEmail = email;
-  if (email) _sessionReady = true;
+  if (email) { _sessionReady = true; _resolveAuth(); }
 }
-export function setAuthToken(token: string | null) { _authToken = token; }
+export function setAuthToken(token: string | null) {
+  _authToken = token;
+  if (token) { _sessionReady = true; _resolveAuth(); }
+}
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const authHeaders: Record<string, string> = {};
-
-  let token = _authToken;
-  // If the sidebar hasn't propagated the token yet (child effects run before parent
-  // effects in React), read the session directly from NextAuth's client-side cache.
-  if (!token && typeof window !== "undefined") {
-    const { getSession } = await import("next-auth/react");
-    const session = await getSession();
-    const s = session as { access_token?: string } | null;
-    if (s?.access_token) {
-      token = s.access_token;
-      setAuthToken(token);
-    }
-    if (session?.user?.email && !_authEmail) {
-      setAuthUser(session.user.email);
-    }
+  // Wait for sidebar to propagate session credentials (max 4 s).
+  // Prevents 401s caused by page useEffects firing before useLayoutEffect in sidebar.
+  if (!_sessionReady && typeof window !== "undefined") {
+    await Promise.race([_authReady, new Promise<void>(r => setTimeout(r, 4000))]);
   }
 
-  if (token) {
-    authHeaders["Authorization"] = `Bearer ${token}`;
+  const authHeaders: Record<string, string> = {};
+  if (_authToken) {
+    authHeaders["Authorization"] = `Bearer ${_authToken}`;
   } else if (_authEmail) {
-    // Dev fallback when backend has no HAWKEYE_AUTH_SECRET configured
     authHeaders["X-User-Email"] = _authEmail;
   }
 
@@ -319,8 +318,6 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
   });
   if (res.status === 401) {
-    // Only sign out if the session was already confirmed — avoids signing out during
-    // the race between page mount and the sidebar receiving the NextAuth session.
     if (typeof window !== "undefined" && _sessionReady) {
       const { signOut } = await import("next-auth/react");
       signOut({ callbackUrl: "/auth/login" });

@@ -257,8 +257,9 @@ function ProjectSelectorContent() {
                 <div
                   key={p.id}
                   className={cn(
-                    "group relative rounded-xl border border-border/60 bg-card/60 p-5 text-left shadow-sm transition-all cursor-pointer",
-                    "hover:border-primary/35 hover:bg-card/90 hover:shadow-md",
+                    "group relative rounded-xl border border-border bg-card p-5 text-left transition-all cursor-pointer",
+                    "shadow-[0_1px_4px_0_rgb(26_101_204/0.08),0_1px_2px_-1px_rgb(0_0_0/0.05)]",
+                    "hover:border-primary/50 hover:shadow-[0_4px_12px_0_rgb(26_101_204/0.12),0_2px_4px_-1px_rgb(0_0_0/0.06)]",
                   )}
                   onClick={() => enterProject(p)}
                   role="button"
@@ -280,11 +281,9 @@ function ProjectSelectorContent() {
                   </button>
 
                   <div className="flex items-start gap-3">
-                    <Avatar className="size-10 shrink-0 rounded-lg border border-border/60">
-                      <AvatarFallback className="rounded-lg bg-primary/10 text-sm font-semibold text-primary">
-                        {p.key}
-                      </AvatarFallback>
-                    </Avatar>
+                    <div className="size-10 shrink-0 rounded-lg border border-border bg-primary/10 flex items-center justify-center text-sm font-semibold text-primary select-none">
+                      {p.key}
+                    </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-2">
                         <span className="truncate font-semibold tracking-tight">{p.name}</span>

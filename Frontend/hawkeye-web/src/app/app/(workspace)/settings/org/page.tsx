@@ -330,7 +330,7 @@ export default function OrgSettingsPage() {
                                 onValueChange={(v) => { if (v) handleRoleChange(m.id, v); }}
                                 disabled={m.role === "owner"}
                               >
-                                <SelectTrigger className="h-7 w-32 text-xs">
+                                <SelectTrigger className="h-7 w-36 text-xs">
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -467,10 +467,10 @@ export default function OrgSettingsPage() {
               <div className="space-y-1.5">
                 <Label>Role</Label>
                 <Select value={inviteRole} onValueChange={(v) => { if (v) setInviteRole(v); }}>
-                  <SelectTrigger>
+                  <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="w-full">
                     <SelectItem value="admin">Admin — manage members and settings</SelectItem>
                     <SelectItem value="developer">Developer — run and edit tests</SelectItem>
                     <SelectItem value="viewer">Viewer — read only</SelectItem>

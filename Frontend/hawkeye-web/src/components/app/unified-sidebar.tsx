@@ -1,7 +1,7 @@
 "use client";
 
 import type { ComponentType } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
@@ -142,7 +142,9 @@ export function UnifiedSidebar({ className }: { className?: string }) {
   const hash = useHash();
   const { data: session, status } = useSession();
 
-  useEffect(() => {
+  // useLayoutEffect fires before any useEffect in the tree — guarantees _authToken
+  // is set before page-level useEffects that call apiFetch.
+  useLayoutEffect(() => {
     setAuthUser(session?.user?.email ?? null);
     setAuthToken((session as { access_token?: string })?.access_token ?? null);
   }, [session?.user?.email]);
