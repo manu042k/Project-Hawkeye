@@ -208,7 +208,7 @@ async def _execute(celery_task_id: str, run_id: str, request_dict: dict) -> dict
             from dataclasses import asdict
             from api.redis_store import save_traces as _save_traces
             traces = manager._collector.traces
-            await _save_traces(run_id, [asdict(t) for t in traces])
+            await _save_traces(run_id, [asdict(t) for t in traces], client=r)
 
             # Write individual screenshot files then upload all artifacts.
             if result.trace_path:
