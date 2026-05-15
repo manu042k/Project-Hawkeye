@@ -432,6 +432,19 @@ class TestCase(BaseModel):
 #### Track G — Frontend Polish ✓ DONE
 - Live execution sidebar (`runs/live/page.tsx`) now shows both test name and run ID (8-char truncated) per row
 
+#### Track H — Security + UX Hardening ✓ COMPLETE
+- **Auth guard**: `api/auth_middleware.py` — `AuthMiddleware` (Starlette `BaseHTTPMiddleware`) enforces JWT on all routes except public prefixes (`/api/auth/`, `/api/ws/`, `/api/runs/stream`, artifact file downloads). CORS stays outer so OPTIONS preflights pass.
+- **401 → sign-out**: `apiFetch` in `client.ts` dynamically imports `signOut` from `next-auth/react` on 401 and redirects to login. `useProjectRuns` suppresses 401 errors to avoid pre-session noise.
+- **Project membership enforcement**: `require_project_member()` in `auth_utils.py` — skips default project and projects with no members yet (bootstrapping). Applied to all vault, test-case CRUD, and suite-run endpoints.
+- **Creator auto-member**: `create_project` in `projects.py` auto-adds the creator as admin `ProjectMember` on creation.
+- **Vault error propagation**: `_inject_vault_secrets()` now raises `RuntimeError` on missing secrets → run transitions to `errored` with a clear message.
+- **Suite pre-flight validation**: `run_suite` validates all test case IDs exist and are not archived before queuing any jobs.
+- **Cron validation**: `ScheduleCreate` uses `field_validator` with `croniter.is_valid()` to reject invalid cron expressions at API boundary.
+- **Clone status fix**: `clone_test_case` now preserves `original.status` instead of hardcoding `"draft"`.
+- **Environment selector**: `RunRequest` has `environment_id` field; new run page fetches environments and renders a selector that auto-selects the project default.
+- **In-app notifications**: Zustand-persisted `useNotificationStore`; bell menu in topbar; `useNotificationFeeder` fires on run terminal transitions; per-project alert prefs (onFailure, onSuccess, passRateThreshold).
+- **Project Overview tab**: `settings/project/page.tsx` now opens on an Overview tab showing stats cards (total runs, pass rate, test cases, cost) and a recent-runs table (last 5).
+
 ---
 
 ## Known Gaps (from HLD_LLD.md §8)
@@ -441,14 +454,13 @@ These gaps exist between the design spec and current implementation:
 | Area | Gap | File to Change |
 |---|---|---|
 | TestCaseCreate API schema | `api/routes/test_cases_crud.py` still uses old flat schema; needs nested `goal_config` block matching `_template.yaml` | `api/routes/test_cases_crud.py` |
-| Vault secret resolution | `target.vault[]` key references resolved via `_inject_vault_secrets()` in `api/tasks.py` but only at task execution time — not validated at dispatch | `api/tasks.py` |
 | Agent prompt — step details | Step `description` + `success_signal` not injected into system prompt per checkpoint | `orchestrator/agent/prompt_builder.py` |
 | Agent prompt — extra_details | `goal.extra_details` and `target.app_description` not passed to prompt builder | `orchestrator/agent/prompt_builder.py` |
 | On-failure capture flags | `test_case.on_failure.capture` flags not checked — always captures everything | `orchestrator/agent/finalize.py` |
 | Guard-rails policies | `forbidden_actions` / `navigation_policy` removed from template schema; guard_rails node is a no-op stub | `orchestrator/agent/nodes/guard_rails.py` |
 | Frontend TestCaseSpec type | `src/lib/api/client.ts` `TestCaseSpec` may not match nested `goal_config` structure | `src/lib/api/client.ts` |
 | Orchestrator DB layer | `orchestrator/db/` asyncpg layer has its own schema (different from SQLAlchemy models) — `DB upsert_test_case failed: column "suite" does not exist` (non-fatal) | `orchestrator/db/` |
-| Org management UI | No frontend pages for org settings, member management, invite flow | `src/app/app/(workspace)/settings/` |
+| Org management UI | No frontend pages for org-level member management and invite flow | `src/app/app/(workspace)/settings/` |
 | Vault secrets for SauceDemo | `standard_user` / `secret_sauce` vault entries must be added manually via UI for SauceDemo tests to pass credential injection | Vault UI |
 
 ---

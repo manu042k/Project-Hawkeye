@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Bell, Copy, ExternalLink, FileText, Loader2, MoreVertical,
-  Plus, Save, Trash2, Upload, Users,
+  Activity, Bell, CheckCircle2, Copy, ExternalLink, FileText, FlaskConical,
+  Loader2, MoreVertical, Plus, Save, Trash2, Upload, Users, Zap,
 } from "lucide-react";
 
 import { AppTopbar } from "@/components/app/app-topbar";
@@ -31,7 +31,7 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { apiClient, type ProjectSummary, type ProjectMember } from "@/lib/api/client";
+import { apiClient, type ProjectSummary, type ProjectMember, type RunSummary } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 import { useProjectStore } from "@/lib/project/store";
 import { useNotificationStore, type AlertPrefs } from "@/lib/notifications/store";
@@ -79,10 +79,12 @@ export default function ProjectSettingsPage() {
   const setCurrentProject = useProjectStore((s) => s.setCurrentProject);
   const projectId = currentProject?.id ?? null;
 
-  const [tab, setTab] = useState("general");
+  const [tab, setTab] = useState("overview");
   const [project, setProject] = useState<ProjectSummary | null>(null);
   const [members, setMembers] = useState<ProjectMember[]>([]);
   const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState<{ pass_rate: number; total_runs: number; active_runs: number; test_case_count: number; cost_this_month_usd: number } | null>(null);
+  const [recentRuns, setRecentRuns] = useState<RunSummary[]>([]);
 
   const [editName, setEditName] = useState("");
   const [editDesc, setEditDesc] = useState("");
@@ -113,6 +115,9 @@ export default function ProjectSettingsPage() {
       setMembers(m.members);
       setEditName(proj.name);
       setEditDesc(proj.description ?? "");
+      // Non-blocking — stats and runs load after
+      apiClient.getProjectStats(projectId).then(setStats).catch(() => {});
+      apiClient.getProjectRuns(projectId).then((r) => setRecentRuns(r.runs.slice(0, 5))).catch(() => {});
     } catch {
       toast.error("Failed to load project details");
     } finally {
@@ -231,6 +236,10 @@ export default function ProjectSettingsPage() {
         <div className="mx-auto max-w-3xl px-6 py-3">
           <Tabs value={tab} onValueChange={setTab}>
             <TabsList className="h-9">
+              <TabsTrigger value="overview" className="gap-1.5 px-4 text-xs sm:text-sm">
+                <Activity className="size-3.5" />
+                Overview
+              </TabsTrigger>
               <TabsTrigger value="general" className="px-4 text-xs sm:text-sm">General</TabsTrigger>
               <TabsTrigger value="members" className="gap-1.5 px-4 text-xs sm:text-sm">
                 <Users className="size-3.5" />
@@ -248,6 +257,106 @@ export default function ProjectSettingsPage() {
 
       <main className="flex-1 min-h-0 overflow-y-auto px-6 py-8">
         <div className="mx-auto max-w-3xl space-y-6">
+
+          {/* ── Overview ─────────────────────────────────────────── */}
+          {tab === "overview" && (
+            <>
+              {/* Stats cards */}
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                {[
+                  {
+                    label: "Total runs",
+                    value: stats ? String(stats.total_runs) : "—",
+                    icon: <Activity className="size-4" />,
+                    color: "text-primary bg-primary/10",
+                  },
+                  {
+                    label: "Pass rate",
+                    value: stats && stats.total_runs > 0 ? `${Math.round(stats.pass_rate * 100)}%` : "—",
+                    icon: <CheckCircle2 className="size-4" />,
+                    color: stats && stats.pass_rate >= 0.8 ? "text-emerald-400 bg-emerald-500/10" : "text-rose-400 bg-rose-500/10",
+                  },
+                  {
+                    label: "Test cases",
+                    value: stats ? String(stats.test_case_count) : "—",
+                    icon: <FlaskConical className="size-4" />,
+                    color: "text-violet-400 bg-violet-500/10",
+                  },
+                  {
+                    label: "Cost this month",
+                    value: stats ? `$${stats.cost_this_month_usd.toFixed(2)}` : "—",
+                    icon: <Zap className="size-4" />,
+                    color: "text-amber-400 bg-amber-500/10",
+                  },
+                ].map((s) => (
+                  <Card key={s.label} className="border-border/60 bg-card/50">
+                    <CardContent className="flex items-center gap-3 p-4">
+                      <div className={`flex size-9 shrink-0 items-center justify-center rounded-xl ring-1 ring-border/60 ${s.color}`}>
+                        {s.icon}
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">{s.label}</p>
+                        <p className="text-2xl font-semibold tabular-nums">{s.value}</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+
+              {/* Recent runs */}
+              <Card className="border-border/60 bg-card/50">
+                <CardHeader>
+                  <CardTitle className="text-sm">Recent runs</CardTitle>
+                  <CardDescription className="text-xs">Last 5 runs across all test cases in this project.</CardDescription>
+                </CardHeader>
+                <CardContent className="p-0">
+                  {recentRuns.length === 0 ? (
+                    <p className="px-4 py-8 text-center text-sm text-muted-foreground">No runs yet for this project.</p>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="border-border/60 hover:bg-transparent">
+                          <TableHead className="text-xs">Run</TableHead>
+                          <TableHead className="text-xs">Status</TableHead>
+                          <TableHead className="text-xs">Duration</TableHead>
+                          <TableHead className="text-xs">Steps</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {recentRuns.map((r) => (
+                          <TableRow key={r.run_id} className="border-border/60 cursor-pointer hover:bg-muted/30" onClick={() => router.push(`/app/runs/report?id=${r.run_id}`)}>
+                            <TableCell>
+                              <p className="text-sm font-medium truncate max-w-[200px]">{r.test_name ?? r.run_id.slice(0, 8)}</p>
+                              <p className="text-xs text-muted-foreground font-mono">{r.run_id.slice(0, 8)}</p>
+                            </TableCell>
+                            <TableCell>
+                              <Badge
+                                variant="outline"
+                                className={
+                                  r.status === "passed" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" :
+                                  r.status === "failed" ? "border-rose-500/30 bg-rose-500/10 text-rose-400" :
+                                  r.status === "running" ? "border-blue-500/30 bg-blue-500/10 text-blue-400" :
+                                  "border-border/60 text-muted-foreground"
+                                }
+                              >
+                                {r.status}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {r.duration_s != null ? `${r.duration_s.toFixed(1)}s` : "—"}
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {r.total_steps ?? "—"}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </CardContent>
+              </Card>
+            </>
+          )}
 
           {/* ── General ──────────────────────────────────────────── */}
           {tab === "general" && (
