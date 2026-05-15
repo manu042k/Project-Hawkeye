@@ -97,10 +97,16 @@ async def create_project(body: ProjectCreate, http_request: Request, user: dict 
 
 
 @router.get("")
-async def list_projects() -> dict:
+async def list_projects(user: dict = Depends(get_current_user)) -> dict:
     async with AsyncSessionLocal() as session:
         result = await session.execute(
-            select(Project).where(Project.archived_at.is_(None)).order_by(Project.created_at.desc())
+            select(Project)
+            .join(ProjectMember, ProjectMember.project_id == Project.id)
+            .where(
+                Project.archived_at.is_(None),
+                ProjectMember.user_email == user["email"],
+            )
+            .order_by(Project.created_at.desc())
         )
         projects = result.scalars().all()
         return {"projects": [_to_response(p) for p in projects], "total": len(projects)}

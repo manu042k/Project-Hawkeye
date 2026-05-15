@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent / ".env")
 
 import os
+import uuid
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from api.auth_middleware import AuthMiddleware
@@ -49,15 +50,31 @@ async def _apply_schema() -> None:
 
 
 async def _seed_default_project() -> None:
-    """Ensure the 'default' project row exists in the DB."""
+    """Ensure the 'default' project exists and the dev user is a member of it."""
     from api.database import AsyncSessionLocal
-    from api.models import Project
+    from api.models import Project, ProjectMember
     from sqlalchemy import select
+    dev_email = os.environ.get("HAWKEYE_DEV_EMAIL", "dev@hawkeye.local")
     async with AsyncSessionLocal() as session:
         result = await session.execute(select(Project).where(Project.id == "default"))
         if not result.scalar_one_or_none():
             session.add(Project(id="default", name="Default Project", slug="default"))
-            await session.commit()
+            await session.flush()
+        # Ensure dev user is admin on the default project
+        mem = await session.execute(
+            select(ProjectMember).where(
+                ProjectMember.project_id == "default",
+                ProjectMember.user_email == dev_email,
+            )
+        )
+        if not mem.scalar_one_or_none():
+            session.add(ProjectMember(
+                id=str(uuid.uuid4()),
+                project_id="default",
+                user_email=dev_email,
+                role="admin",
+            ))
+        await session.commit()
 
 
 @asynccontextmanager
