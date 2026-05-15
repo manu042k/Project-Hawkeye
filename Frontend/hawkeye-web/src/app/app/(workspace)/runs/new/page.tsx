@@ -15,6 +15,7 @@ import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { useTestCases, useCreateRun } from "@/lib/api/hooks";
 import { apiClient, type TestCaseInfo } from "@/lib/api/client";
+import { useProjectStore } from "@/lib/project/store";
 
 const MODEL_PRESETS = [
   { value: "nvidia:moonshotai/kimi-k2.6", label: "NVIDIA – Kimi K2.6 (recommended)" },
@@ -25,6 +26,7 @@ const MODEL_PRESETS = [
 ];
 
 function NewRunPageInner() {
+  const projectId = useProjectStore((s) => s.currentProject?.id ?? "default");
   const searchParams = useSearchParams();
   const preselectedTcId = searchParams.get("tc"); // from /test-cases/:id "Run" button
 
@@ -43,7 +45,7 @@ function NewRunPageInner() {
   const [dbCases, setDbCases] = useState<Array<{ id: string; name: string }>>([]);
 
   useEffect(() => {
-    apiClient.listProjectTestCases("default").then((res) => setDbCases(res.test_cases)).catch(() => {});
+    apiClient.listProjectTestCases(projectId).then((res) => setDbCases(res.test_cases)).catch(() => {});
   }, []);
 
   const isDbCase = selectedValue.startsWith("db:");

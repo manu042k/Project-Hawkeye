@@ -12,11 +12,11 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 
 import { apiClient, type Environment } from "@/lib/api/client";
+import { useProjectStore } from "@/lib/project/store";
 import { cn } from "@/lib/utils";
 
-const DEFAULT_PROJECT = "default";
-
 export default function EnvironmentsPage() {
+  const projectId = useProjectStore((s) => s.currentProject?.id ?? "default");
   const [envs, setEnvs] = useState<Environment[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -31,7 +31,7 @@ export default function EnvironmentsPage() {
   async function load() {
     setLoading(true);
     try {
-      const res = await apiClient.listEnvironments(DEFAULT_PROJECT);
+      const res = await apiClient.listEnvironments(projectId);
       setEnvs(res.environments);
     } catch {
       toast.error("Failed to load environments");
@@ -55,7 +55,7 @@ export default function EnvironmentsPage() {
     if (!name.trim() || !baseUrl.trim()) return;
     setSaving(true);
     try {
-      const env = await apiClient.createEnvironment(DEFAULT_PROJECT, {
+      const env = await apiClient.createEnvironment(projectId, {
         name: name.trim(),
         base_url: baseUrl.trim(),
         is_default: isDefault,
@@ -76,7 +76,7 @@ export default function EnvironmentsPage() {
 
   async function handleSetDefault(id: string) {
     try {
-      await apiClient.updateEnvironment(DEFAULT_PROJECT, id, { is_default: true });
+      await apiClient.updateEnvironment(projectId, id, { is_default: true });
       setEnvs((prev) => prev.map((e) => ({ ...e, is_default: e.id === id })));
       toast.success("Default environment updated");
     } catch {
@@ -86,7 +86,7 @@ export default function EnvironmentsPage() {
 
   async function handleDelete(id: string) {
     try {
-      await apiClient.deleteEnvironment(DEFAULT_PROJECT, id);
+      await apiClient.deleteEnvironment(projectId, id);
       setEnvs((prev) => prev.filter((e) => e.id !== id));
       toast.success("Environment deleted");
     } catch {

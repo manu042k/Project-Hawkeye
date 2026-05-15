@@ -29,9 +29,8 @@ import {
   type Checkpoint,
 } from "@/lib/api/client";
 import { NewRunModal } from "@/components/app/new-run-modal";
+import { useProjectStore } from "@/lib/project/store";
 import { toast } from "sonner";
-
-const DEFAULT_PROJECT = "default";
 const BROWSERS = ["chromium", "firefox", "webkit", "chrome", "msedge"];
 const PRIORITIES = ["P0", "P1", "P2", "P3"];
 const PAGE_TYPES = ["spa", "ssr", "static", "streaming"];
@@ -128,6 +127,7 @@ export default function TestCaseDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id: tcId } = use(params);
+  const projectId = useProjectStore((s) => s.currentProject?.id ?? "default");
   const router = useRouter();
   const { data: session } = useSession();
 
@@ -232,7 +232,7 @@ export default function TestCaseDetailPage({
     }
     setLoading(true);
     try {
-      const data = await apiClient.getProjectTestCase(DEFAULT_PROJECT, tcId);
+      const data = await apiClient.getProjectTestCase(projectId, tcId);
       setTc(data);
       const s = data.spec;
       // Overview
@@ -297,7 +297,7 @@ export default function TestCaseDetailPage({
     if (runsLoaded) return;
     setRunsLoading(true);
     try {
-      const res = await apiClient.getTestCaseRuns(DEFAULT_PROJECT, tcId);
+      const res = await apiClient.getTestCaseRuns(projectId, tcId);
       setRuns(res.runs);
       setRunsLoaded(true);
     } catch {
@@ -314,10 +314,10 @@ export default function TestCaseDetailPage({
     if (tab === "history") loadRuns();
   }, [tab]);
   useEffect(() => {
-    apiClient.listSuites(DEFAULT_PROJECT).then((r) => setSuites(r.suites)).catch(() => {});
+    apiClient.listSuites(projectId).then((r) => setSuites(r.suites)).catch(() => {});
   }, []);
   useEffect(() => {
-    apiClient.listSecrets(DEFAULT_PROJECT).then((r) => setVaultSecrets(r.secrets)).catch(() => {});
+    apiClient.listSecrets(projectId).then((r) => setVaultSecrets(r.secrets)).catch(() => {});
   }, []);
 
   const nameValid = name.trim().length >= 10;
@@ -387,14 +387,14 @@ export default function TestCaseDetailPage({
       };
       if (isNew) {
         const created = await apiClient.createProjectTestCase(
-          DEFAULT_PROJECT,
+          projectId,
           body,
         );
         toast.success("Test case created");
         router.push(`/app/test-cases/${created.id}`);
         return;
       }
-      await apiClient.updateProjectTestCase(DEFAULT_PROJECT, tcId, body);
+      await apiClient.updateProjectTestCase(projectId, tcId, body);
       toast.success("Saved");
       setSavedView(true);
       await loadTc();

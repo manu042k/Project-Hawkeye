@@ -26,7 +26,6 @@ import {
   Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 
-const DEFAULT_PROJECT = "default";
 
 const CRON_PRESETS = [
   { label: "Hourly",        value: "0 * * * *" },
@@ -361,6 +360,7 @@ function RunSuiteModal({
   onSaveSchedule: (suiteId: string, model: string, cron: string, branch: string) => Promise<void>;
   onSaveGitPush: (suiteId: string, model: string, branch: string) => Promise<void>;
 }) {
+  const projectId = useProjectStore((s) => s.currentProject?.id ?? "default");
   const [mode, setMode] = useState<RunMode>("instant");
   const [model, setModel] = useState(DEFAULT_MODEL);
   const [cron, setCron] = useState("0 9 * * 1");
@@ -370,7 +370,7 @@ function RunSuiteModal({
   const [confirmOverride, setConfirmOverride] = useState(false);
 
   useEffect(() => {
-    apiClient.listSchedules(DEFAULT_PROJECT, suite.id)
+    apiClient.listSchedules(projectId, suite.id)
       .then((r) => setSchedules(r.schedules))
       .catch(() => {});
   }, [suite.id]);
@@ -391,14 +391,14 @@ function RunSuiteModal({
   );
 
   async function deleteSchedule(id: string) {
-    await apiClient.deleteSchedule(DEFAULT_PROJECT, suite.id, id);
+    await apiClient.deleteSchedule(projectId, suite.id, id);
     setSchedules((prev) => prev.filter((s) => s.id !== id));
   }
 
   async function doSave() {
     setSaving(true);
     try {
-      await Promise.all(existingForMode.map((s) => apiClient.deleteSchedule(DEFAULT_PROJECT, suite.id, s.id)));
+      await Promise.all(existingForMode.map((s) => apiClient.deleteSchedule(projectId, suite.id, s.id)));
       if (mode === "instant") await onRunNow(suite.id, model);
       else if (mode === "schedule") await onSaveSchedule(suite.id, model, cron, branch);
       else await onSaveGitPush(suite.id, model, branch);
@@ -564,13 +564,14 @@ function ScheduleModal({
   suite: SuiteSummary;
   onClose: () => void;
 }) {
+  const projectId = useProjectStore((s) => s.currentProject?.id ?? "default");
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [cron, setCron] = useState("0 0 * * *");
   const [branch, setBranch] = useState("main");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    apiClient.listSchedules(DEFAULT_PROJECT, suite.id)
+    apiClient.listSchedules(projectId, suite.id)
       .then((r) => setSchedules(r.schedules))
       .catch(() => {});
   }, [suite.id]);
@@ -578,7 +579,7 @@ function ScheduleModal({
   async function addSchedule() {
     setSaving(true);
     try {
-      const s = await apiClient.createSchedule(DEFAULT_PROJECT, suite.id, { cron, branch });
+      const s = await apiClient.createSchedule(projectId, suite.id, { cron, branch });
       setSchedules((prev) => [...prev, s]);
       toast.success("Schedule added");
     } catch { toast.error("Failed to add schedule"); }
@@ -587,7 +588,7 @@ function ScheduleModal({
 
   async function removeSchedule(id: string) {
     try {
-      await apiClient.deleteSchedule(DEFAULT_PROJECT, suite.id, id);
+      await apiClient.deleteSchedule(projectId, suite.id, id);
       setSchedules((prev) => prev.filter((s) => s.id !== id));
       toast.success("Schedule removed");
     } catch { toast.error("Failed to remove schedule"); }
@@ -746,6 +747,7 @@ function SuiteRow({
 
 export default function SuitesPage() {
   const project = useProjectStore((s) => s.currentProject);
+  const projectId = project?.id ?? "default";
   const router = useRouter();
   const [q, setQ] = useState("");
   const [suites, setSuites] = useState<SuiteSummary[]>([]);
@@ -760,8 +762,8 @@ export default function SuitesPage() {
 
   function loadData() {
     Promise.all([
-      apiClient.listSuites(DEFAULT_PROJECT),
-      apiClient.listProjectTestCases(DEFAULT_PROJECT, {}),
+      apiClient.listSuites(projectId),
+      apiClient.listProjectTestCases(projectId, {}),
     ])
       .then(([suitesRes, tcRes]) => {
         setSuites(suitesRes.suites);
@@ -780,7 +782,7 @@ export default function SuitesPage() {
 
   async function handleCreate(name: string, description: string) {
     try {
-      const s = await apiClient.createSuite(DEFAULT_PROJECT, { name, description });
+      const s = await apiClient.createSuite(projectId, { name, description });
       setSuites((prev) => [s, ...prev]);
       toast.success(`Suite "${name}" created`);
     } catch {
@@ -791,7 +793,7 @@ export default function SuitesPage() {
 
   async function handleDelete(suiteId: string, name: string) {
     try {
-      await apiClient.deleteSuite(DEFAULT_PROJECT, suiteId);
+      await apiClient.deleteSuite(projectId, suiteId);
       setSuites((prev) => prev.filter((s) => s.id !== suiteId));
       toast.success(`Deleted "${name}"`);
     } catch { toast.error("Failed to delete suite"); }
@@ -799,7 +801,7 @@ export default function SuitesPage() {
 
   async function handleRunNow(suiteId: string, model: string) {
     try {
-      const res = await apiClient.runSuite(DEFAULT_PROJECT, suiteId, { model });
+      const res = await apiClient.runSuite(projectId, suiteId, { model });
       toast.success(`Queued ${res.total} test(s)`);
       router.push("/app/runs/live");
     } catch (e) {
@@ -810,7 +812,7 @@ export default function SuitesPage() {
 
   async function handleSaveSchedule(suiteId: string, _model: string, cron: string, branch: string) {
     try {
-      await apiClient.createSchedule(DEFAULT_PROJECT, suiteId, { cron, branch });
+      await apiClient.createSchedule(projectId, suiteId, { cron, branch });
       toast.success("Schedule saved");
     } catch (e) {
       toast.error("Failed to save schedule");
@@ -820,7 +822,7 @@ export default function SuitesPage() {
 
   async function handleSaveGitPush(suiteId: string, _model: string, branch: string) {
     try {
-      await apiClient.createSchedule(DEFAULT_PROJECT, suiteId, { cron: "0 0 31 2 *", branch, enabled: true });
+      await apiClient.createSchedule(projectId, suiteId, { cron: "0 0 31 2 *", branch, enabled: true });
       toast.success(`Git push trigger saved for branch "${branch}"`);
     } catch (e) {
       toast.error("Failed to save git push trigger");
@@ -831,7 +833,7 @@ export default function SuitesPage() {
   async function handleSaveTestCases(suiteId: string, ids: string[]) {
     try {
       const updates: Promise<unknown>[] = [
-        apiClient.updateSuite(DEFAULT_PROJECT, suiteId, { test_case_ids: ids }),
+        apiClient.updateSuite(projectId, suiteId, { test_case_ids: ids }),
       ];
       // Remove newly-claimed test cases from any other suite that currently owns them
       for (const s of suites) {
@@ -839,7 +841,7 @@ export default function SuitesPage() {
         const stolen = ids.filter((id) => s.test_case_ids.includes(id));
         if (stolen.length > 0) {
           const remaining = s.test_case_ids.filter((id) => !stolen.includes(id));
-          updates.push(apiClient.updateSuite(DEFAULT_PROJECT, s.id, { test_case_ids: remaining }));
+          updates.push(apiClient.updateSuite(projectId, s.id, { test_case_ids: remaining }));
         }
       }
       await Promise.all(updates);
@@ -857,12 +859,12 @@ export default function SuitesPage() {
       if (fromSuiteId) {
         const from = suites.find((s) => s.id === fromSuiteId)!;
         const newIds = from.test_case_ids.filter((id) => id !== tcId);
-        updates.push(apiClient.updateSuite(DEFAULT_PROJECT, fromSuiteId, { test_case_ids: newIds }));
+        updates.push(apiClient.updateSuite(projectId, fromSuiteId, { test_case_ids: newIds }));
       }
       if (toSuiteId) {
         const to = suites.find((s) => s.id === toSuiteId)!;
         const newIds = [...new Set([...to.test_case_ids, tcId])];
-        updates.push(apiClient.updateSuite(DEFAULT_PROJECT, toSuiteId, { test_case_ids: newIds }));
+        updates.push(apiClient.updateSuite(projectId, toSuiteId, { test_case_ids: newIds }));
       }
       await Promise.all(updates);
       loadData();

@@ -12,14 +12,15 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 
 import { apiClient } from "@/lib/api/client";
+import { useProjectStore } from "@/lib/project/store";
 
-const DEFAULT_PROJECT = "default";
 const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
 const WEBHOOK_URL = `${API_URL}/api/webhook/github`;
 
 type Integration = { id: string; type: string; enabled: boolean; config: Record<string, unknown>; created_at: string };
 
 export default function IntegrationsPage() {
+  const projectId = useProjectStore((s) => s.currentProject?.id ?? "default");
   const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -36,7 +37,7 @@ export default function IntegrationsPage() {
 
   async function load() {
     try {
-      const res = await fetch(`${API_URL}/api/projects/${DEFAULT_PROJECT}/integrations`, {
+      const res = await fetch(`${API_URL}/api/projects/${projectId}/integrations`, {
         headers: { "Content-Type": "application/json" },
       });
       if (res.ok) {
@@ -52,7 +53,7 @@ export default function IntegrationsPage() {
 
   async function deleteIntegration(id: string) {
     try {
-      await fetch(`${API_URL}/api/projects/${DEFAULT_PROJECT}/integrations/${id}`, { method: "DELETE" });
+      await fetch(`${API_URL}/api/projects/${projectId}/integrations/${id}`, { method: "DELETE" });
       setIntegrations((prev) => prev.filter((i) => i.id !== id));
       toast.success("Integration removed");
     } catch {
@@ -64,7 +65,7 @@ export default function IntegrationsPage() {
     if (!slackUrl.trim()) return;
     setSavingSlack(true);
     try {
-      const res = await fetch(`${API_URL}/api/projects/${DEFAULT_PROJECT}/integrations/slack`, {
+      const res = await fetch(`${API_URL}/api/projects/${projectId}/integrations/slack`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ webhook_url: slackUrl.trim(), notify_on: ["failure", "passed"] }),
@@ -85,7 +86,7 @@ export default function IntegrationsPage() {
     if (!ghRepo.trim() || !ghInstallId.trim()) return;
     setSavingGh(true);
     try {
-      const res = await fetch(`${API_URL}/api/projects/${DEFAULT_PROJECT}/integrations/github`, {
+      const res = await fetch(`${API_URL}/api/projects/${projectId}/integrations/github`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ repo: ghRepo.trim(), installation_id: Number(ghInstallId), branch: ghBranch.trim() || "main" }),

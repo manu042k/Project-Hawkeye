@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/select";
 
 import { apiClient, type TestCaseSummary } from "@/lib/api/client";
+import { useProjectStore } from "@/lib/project/store";
 import { MODEL_GROUPS, DEFAULT_MODEL, ALL_MODELS } from "@/lib/models";
 
 interface NewRunModalProps {
@@ -34,9 +35,8 @@ interface NewRunModalProps {
   initialTestCaseId?: string;
 }
 
-const DEFAULT_PROJECT = "default";
-
 export function NewRunModal({ open, onClose, initialTestCaseId }: NewRunModalProps) {
+  const projectId = useProjectStore((s) => s.currentProject?.id ?? "default");
   const router = useRouter();
   const { data: session } = useSession();
   const [testCases, setTestCases] = useState<TestCaseSummary[]>([]);
@@ -49,7 +49,7 @@ export function NewRunModal({ open, onClose, initialTestCaseId }: NewRunModalPro
   useEffect(() => {
     if (initialTestCaseId) { setTcLoading(false); return; }
     apiClient
-      .listProjectTestCases(DEFAULT_PROJECT, { status: "active" })
+      .listProjectTestCases(projectId, { status: "active" })
       .then((res) => setTestCases(res.test_cases))
       .catch(() => {})
       .finally(() => setTcLoading(false));

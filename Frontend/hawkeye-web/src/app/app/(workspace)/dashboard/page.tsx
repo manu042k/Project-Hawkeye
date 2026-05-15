@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 import { useProjectStore } from "@/lib/project/store";
-import { useRuns, useDeleteRun } from "@/lib/api/hooks";
+import { useProjectRuns, useDeleteRun } from "@/lib/api/hooks";
 import { type RunStatus, type RunSummary } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 
@@ -131,7 +131,7 @@ export default function DashboardPage() {
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "passed" | "failed">("all");
   const [page, setPage] = useState(1);
-  const { data: runs, loading, error } = useRuns();
+  const { data: runs, loading, error } = useProjectRuns(project?.id ?? null);
   const { deleteRun } = useDeleteRun();
 
   const metrics = useMemo(() => {
@@ -139,10 +139,11 @@ export default function DashboardPage() {
     const total = runs.length;
     const passed = runs.filter((r) => r.status === "passed").length;
     const active = runs.filter((r) => ACTIVE.has(r.status)).length;
-    const passRate = total > 0 ? `${Math.round((passed / total) * 100)}%` : "—";
+    const completed = runs.filter((r) => TERMINAL.has(r.status)).length;
+    const passRate = completed > 0 ? `${Math.round((passed / completed) * 100)}%` : "—";
     return [
-      { label: "Total Runs",  value: String(total),  delta: `${passed} passed`,               tone: "primary" as const, icon: Activity },
-      { label: "Pass Rate",   value: passRate,       delta: `${passed} / ${total}`,            tone: "success" as const, icon: CheckCircle2 },
+      { label: "Total Runs",  value: String(total),  delta: `${passed} passed`,                  tone: "primary" as const, icon: Activity },
+      { label: "Pass Rate",   value: passRate,       delta: `${passed} / ${completed} completed`, tone: "success" as const, icon: CheckCircle2 },
       { label: "Active Runs", value: String(active), delta: active > 0 ? "In progress" : "Idle", tone: "warning" as const, icon: Zap },
     ];
   }, [runs]);

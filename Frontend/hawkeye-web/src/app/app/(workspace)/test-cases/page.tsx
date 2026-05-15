@@ -16,9 +16,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { apiClient, type TestCaseSummary } from "@/lib/api/client";
+import { useProjectStore } from "@/lib/project/store";
 import { NewRunModal } from "@/components/app/new-run-modal";
-
-const DEFAULT_PROJECT = "default";
 
 const PRIORITY_COLORS: Record<string, string> = {
   P0: "border-red-500/40 bg-red-500/10 text-red-400",
@@ -28,6 +27,7 @@ const PRIORITY_COLORS: Record<string, string> = {
 };
 
 export default function TestCasesPage() {
+  const projectId = useProjectStore((s) => s.currentProject?.id ?? "default");
   const router = useRouter();
   const [cases, setCases] = useState<TestCaseSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -41,7 +41,7 @@ export default function TestCasesPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await apiClient.listProjectTestCases(DEFAULT_PROJECT, { status: "all", q: query });
+      const res = await apiClient.listProjectTestCases(projectId, { status: "all", q: query });
       setCases(res.test_cases);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to load test cases");
@@ -53,7 +53,7 @@ export default function TestCasesPage() {
   useEffect(() => { load(); }, []);
 
   async function handleClone(tcId: string) {
-    await apiClient.cloneProjectTestCase(DEFAULT_PROJECT, tcId);
+    await apiClient.cloneProjectTestCase(projectId, tcId);
     load();
   }
 
@@ -61,7 +61,7 @@ export default function TestCasesPage() {
     if (!archiveId) return;
     setArchiving(true);
     try {
-      await apiClient.archiveProjectTestCase(DEFAULT_PROJECT, archiveId);
+      await apiClient.archiveProjectTestCase(projectId, archiveId);
       load();
     } finally {
       setArchiving(false);

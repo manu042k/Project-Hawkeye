@@ -11,9 +11,8 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 
 import { apiClient, type Baseline } from "@/lib/api/client";
+import { useProjectStore } from "@/lib/project/store";
 import { cn } from "@/lib/utils";
-
-const DEFAULT_PROJECT = "default";
 
 function StatusBadge({ status }: { status: Baseline["status"] }) {
   const map = {
@@ -43,6 +42,7 @@ function DiffBar({ pct }: { pct: number | null }) {
 }
 
 export default function VisualBaselinesPage() {
+  const projectId = useProjectStore((s) => s.currentProject?.id ?? "default");
   const [tab, setTab] = useState<"pending_review" | "approved" | "rejected">("pending_review");
   const [q, setQ] = useState("");
   const [baselines, setBaselines] = useState<Baseline[]>([]);
@@ -52,7 +52,7 @@ export default function VisualBaselinesPage() {
   async function load() {
     setLoading(true);
     try {
-      const res = await apiClient.listBaselines(DEFAULT_PROJECT, { status: tab });
+      const res = await apiClient.listBaselines(projectId, { status: tab });
       setBaselines(res.baselines);
     } catch {
       toast.error("Failed to load baselines");
@@ -66,7 +66,7 @@ export default function VisualBaselinesPage() {
   async function handleApprove(id: string) {
     setActing(id);
     try {
-      await apiClient.approveBaseline(DEFAULT_PROJECT, id);
+      await apiClient.approveBaseline(projectId, id);
       toast.success("Baseline approved");
       setBaselines((prev) => prev.filter((b) => b.id !== id));
     } catch {
@@ -79,7 +79,7 @@ export default function VisualBaselinesPage() {
   async function handleReject(id: string) {
     setActing(id);
     try {
-      await apiClient.rejectBaseline(DEFAULT_PROJECT, id, "");
+      await apiClient.rejectBaseline(projectId, id, "");
       toast.success("Baseline rejected");
       setBaselines((prev) => prev.filter((b) => b.id !== id));
     } catch {

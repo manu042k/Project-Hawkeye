@@ -75,6 +75,29 @@ export function useRuns(): ApiState<RunSummary[]> & { refetch: () => void } {
   return { ...state, refetch };
 }
 
+export function useProjectRuns(projectId: string | null): ApiState<RunSummary[]> & { refetch: () => void } {
+  const [state, setState] = useState<ApiState<RunSummary[]>>(initState);
+
+  const refetch = useCallback(async () => {
+    if (!projectId) { setState({ data: [], loading: false, error: null }); return; }
+    try {
+      const data = await apiClient.getProjectRuns(projectId);
+      setState({ data: data.runs, loading: false, error: null });
+    } catch (e) {
+      setState((prev) => ({ ...prev, loading: false, error: String(e) }));
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    setState(initState);
+    refetch();
+    const t = setInterval(refetch, 5_000);
+    return () => clearInterval(t);
+  }, [refetch]);
+
+  return { ...state, refetch };
+}
+
 export function useRun(id: string | null): ApiState<RunSummary> & { refetch: () => void } {
   const [state, setState] = useState<ApiState<RunSummary>>(initState);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);

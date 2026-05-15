@@ -257,6 +257,15 @@ export type ProjectSummary = {
   created_at: string;
 };
 
+export type ProjectMember = {
+  id: string;
+  project_id: string;
+  user_email: string;
+  user_name: string | null;
+  role: "admin" | "developer" | "viewer";
+  added_at: string;
+};
+
 export type TraceEvent = {
   event_type: string;
   run_id: string;
@@ -307,12 +316,29 @@ export const apiClient = {
   // Legacy YAML test cases (used by /runs/new picker)
   getTestCases: () => apiFetch<{ test_cases: TestCaseInfo[] }>("/api/test-cases"),
 
-  // Projects (Phase 5A)
+  // Projects
   getProjects: () => apiFetch<{ projects: ProjectSummary[]; total: number }>("/api/projects"),
+  getProject: (projectId: string) => apiFetch<ProjectSummary>(`/api/projects/${projectId}`),
   createProject: (body: { name: string; slug: string; description?: string }) =>
     apiFetch<ProjectSummary>("/api/projects", { method: "POST", body: JSON.stringify(body) }),
+  updateProject: (projectId: string, body: { name?: string; description?: string }) =>
+    apiFetch<ProjectSummary>(`/api/projects/${projectId}`, { method: "PATCH", body: JSON.stringify(body) }),
+  archiveProject: (projectId: string) =>
+    apiFetch<{ archived: boolean }>(`/api/projects/${projectId}`, { method: "DELETE" }),
   getProjectStats: (projectId: string) =>
-    apiFetch<{ pass_rate: number; total_runs: number; active_runs: number; cost_this_month_usd: number }>(`/api/projects/${projectId}/stats`),
+    apiFetch<{ pass_rate: number; total_runs: number; active_runs: number; test_case_count: number; cost_this_month_usd: number }>(`/api/projects/${projectId}/stats`),
+  getProjectRuns: (projectId: string) =>
+    apiFetch<{ runs: RunSummary[]; total: number }>(`/api/projects/${projectId}/runs`),
+
+  // Project members
+  getProjectMembers: (projectId: string) =>
+    apiFetch<{ members: ProjectMember[]; total: number }>(`/api/projects/${projectId}/members`),
+  addProjectMember: (projectId: string, body: { user_email: string; user_name?: string; role: string }) =>
+    apiFetch<ProjectMember>(`/api/projects/${projectId}/members`, { method: "POST", body: JSON.stringify(body) }),
+  updateProjectMember: (projectId: string, memberId: string, body: { role: string }) =>
+    apiFetch<ProjectMember>(`/api/projects/${projectId}/members/${memberId}`, { method: "PATCH", body: JSON.stringify(body) }),
+  removeProjectMember: (projectId: string, memberId: string) =>
+    apiFetch<{ removed: boolean }>(`/api/projects/${projectId}/members/${memberId}`, { method: "DELETE" }),
 
   // Test cases CRUD (Phase 5A)
   listProjectTestCases: (projectId: string, params?: { status?: string; q?: string }) => {

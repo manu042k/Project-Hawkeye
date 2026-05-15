@@ -97,3 +97,16 @@ class VaultSecret(Base):
     updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
 
     __table_args__ = (UniqueConstraint("project_id", "key", name="uq_vault_secret_project_key"),)
+
+
+class ProjectMember(Base):
+    __tablename__ = "project_members"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    project_id = Column(String(36), index=True, nullable=False)
+    user_email = Column(String(255), nullable=False)
+    user_name = Column(String(255), nullable=True)
+    role = Column(String(20), nullable=False, default="viewer")  # admin|developer|viewer
+    added_at = Column(DateTime(timezone=True), default=_utcnow)
+
+    __table_args__ = (UniqueConstraint("project_id", "user_email", name="uq_project_member"),)
