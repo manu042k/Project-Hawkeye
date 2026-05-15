@@ -2,9 +2,10 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Archive, CheckCircle2, ChevronLeft, ChevronRight, Clock, Search, XCircle } from "lucide-react";
+import { Archive, CheckCircle2, ChevronLeft, ChevronRight, Clock, Play, Search, SlidersHorizontal, XCircle } from "lucide-react";
 
 import { AppTopbar } from "@/components/app/app-topbar";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { useProjectRuns } from "@/lib/api/hooks";
@@ -123,13 +124,45 @@ export default function ArtifactsPage() {
             ))}
           </div>
         ) : filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-24 text-center space-y-3">
-            <Archive className="size-12 text-muted-foreground/20" />
-            <p className="text-sm font-medium text-muted-foreground">
-              {q || filter !== "all" ? "No matching runs" : "No completed runs yet"}
-            </p>
-            <p className="text-xs text-muted-foreground/50">Runs appear here once they finish</p>
-          </div>
+          q || filter !== "all" ? (
+            /* ── Filtered empty state ── */
+            <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border/60 bg-muted/10 py-20 text-center">
+              <SlidersHorizontal className="size-10 text-muted-foreground/25" />
+              <p className="mt-4 text-sm font-medium">No runs match your filters</p>
+              <p className="mt-1 text-xs text-muted-foreground">Try clearing the search or changing the status filter.</p>
+              <div className="mt-4 flex gap-2">
+                {q && (
+                  <Button variant="outline" size="sm" onClick={() => { setQ(""); setPage(1); }}>
+                    Clear search
+                  </Button>
+                )}
+                {filter !== "all" && (
+                  <Button variant="outline" size="sm" onClick={() => { setFilter("all"); setPage(1); }}>
+                    Show all statuses
+                  </Button>
+                )}
+              </div>
+            </div>
+          ) : (
+            /* ── No runs at all ── */
+            <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border/60 bg-muted/10 py-24 text-center">
+              <div className="flex size-16 items-center justify-center rounded-2xl border border-border/60 bg-muted/30">
+                <Archive className="size-8 text-muted-foreground/40" />
+              </div>
+              <p className="mt-5 text-base font-semibold tracking-tight">No completed runs yet</p>
+              <p className="mt-1.5 max-w-xs text-sm text-muted-foreground">
+                Finished runs land here with their full trace, screenshots, and assertion results.
+              </p>
+              <div className="mt-6 flex gap-2">
+                <Button size="sm" className="gap-1.5" onClick={() => router.push("/app/runs/new")}>
+                  <Play className="size-3.5" /> Start a run
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => router.push("/app/test-cases")}>
+                  Browse test cases
+                </Button>
+              </div>
+            </div>
+          )
         ) : (
           <div className="overflow-hidden rounded-xl border border-border/60">
             <table className="w-full text-sm">
