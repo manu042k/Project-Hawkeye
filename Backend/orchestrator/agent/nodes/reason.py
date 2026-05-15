@@ -302,6 +302,7 @@ async def reason_node(
         llm_start_ns=start_ns,
         llm_end_ns=end_ns,
     )
+    await asyncio.sleep(0)  # flush publish before tool execution starts
 
     return {
         "messages": [obs_message, ai_message],
@@ -367,8 +368,8 @@ def _build_observation(state: AgentState) -> str:
     # Always show progress summary so the agent remembers its state even after
     # context trimming removes earlier messages.
     tc = state.get("test_case")
-    if tc and tc.steps:
-        all_checkpoints = [cp.id for cp in tc.steps.checkpoints]
+    if tc and tc.goal.steps:
+        all_checkpoints = [cp.id for cp in tc.goal.steps.checkpoints]
         remaining = [c for c in all_checkpoints if c not in completed]
         if completed:
             parts.append(f"PROGRESS: Completed checkpoints: {', '.join(completed)} of {', '.join(all_checkpoints)}")
@@ -376,7 +377,7 @@ def _build_observation(state: AgentState) -> str:
             next_cp = remaining[0]
             # Find the checkpoint description
             cp_desc = next(
-                (cp.description for cp in tc.steps.checkpoints if cp.id == next_cp), ""
+                (cp.description for cp in tc.goal.steps.checkpoints if cp.id == next_cp), ""
             )
             parts.append(f"NEXT: [{next_cp}] {cp_desc}")
         elif completed:

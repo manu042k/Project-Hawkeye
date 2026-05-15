@@ -1,20 +1,19 @@
 from __future__ import annotations
 
+import base64
 import uuid
 from datetime import datetime, timezone
-from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
+from sqlalchemy import select
+
+from api.database import AsyncSessionLocal
+from api.models import VaultSecret
+from api.crypto import encrypt, decrypt, encryption_enabled
+from api.auth_utils import get_current_user, require_project_member
 
 router = APIRouter(tags=["vault"])
-
-# in-memory store: project_id -> secret_id -> secret dict
-# Values are stored in plain text for now; a real impl would use KMS/envelope encryption
-_store: dict[str, dict[str, dict[str, Any]]] = {}
-
-VAULD_ENVIRONMENTS = ("Production", "Staging", "Development")
-VAULT_TYPES = ("API Key", "Database", "Certificate", "Other")
 
 
 class SecretCreate(BaseModel):
@@ -30,83 +29,130 @@ class SecretUpdate(BaseModel):
     type: str | None = None
 
 
-def _project_secrets(project_id: str) -> dict[str, dict[str, Any]]:
-    return _store.setdefault(project_id, {})
+def _dt(v) -> str | None:
+    if v is None:
+        return None
+    if isinstance(v, str):
+        return v
+    return v.isoformat()
 
 
-def _to_response(s: dict[str, Any], reveal: bool = False) -> dict[str, Any]:
+def _encode_secret(value: str) -> tuple[str, str]:
+    if encryption_enabled():
+        ct, iv = encrypt(value)
+        return base64.b64encode(ct).decode(), base64.b64encode(iv).decode()
+    return value, ""
+
+
+def _decode_secret(stored: str, iv_b64: str) -> str:
+    if encryption_enabled() and iv_b64:
+        ct = base64.b64decode(stored)
+        iv = base64.b64decode(iv_b64)
+        return decrypt(ct, iv)
+    return stored
+
+
+def _to_response(s: VaultSecret, reveal: bool = False) -> dict:
+    value = _decode_secret(s.encrypted_value, s.iv or "") if reveal else None
     return {
-        "id": s["id"],
-        "name": s["name"],
-        "environment": s["environment"],
-        "type": s["type"],
+        "id": s.id,
+        "name": s.key,
+        "environment": s.environment or "Development",
+        "type": s.secret_type or "API Key",
         "masked_value": "•" * 16,
-        "value": s["value"] if reveal else None,
-        "updated_at": s["updated_at"],
-        "created_at": s["created_at"],
+        "value": value,
+        "updated_at": _dt(s.updated_at),
+        "created_at": _dt(s.created_at),
     }
 
 
 @router.get("/projects/{project_id}/vault")
-def list_secrets(project_id: str, environment: str | None = None, type: str | None = None) -> dict:
-    secrets = list(_project_secrets(project_id).values())
-    if environment and environment != "All Environments":
-        secrets = [s for s in secrets if s["environment"] == environment]
-    if type and type != "All Types":
-        secrets = [s for s in secrets if s["type"] == type]
-    secrets.sort(key=lambda s: s["created_at"], reverse=True)
-    return {"secrets": [_to_response(s) for s in secrets], "total": len(secrets)}
+async def list_secrets(project_id: str, environment: str | None = None, type: str | None = None, user: dict = Depends(get_current_user)) -> dict:
+    await require_project_member(project_id, user["email"])
+    async with AsyncSessionLocal() as session:
+        stmt = select(VaultSecret).where(VaultSecret.project_id == project_id).order_by(VaultSecret.created_at.desc())
+        result = await session.execute(stmt)
+        secrets = result.scalars().all()
+        items = [_to_response(s) for s in secrets]
+        if environment and environment != "All Environments":
+            items = [i for i in items if i["environment"] == environment]
+        if type and type != "All Types":
+            items = [i for i in items if i["type"] == type]
+        return {"secrets": items, "total": len(items)}
 
 
 @router.post("/projects/{project_id}/vault", status_code=201)
-def create_secret(project_id: str, body: SecretCreate) -> dict:
-    # check name uniqueness within project
-    existing = {s["name"] for s in _project_secrets(project_id).values()}
-    if body.name in existing:
-        raise HTTPException(status_code=409, detail=f"Secret '{body.name}' already exists")
-    secret_id = str(uuid.uuid4())
-    now = datetime.now(timezone.utc).isoformat()
-    secret = {
-        "id": secret_id,
-        "project_id": project_id,
-        "name": body.name,
-        "value": body.value,
-        "environment": body.environment,
-        "type": body.type,
-        "created_at": now,
-        "updated_at": now,
-    }
-    _project_secrets(project_id)[secret_id] = secret
-    return _to_response(secret)
+async def create_secret(project_id: str, body: SecretCreate, user: dict = Depends(get_current_user)) -> dict:
+    await require_project_member(project_id, user["email"])
+    async with AsyncSessionLocal() as session:
+        existing = await session.execute(
+            select(VaultSecret).where(VaultSecret.project_id == project_id, VaultSecret.key == body.name)
+        )
+        if existing.scalar_one_or_none():
+            raise HTTPException(409, f"Secret '{body.name}' already exists")
+        stored, iv_b64 = _encode_secret(body.value)
+        secret = VaultSecret(
+            id=str(uuid.uuid4()),
+            project_id=project_id,
+            key=body.name,
+            encrypted_value=stored,
+            iv=iv_b64,
+            environment=body.environment,
+            secret_type=body.type,
+        )
+        session.add(secret)
+        await session.commit()
+        await session.refresh(secret)
+        return _to_response(secret)
 
 
 @router.get("/projects/{project_id}/vault/{secret_id}/reveal")
-def reveal_secret(project_id: str, secret_id: str) -> dict:
-    secret = _project_secrets(project_id).get(secret_id)
-    if not secret:
-        raise HTTPException(status_code=404, detail="Secret not found")
-    return _to_response(secret, reveal=True)
+async def reveal_secret(project_id: str, secret_id: str, user: dict = Depends(get_current_user)) -> dict:
+    await require_project_member(project_id, user["email"])
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(VaultSecret).where(VaultSecret.id == secret_id, VaultSecret.project_id == project_id)
+        )
+        secret = result.scalar_one_or_none()
+        if not secret:
+            raise HTTPException(404, "Secret not found")
+        return _to_response(secret, reveal=True)
 
 
 @router.put("/projects/{project_id}/vault/{secret_id}")
-def update_secret(project_id: str, secret_id: str, body: SecretUpdate) -> dict:
-    secret = _project_secrets(project_id).get(secret_id)
-    if not secret:
-        raise HTTPException(status_code=404, detail="Secret not found")
-    if body.value is not None:
-        secret["value"] = body.value
-    if body.environment is not None:
-        secret["environment"] = body.environment
-    if body.type is not None:
-        secret["type"] = body.type
-    secret["updated_at"] = datetime.now(timezone.utc).isoformat()
-    return _to_response(secret)
+async def update_secret(project_id: str, secret_id: str, body: SecretUpdate, user: dict = Depends(get_current_user)) -> dict:
+    await require_project_member(project_id, user["email"])
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(VaultSecret).where(VaultSecret.id == secret_id, VaultSecret.project_id == project_id)
+        )
+        secret = result.scalar_one_or_none()
+        if not secret:
+            raise HTTPException(404, "Secret not found")
+        if body.value is not None:
+            stored, iv_b64 = _encode_secret(body.value)
+            secret.encrypted_value = stored
+            secret.iv = iv_b64
+        if body.environment is not None:
+            secret.environment = body.environment
+        if body.type is not None:
+            secret.secret_type = body.type
+        secret.updated_at = datetime.now(timezone.utc)
+        await session.commit()
+        await session.refresh(secret)
+        return _to_response(secret)
 
 
 @router.delete("/projects/{project_id}/vault/{secret_id}")
-def delete_secret(project_id: str, secret_id: str) -> dict:
-    secrets = _project_secrets(project_id)
-    if secret_id not in secrets:
-        raise HTTPException(status_code=404, detail="Secret not found")
-    del secrets[secret_id]
-    return {"deleted": True}
+async def delete_secret(project_id: str, secret_id: str, user: dict = Depends(get_current_user)) -> dict:
+    await require_project_member(project_id, user["email"])
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(VaultSecret).where(VaultSecret.id == secret_id, VaultSecret.project_id == project_id)
+        )
+        secret = result.scalar_one_or_none()
+        if not secret:
+            raise HTTPException(404, "Secret not found")
+        await session.delete(secret)
+        await session.commit()
+        return {"deleted": True}

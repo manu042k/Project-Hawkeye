@@ -83,7 +83,7 @@ def build_default_registry(
     registry = ToolRegistry()
 
     async def _wait_for_stable(tool_input: dict, cdp_session: CdpSession, state: AgentState) -> str:
-        page_type = state["test_case"].context.page_type if state.get("test_case") else "spa"
+        page_type = state["test_case"].target.page_type if state.get("test_case") else "spa"
         timeout_ms = tool_input.get("timeout_ms", 8000)
         result = await wait_for_stable(
             cdp_session=cdp_session,
@@ -168,6 +168,24 @@ def build_default_registry(
         status = "PASSED" if result.passed else "FAILED"
         return f"Assertion {status}: {result.details}"
 
+    from orchestrator.tools.scroll_page import scroll_page
+
+    async def _scroll_page(tool_input: dict, cdp_session: CdpSession, state: AgentState) -> str:
+        if cdp_session is None:
+            return "scroll_page requires CDP — not available in this run."
+        result = await scroll_page(
+            cdp_session=cdp_session,
+            direction=tool_input.get("direction", "down"),
+            times=min(int(tool_input.get("times", 1)), 10),
+        )
+        status = "Reached bottom of page." if result.at_bottom else f"{result.scroll_height - result.scroll_top - result.viewport_height}px remaining."
+        return (
+            f"Scrolled {result.direction} {result.times}× "
+            f"(~{result.pixels_scrolled}px). "
+            f"Position: {result.scroll_top}px from top. "
+            f"{status}"
+        )
+
     registry.register("wait_for_stable", _wait_for_stable)
     registry.register("assert_text_present", _assert_text)
     registry.register("get_console_errors", _get_console_errors)
@@ -175,4 +193,5 @@ def build_default_registry(
     registry.register("get_network_log", _get_network_log)
     registry.register("assert_network_request", _assert_network_request)
     registry.register("assert_element_state", _assert_element_state)
+    registry.register("scroll_page", _scroll_page)
     return registry

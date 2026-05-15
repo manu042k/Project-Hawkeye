@@ -2,8 +2,20 @@
 from __future__ import annotations
 
 import functools
+import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+# Suppress LangGraph's pending-deprecation noise about allowed_objects default.
+warnings.filterwarnings(
+    "ignore",
+    message=".*allowed_objects.*will change.*",
+    category=DeprecationWarning,
+)
+warnings.filterwarnings(
+    "ignore",
+    message=".*allowed_objects.*will change.*",
+)
 
 from langgraph.graph import END, START, StateGraph
 

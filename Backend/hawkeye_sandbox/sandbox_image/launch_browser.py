@@ -79,7 +79,8 @@ def main() -> int:
                 )
             else:
                 raise
-        page = context.new_page()
+        # Reuse the page launch_persistent_context already opens; never create a second tab.
+        page = context.pages[0] if context.pages else context.new_page()
         page.goto(url, wait_until="domcontentloaded")
 
         while True:

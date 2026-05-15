@@ -91,8 +91,11 @@ class PhoenixTracer:
             )
             return
         try:
+            import warnings as _w
             from phoenix.otel import register
-            self._provider = register(project_name="hawkeye", auto_instrument=True)
+            with _w.catch_warnings():
+                _w.filterwarnings("ignore", message=".*collector endpoint protocol.*", category=UserWarning)
+                self._provider = register(project_name="hawkeye", auto_instrument=True)
             self._tracer = self._provider.get_tracer("hawkeye")
             self._enabled = True
             logger.info("PhoenixTracer: connected to %s", endpoint)

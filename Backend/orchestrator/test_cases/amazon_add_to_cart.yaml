@@ -1,9 +1,11 @@
-
 id: "TC-002"
-name: "Amazon: add product to cart, verify cart"
-suite: "phase1-smoke"
+name: "Amazon — add product to cart and verify"
+suite: "e-commerce"
 priority: "P1"
-tags: ["amazon", "cart", "e-commerce"]
+tags: ["amazon", "cart", "e-commerce", "smoke"]
+created_by: "usr_123"  # user ID
+project: "proj_456"  # project ID
+save_record: false # set to true to save a video recording of the run
 
 target:
   url: "https://www.amazon.com"
@@ -11,78 +13,73 @@ target:
   viewport:
     width: 1280
     height: 720
-
-goal: |
-  Navigate to the Amazon product page for Sony WH-1000XM5 headphones,
-  add the product to the cart, navigate to the cart, and verify the
-  item is present in the cart.
-
-steps: null
-
-assertions:
-  - id: "A1"
-    type: "content"
-    description: "Cart contains a headphones item"
-    params:
-      check: "text_present"
-      text: "headphones"
-
-  - id: "A2"
-    type: "content"
-    description: "Cart shows a price or subtotal"
-    params:
-      check: "text_matches"
-      pattern: "\\$[0-9]+\\.[0-9]{2}"
-
-  - id: "A3"
-    type: "console"
-    description: "No critical JS errors during the flow"
-    params:
-      level: "error"
-      max_count: 20
-      ignore_patterns:
-        - "favicon"
-        - "analytics"
-        - "beacon"
-        - "ads"
-        - "adsystem"
-        - "doubleclick"
-        - "Track"
-        - "wamazin"
-        - "ueLogError"
-        - "mix_csa"
-        - "csm"
-        - "Late loading"
-        - "logLevel"
-        - "401"
-        - "Failed to load resource"
-        - "Unauthorized"
-
-constraints:
-  max_steps: 20
-  timeout_seconds: 300
-  navigation_policy: "explicit_urls_allowed"
-  forbidden_actions:
-    - "proceed to checkout"
-    - "enter payment information"
-    - "place an order"
-    - "buy now"
-  required_behaviors:
-    - "verify cart contents by navigating to the cart page"
-
-context:
-  page_type: "spa"
+    device_scale_factor: 1.0
+  page_type: spa
   app_description: |
-    Amazon.com — major e-commerce platform. Heavy JavaScript. No login needed
-    to add items to a session cart.
-  hints:
-    - "Step 1: use browser_navigate to go to https://www.amazon.com/dp/B09G9HD6PD (Sony WH-1000XM5 headphones)"
-    - "Step 2: call wait_for_stable to ensure the product page is fully loaded"
-    - "Step 3: take a browser_snapshot to find the 'Add to Cart' button ref in the accessibility tree"
-    - "Step 4: click the 'Add to Cart' button using its ref from the snapshot"
-    - "Step 5: call wait_for_stable again to wait for the cart confirmation"
-    - "Step 6: use browser_navigate to go to https://www.amazon.com/cart"
-    - "Step 7: take a snapshot and verify headphones appear in the cart, then emit <GOAL_COMPLETE>"
-    - "NEVER click any link directly — always use browser_navigate with an explicit URL"
-    - "If Amazon shows a CAPTCHA or sign-in wall that cannot be dismissed, emit <GOAL_BLOCKED>"
-    - "The 'Add to Cart' button may take 3-8 seconds to respond — always call wait_for_stable before and after clicking it"
+    Amazon.com is a large e-commerce platform with heavy JavaScript rendering.
+    No login is needed to add items to a guest session cart.
+  vault:
+    - key: username
+      value: my-amazon-username
+    - key: password
+      value: my-amazon-password
+
+goal:
+  objective: |
+    Go to the Amazon product page for Sony WH-1000XM5 headphones,
+    add the item to the cart, then navigate to the cart and confirm
+    the item is present. Do not proceed to checkout.
+
+  constraints:
+    max_steps: 20
+    timeout_seconds: 300
+    max_retries_per_action: 2
+
+  extra_details: |
+    Always navigate using explicit URLs rather than clicking links.
+    The Add to Cart button may take 3–8 seconds to respond — wait for
+    confirmation before navigating away.
+    If a CAPTCHA or mandatory sign-in wall appears that cannot be
+    dismissed, emit <GOAL_BLOCKED>.
+
+  steps:
+    checkpoints:
+      - id: S1
+        description: |
+          Navigate to the Sony WH-1000XM5 headphones product page at
+          https://www.amazon.com/dp/B09G9HD6PD and wait for it to fully load.
+        success_signal: |
+          The product page is visible showing the headphones title, price,
+          and an "Add to Cart" button.
+
+      - id: S2
+        description: |
+          Click the "Add to Cart" button and wait for confirmation that
+          the item was added.
+        success_signal: |
+          A cart confirmation message appears, or the cart icon in the
+          page header shows an incremented item count.
+
+      - id: S3
+        description: |
+          Navigate to the shopping cart at https://www.amazon.com/cart.
+        success_signal: |
+          The cart page loads and shows the Sony WH-1000XM5 headphones
+          with its name and unit price visible.
+
+      - id: S4
+        description: |
+          Review the cart contents and confirm everything looks correct.
+        success_signal: |
+          The cart displays the headphones item and a subtotal amount.
+          The goal is complete — do not click checkout or Buy Now.
+
+on_failure:
+  capture:
+    screenshot: true
+    dom_snapshot: true
+    network_log: true
+    console_log: true
+    agent_trace: true
+    video: true # always record video on failure
+  notify: {} # e.g. email, slack — configure per project

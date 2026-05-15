@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 import asyncio
 import json
@@ -19,6 +20,73 @@ from api.celery_app import celery_app, REDIS_URL
 logger = logging.getLogger(__name__)
 
 
+def _make_task_session():
+    """Create a fresh SQLAlchemy session with NullPool for use inside Celery tasks.
+
+    Celery workers call asyncio.run() once per task, creating a new event loop each time.
+    The module-level engine uses a connection pool whose connections are bound to the
+    previous event loop, causing asyncpg InterfaceError on reuse.  NullPool avoids this
+    by opening a brand-new connection for every session and closing it immediately.
+    """
+    from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+    from sqlalchemy.pool import NullPool
+    raw = os.environ.get("HAWKEYE_DB_URL", "")
+    if raw.startswith("postgresql://"):
+        url = raw.replace("postgresql://", "postgresql+asyncpg://", 1)
+    elif raw.startswith("postgres://"):
+        url = raw.replace("postgres://", "postgresql+asyncpg://", 1)
+    elif raw:
+        url = raw
+    else:
+        url = "sqlite+aiosqlite:///./hawkeye.db"
+    _engine = create_async_engine(url, echo=False, poolclass=NullPool)
+    return async_sessionmaker(_engine, class_=AsyncSession, expire_on_commit=False)
+
+
+async def _inject_vault_secrets(test_case) -> None:
+    """Resolve target.vault[] secret references and set them as env vars.
+
+    Raises RuntimeError if any referenced secret is missing — caller should
+    transition the run to 'errored' rather than proceeding with empty env vars.
+    """
+    if not test_case.target.vault:
+        return
+    from api.models import VaultSecret
+    from api.crypto import decrypt, encryption_enabled
+    from sqlalchemy import select
+    import base64
+
+    project_id = test_case.project or "default"
+    SessionLocal = _make_task_session()
+    async with SessionLocal() as session:
+        result = await session.execute(
+            select(VaultSecret).where(VaultSecret.project_id == project_id)
+        )
+        secrets_list = result.scalars().all()
+
+    secrets_by_name = {s.key: s for s in secrets_list}
+    missing = []
+    for entry in test_case.target.vault:
+        secret = secrets_by_name.get(entry.value)
+        if secret is None:
+            missing.append(entry.value)
+            continue
+        stored = secret.encrypted_value or ""
+        iv_b64 = secret.iv or ""
+        if encryption_enabled() and iv_b64:
+            try:
+                plain = decrypt(base64.b64decode(stored), base64.b64decode(iv_b64))
+            except Exception:
+                plain = stored
+        else:
+            plain = stored
+        os.environ[entry.key] = plain
+        logger.info("Vault: injected secret %r as env var %r", entry.value, entry.key)
+
+    if missing:
+        logger.warning("Vault secret(s) not configured — skipping: %s", ", ".join(missing))
+
+
 def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -27,6 +95,27 @@ def _utcnow() -> str:
 def run_test_case(self, run_id: str, request_dict: dict) -> dict:
     """Execute one test run. Called by Celery worker (sync entry point)."""
     return asyncio.run(_execute(self.request.id, run_id, request_dict))
+
+
+async def _resolve_tc_path(test_case_id: str) -> str | None:
+    """Look up test case spec from DB and write to a temp YAML file. Returns path or None."""
+    import tempfile
+    import yaml as _yaml
+    try:
+        from api.models import TestCase
+        from sqlalchemy import select
+        SessionLocal = _make_task_session()
+        async with SessionLocal() as session:
+            result = await session.execute(select(TestCase).where(TestCase.id == test_case_id))
+            tc = result.scalar_one_or_none()
+        if not tc or not tc.spec:
+            return None
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            _yaml.dump(tc.spec, f, allow_unicode=True)
+            return f.name
+    except Exception as exc:
+        logger.warning("Failed to resolve test case %r from DB: %s", test_case_id, exc)
+        return None
 
 
 async def _execute(celery_task_id: str, run_id: str, request_dict: dict) -> dict:
@@ -65,7 +154,29 @@ async def _execute(celery_task_id: str, run_id: str, request_dict: dict) -> dict
         await _update_record({"status": "running", "started_at": _utcnow()})
         await _publish("run_started", {"status": "running"})
 
-        test_case = load_test_case(request_dict["test_case_path"])
+        # Resolve test_case_id → test_case_path when dispatched from suite/API
+        tc_path = request_dict.get("test_case_path") or ""
+        if not tc_path and request_dict.get("test_case_id"):
+            tc_path = await _resolve_tc_path(request_dict["test_case_id"])
+            if not tc_path:
+                raise FileNotFoundError(f"Test case {request_dict['test_case_id']!r} not found in DB")
+        elif not tc_path:
+            raise ValueError("No test_case_path or test_case_id provided")
+
+        test_case = load_test_case(tc_path)
+        await _inject_vault_secrets(test_case)
+
+        # Store test name + viewport so the live page can display them immediately
+        _viewport = None
+        if hasattr(test_case, "target") and test_case.target and test_case.target.viewport:
+            v = test_case.target.viewport
+            _viewport = {"width": v.width, "height": v.height}
+        await _update_record({
+            "test_name": getattr(test_case, "name", None),
+            "viewport": _viewport,
+            "triggered_by": request_dict.get("triggered_by"),
+        })
+
         llm = get_llm(request_dict["model"])
 
         manager = RunManager(
@@ -126,14 +237,17 @@ async def _execute(celery_task_id: str, run_id: str, request_dict: dict) -> dict
             from dataclasses import asdict
             from api.redis_store import save_traces as _save_traces
             traces = manager._collector.traces
-            await _save_traces(run_id, [asdict(t) for t in traces])
+            await _save_traces(run_id, [asdict(t) for t in traces], client=r)
 
             # Write individual screenshot files then upload all artifacts.
             if result.trace_path:
                 from orchestrator.reporting.report_generator import write_screenshot_files
                 from api.artifact_store import get_store
                 artifact_dir = result.trace_path.parent
-                write_screenshot_files(traces, artifact_dir)
+                capture = test_case.on_failure.capture
+                save_screenshots = capture.get("screenshot", True) if isinstance(capture, dict) else getattr(capture, "screenshot", True)
+                if save_screenshots:
+                    write_screenshot_files(traces, artifact_dir)
                 store = get_store()
                 manifest: list[dict] = []
                 for path in sorted(artifact_dir.rglob("*")):
@@ -152,16 +266,78 @@ async def _execute(celery_task_id: str, run_id: str, request_dict: dict) -> dict
 
         await _update_record({**result_dict, "completed_at": _utcnow()})
         await _publish("complete", {"status": result.status})
+
+        # Propagate triggered_by → last_run_by on the test case record
+        triggered_by = request_dict.get("triggered_by")
+        tc_id = request_dict.get("test_case_id")
+        if tc_id:
+            try:
+                from api.routes.test_cases_crud import _store as _tc_store
+                for proj in _tc_store.values():
+                    if tc_id in proj:
+                        proj[tc_id]["last_run_status"] = result.status
+                        proj[tc_id]["last_run_at"] = _utcnow()
+                        if triggered_by:
+                            proj[tc_id]["last_run_by"] = triggered_by
+                        break
+            except Exception:
+                pass
+
+        _fire_notifications(run_id=run_id, result_dict=result_dict)
         return result_dict
 
     except Exception as exc:
         logger.exception("Task %s failed: %s", run_id, exc)
-        await _update_record({
+        err_dict = {
             "status": "errored",
             "error_message": str(exc),
             "completed_at": _utcnow(),
-        })
+        }
+        await _update_record(err_dict)
         await _publish("error", {"message": str(exc)})
+        _fire_notifications(run_id=run_id, result_dict={**request_dict, **err_dict})
         return {"status": "errored", "error_message": str(exc)}
     finally:
         await r.aclose()
+
+
+def _fire_notifications(*, run_id: str, result_dict: dict) -> None:
+    """Send GitHub Check Run + Slack notification after a run finishes.
+
+    Runs synchronously in the Celery worker process. Both functions are
+    no-ops when the relevant env vars are not set.
+    """
+    from api.slack import notify_run_failed, notify_run_passed
+    from api.github_checks import post_check_run
+    import os
+
+    status = result_dict.get("status", "")
+    test_name = result_dict.get("test_name") or result_dict.get("test_case_path", "unknown")
+    duration_s = result_dict.get("duration_s")
+    steps = result_dict.get("total_steps")
+    error_message = result_dict.get("error_message")
+    app_url = os.environ.get("APP_URL", "http://localhost:3000")
+    report_url = f"{app_url}/app/runs/report?id={run_id}"
+
+    # Slack
+    if status in ("failed", "errored"):
+        notify_run_failed(
+            run_id=run_id, test_name=test_name, status=status,
+            duration_s=duration_s, steps=steps, error_message=error_message,
+        )
+    elif status == "passed":
+        notify_run_passed(run_id=run_id, test_name=test_name, duration_s=duration_s, steps=steps)
+
+    # GitHub Check Run (requires GITHUB_OWNER + GITHUB_REPO env vars)
+    owner = os.environ.get("GITHUB_OWNER", "")
+    repo = os.environ.get("GITHUB_REPO", "")
+    head_sha = os.environ.get("GITHUB_HEAD_SHA", "")  # set by CI before dispatch
+    if owner and repo and head_sha:
+        post_check_run(
+            owner=owner, repo=repo, head_sha=head_sha,
+            run_id=run_id, test_name=test_name,
+            status=status, conclusion=status,
+            details_url=report_url,
+            summary=f"Status: {status}. Steps: {steps}. Duration: {duration_s}s.",
+            completed_at=_utcnow(),
+        )

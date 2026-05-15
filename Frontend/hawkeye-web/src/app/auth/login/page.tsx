@@ -73,6 +73,7 @@ function LoginPageInner() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
 
   const emailError = useMemo(() => {
     if (!email) return null;
@@ -89,10 +90,15 @@ function LoginPageInner() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!canSubmit) return;
+    setLoginError(null);
     setSubmitting(true);
-    await new Promise((r) => setTimeout(r, 700));
+    const result = await signIn("credentials", { email, password, redirect: false });
     setSubmitting(false);
-    window.location.href = redirectAfter;
+    if (result?.error) {
+      setLoginError("Invalid email or password.");
+    } else {
+      window.location.href = redirectAfter;
+    }
   }
 
   return (
@@ -227,6 +233,9 @@ function LoginPageInner() {
                     {passwordError ? <p className="text-xs text-destructive">{passwordError}</p> : null}
                   </div>
 
+                  {loginError ? (
+                    <p className="text-xs text-destructive text-center">{loginError}</p>
+                  ) : null}
                   <Button className="h-11 w-full" disabled={!canSubmit}>
                     {submitting ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : null}
                     Sign In

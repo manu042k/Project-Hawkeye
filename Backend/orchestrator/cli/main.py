@@ -170,11 +170,11 @@ def validate(test_path: str) -> None:
         tc = load_test_case(test_path)
         click.echo(f"[ok] {tc.id}: {tc.name}")
         click.echo(f"     target:      {tc.target.url}  (browser={tc.target.browser})")
-        click.echo(f"     goal:        {tc.goal[:80].strip()!r}")
-        click.echo(f"     steps:       {'guided (' + str(len(tc.steps.checkpoints)) + ' checkpoints)' if tc.steps else 'unguided'}")
+        click.echo(f"     goal:        {tc.goal.objective[:80].strip()!r}")
+        click.echo(f"     steps:       {'guided (' + str(len(tc.goal.steps.checkpoints)) + ' checkpoints)' if tc.goal.steps else 'unguided'}")
         click.echo(f"     assertions:  {len(tc.assertions)}")
-        click.echo(f"     constraints: max_steps={tc.constraints.max_steps}, "
-                   f"timeout={tc.constraints.timeout_seconds}s")
+        click.echo(f"     constraints: max_steps={tc.goal.constraints.max_steps}, "
+                   f"timeout={tc.goal.constraints.timeout_seconds}s")
     except (FileNotFoundError, TestCaseValidationError) as exc:
         click.echo(f"[invalid] {exc}", err=True)
         sys.exit(3)

@@ -1,4 +1,25 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: hawkeye-postgres
+    environment:
+      POSTGRES_DB: hawkeye
+      POSTGRES_USER: hawkeye
+      POSTGRES_PASSWORD: hawkeye
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5432:5432"
+    networks:
+      - hawkeye-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hawkeye -d hawkeye"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   hawkeye-sandbox:
     networks:
       - hawkeye-net
@@ -55,11 +76,16 @@ services:
     environment:
       HAWKEYE_SANDBOX_IMAGE: "project-hawkeye-hawkeye-sandbox:latest"
       REDIS_URL: "redis://redis:6379/0"
+      HAWKEYE_DB_URL: "postgresql://hawkeye:hawkeye@postgres:5432/hawkeye"
     networks:
       - hawkeye-net
     depends_on:
-      - hawkeye-sandbox
-      - redis
+      postgres:
+        condition: service_healthy
+      hawkeye-sandbox:
+        condition: service_started
+      redis:
+        condition: service_healthy
     restart: unless-stopped
 
   hawkeye-worker:
@@ -72,13 +98,36 @@ services:
     environment:
       REDIS_URL: "redis://redis:6379/0"
       HAWKEYE_SANDBOX_IMAGE: "project-hawkeye-hawkeye-sandbox:latest"
+      HAWKEYE_DB_URL: "postgresql://hawkeye:hawkeye@postgres:5432/hawkeye"
     networks:
       - hawkeye-net
     depends_on:
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+
+  hawkeye-beat:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile.api
+    command: celery -A api.celery_app beat --loglevel=info --scheduler celery.beat:PersistentScheduler
+    env_file:
+      - Backend/.env
+    environment:
+      REDIS_URL: "redis://redis:6379/0"
+      HAWKEYE_DB_URL: "postgresql://hawkeye:hawkeye@postgres:5432/hawkeye"
+    networks:
+      - hawkeye-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
 
   hawkeye-nginx:
     image: nginx:alpine
@@ -95,4 +144,7 @@ services:
 networks:
   hawkeye-net:
     driver: bridge
+
+volumes:
+  postgres_data:
 

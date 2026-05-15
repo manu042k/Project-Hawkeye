@@ -7,80 +7,125 @@ import json
 import os
 import uuid
 from datetime import datetime, timezone
-from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request, Response
-from pydantic import BaseModel
+from croniter import croniter
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel, field_validator
+from sqlalchemy import select
 
-from api.routes.suites import _project_suites
+from api.database import AsyncSessionLocal
+from api.models import SuiteSchedule, TestSuite
 
 router = APIRouter(tags=["schedules"])
-
-# in-memory store: schedule_id -> schedule dict
-_schedules: dict[str, dict[str, Any]] = {}
 
 WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET", "")
 
 
 class ScheduleCreate(BaseModel):
-    cron: str  # standard 5-part cron expression
+    cron: str
     branch: str = "main"
     enabled: bool = True
 
+    @field_validator("cron")
+    @classmethod
+    def validate_cron(cls, v: str) -> str:
+        if not croniter.is_valid(v):
+            raise ValueError(f"Invalid cron expression: {v!r}")
+        return v
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _to_dict(s: SuiteSchedule) -> dict:
+    return {
+        "id": s.id,
+        "project_id": s.project_id,
+        "suite_id": s.suite_id,
+        "cron": s.cron,
+        "branch": s.branch or "main",
+        "enabled": s.enabled,
+        "last_triggered_at": s.last_triggered_at.isoformat() if s.last_triggered_at else None,
+        "created_at": s.created_at.isoformat() if s.created_at else None,
+    }
+
 
 @router.get("/projects/{project_id}/suites/{suite_id}/schedules")
-def list_schedules(project_id: str, suite_id: str) -> dict:
-    items = [
-        s for s in _schedules.values()
-        if s["project_id"] == project_id and s["suite_id"] == suite_id
-    ]
-    items.sort(key=lambda s: s["created_at"])
-    return {"schedules": items, "total": len(items)}
+async def list_schedules(project_id: str, suite_id: str) -> dict:
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(SuiteSchedule)
+            .where(SuiteSchedule.project_id == project_id, SuiteSchedule.suite_id == suite_id)
+            .order_by(SuiteSchedule.created_at)
+        )
+        items = result.scalars().all()
+        return {"schedules": [_to_dict(s) for s in items], "total": len(items)}
 
 
 @router.post("/projects/{project_id}/suites/{suite_id}/schedules", status_code=201)
-def create_schedule(project_id: str, suite_id: str, body: ScheduleCreate) -> dict:
-    if suite_id not in _project_suites(project_id):
-        raise HTTPException(status_code=404, detail="Suite not found")
-    schedule_id = str(uuid.uuid4())
-    now = datetime.now(timezone.utc).isoformat()
-    schedule = {
-        "id": schedule_id,
-        "project_id": project_id,
-        "suite_id": suite_id,
-        "cron": body.cron,
-        "branch": body.branch,
-        "enabled": body.enabled,
-        "last_triggered_at": None,
-        "created_at": now,
-    }
-    _schedules[schedule_id] = schedule
-    return schedule
+async def create_schedule(project_id: str, suite_id: str, body: ScheduleCreate) -> dict:
+    async with AsyncSessionLocal() as session:
+        # Verify suite exists
+        result = await session.execute(
+            select(TestSuite).where(TestSuite.id == suite_id, TestSuite.project_id == project_id)
+        )
+        if not result.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Suite not found")
+        sched = SuiteSchedule(
+            id=str(uuid.uuid4()),
+            project_id=project_id,
+            suite_id=suite_id,
+            cron=body.cron,
+            branch=body.branch,
+            enabled=body.enabled,
+        )
+        session.add(sched)
+        await session.commit()
+        await session.refresh(sched)
+        return _to_dict(sched)
 
 
 @router.put("/projects/{project_id}/suites/{suite_id}/schedules/{schedule_id}")
-def update_schedule(project_id: str, suite_id: str, schedule_id: str, body: ScheduleCreate) -> dict:
-    s = _schedules.get(schedule_id)
-    if not s or s["project_id"] != project_id or s["suite_id"] != suite_id:
-        raise HTTPException(status_code=404, detail="Schedule not found")
-    s["cron"] = body.cron
-    s["branch"] = body.branch
-    s["enabled"] = body.enabled
-    return s
+async def update_schedule(project_id: str, suite_id: str, schedule_id: str, body: ScheduleCreate) -> dict:
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(SuiteSchedule).where(
+                SuiteSchedule.id == schedule_id,
+                SuiteSchedule.project_id == project_id,
+                SuiteSchedule.suite_id == suite_id,
+            )
+        )
+        sched = result.scalar_one_or_none()
+        if not sched:
+            raise HTTPException(404, "Schedule not found")
+        sched.cron = body.cron
+        sched.branch = body.branch
+        sched.enabled = body.enabled
+        await session.commit()
+        await session.refresh(sched)
+        return _to_dict(sched)
 
 
 @router.delete("/projects/{project_id}/suites/{suite_id}/schedules/{schedule_id}")
-def delete_schedule(project_id: str, suite_id: str, schedule_id: str) -> dict:
-    s = _schedules.get(schedule_id)
-    if not s or s["project_id"] != project_id or s["suite_id"] != suite_id:
-        raise HTTPException(status_code=404, detail="Schedule not found")
-    del _schedules[schedule_id]
-    return {"deleted": True}
+async def delete_schedule(project_id: str, suite_id: str, schedule_id: str) -> dict:
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(SuiteSchedule).where(
+                SuiteSchedule.id == schedule_id,
+                SuiteSchedule.project_id == project_id,
+                SuiteSchedule.suite_id == suite_id,
+            )
+        )
+        sched = result.scalar_one_or_none()
+        if not sched:
+            raise HTTPException(404, "Schedule not found")
+        await session.delete(sched)
+        await session.commit()
+        return {"deleted": True}
 
 
-# ---------------------------------------------------------------------------
-# GitHub Actions webhook
-# ---------------------------------------------------------------------------
+# ── GitHub push webhook ───────────────────────────────────────────────────────
 
 @router.post("/webhook/github")
 async def github_webhook(request: Request) -> dict:
@@ -101,12 +146,17 @@ async def github_webhook(request: Request) -> dict:
     if event == "push":
         branch = payload.get("ref", "").removeprefix("refs/heads/")
         repo = payload.get("repository", {}).get("full_name", "unknown")
-        # Find schedules matching this branch and trigger their suites
-        triggered = []
-        for s in list(_schedules.values()):
-            if s.get("enabled") and (s["branch"] == branch or s["branch"] == "*"):
-                s["last_triggered_at"] = datetime.now(timezone.utc).isoformat()
-                triggered.append(s["suite_id"])
+        triggered: list[str] = []
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(SuiteSchedule).where(SuiteSchedule.enabled == True)  # noqa: E712
+            )
+            schedules = result.scalars().all()
+            for s in schedules:
+                if s.branch == branch or s.branch == "*":
+                    s.last_triggered_at = _utcnow()
+                    triggered.append(s.suite_id)
+            await session.commit()
         return {"event": "push", "repo": repo, "branch": branch, "triggered_suites": triggered}
 
     return {"event": event, "status": "ignored"}

@@ -5,36 +5,117 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent / ".env")
 
 import os
+import uuid
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from api.auth_middleware import AuthMiddleware
 from api.job_queue import job_queue
-from api.routes import runs, test_cases, ws, artifacts, projects, test_cases_crud, suites, vault, schedules, me, usage
+from api.routes import (runs, test_cases, ws, artifacts, projects, test_cases_crud,
+                        suites, vault, schedules, me, usage, billing, orgs,
+                        environments, baselines, integrations, webhooks, auth)
+
+
+async def _apply_schema() -> None:
+    """Run schema.sql idempotently (all statements use IF NOT EXISTS)."""
+    from api.db import db_enabled, execute, fetchval
+    if not db_enabled():
+        return
+    schema_path = Path(__file__).parent.parent / "orchestrator" / "db" / "schema.sql"
+    if not schema_path.exists():
+        return
+    sql = schema_path.read_text()
+    for stmt in sql.split(";"):
+        stmt = stmt.strip()
+        if stmt:
+            try:
+                await execute(stmt)
+            except Exception:
+                pass  # e.g. extension already exists in a read-only schema
+    # Seed a default org + project so string project_id "default" resolves
+    try:
+        exists = await fetchval("SELECT id FROM projects WHERE slug='default' LIMIT 1")
+        if not exists:
+            org_id = await fetchval(
+                "INSERT INTO organizations (name, slug) VALUES ('Default Org','default') "
+                "ON CONFLICT (slug) DO UPDATE SET slug=EXCLUDED.slug RETURNING id"
+            )
+            await execute(
+                "INSERT INTO projects (id, org_id, name, slug) "
+                "VALUES ('00000000-0000-0000-0000-000000000001', $1, 'Default Project', 'default') "
+                "ON CONFLICT DO NOTHING",
+                org_id,
+            )
+    except Exception:
+        pass
+
+
+async def _seed_default_project() -> None:
+    """Ensure the 'default' project exists and the dev user is a member of it."""
+    from api.database import AsyncSessionLocal
+    from api.models import Project, ProjectMember
+    from sqlalchemy import select
+    dev_email = os.environ.get("HAWKEYE_DEV_EMAIL", "dev@hawkeye.local")
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(Project).where(Project.id == "default"))
+        if not result.scalar_one_or_none():
+            session.add(Project(id="default", name="Default Project", slug="default"))
+            await session.flush()
+        # Ensure dev user is admin on the default project
+        mem = await session.execute(
+            select(ProjectMember).where(
+                ProjectMember.project_id == "default",
+                ProjectMember.user_email == dev_email,
+            )
+        )
+        if not mem.scalar_one_or_none():
+            session.add(ProjectMember(
+                id=str(uuid.uuid4()),
+                project_id="default",
+                user_email=dev_email,
+                role="admin",
+            ))
+        await session.commit()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from api.db import init_pool, close_pool
+    from api.database import init_db
+    await init_pool()  # asyncpg pool for legacy routes (auth, orgs, etc.)
+    await _apply_schema()
+    await init_db()  # SQLAlchemy — creates tables if not exist
+    await _seed_default_project()
     pool_size = int(os.environ.get("HAWKEYE_POOL_SIZE", "0"))
     if pool_size > 0:
         from api.container_pool import container_pool
         await container_pool.start()
     job_queue.start()
-    # Seed YAML test cases into the default project on startup.
     from api.routes.test_cases_crud import seed_from_yaml_dir
-    seed_from_yaml_dir(project_id="default")
+    await seed_from_yaml_dir(project_id="default")
+    from api.routes.auth import _seed_dev_user
+    _seed_dev_user()
     yield
     await job_queue.stop()
     if pool_size > 0:
         from api.container_pool import container_pool
         await container_pool.stop()
+    await close_pool()
 
 
 app = FastAPI(title="Hawkeye API", version="0.1.0", lifespan=lifespan)
 
-_origins = os.environ.get(
-    "CORS_ORIGINS",
-    "http://localhost:3000,http://127.0.0.1:3000",
-).split(",")
+_origins = [
+    o.strip()
+    for o in os.environ.get(
+        "CORS_ORIGINS",
+        "http://localhost:3000,http://127.0.0.1:3000",
+    ).split(",")
+    if o.strip()
+]
 
+# Auth is inner (added first); CORS is outer (added second, runs first so
+# OPTIONS preflights and CORS headers are handled before auth runs).
+app.add_middleware(AuthMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_origins,
@@ -54,6 +135,13 @@ app.include_router(vault.router, prefix="/api")
 app.include_router(schedules.router, prefix="/api")
 app.include_router(me.router, prefix="/api")
 app.include_router(usage.router, prefix="/api")
+app.include_router(billing.router, prefix="/api")
+app.include_router(orgs.router, prefix="/api")
+app.include_router(auth.router, prefix="/api")
+app.include_router(environments.router, prefix="/api")
+app.include_router(baselines.router, prefix="/api")
+app.include_router(integrations.router, prefix="/api")
+app.include_router(webhooks.router, prefix="/api")
 
 
 @app.get("/health")

@@ -19,9 +19,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
 import { apiClient, type VaultSecret } from "@/lib/api/client";
+import { useProjectStore } from "@/lib/project/store";
 import { cn } from "@/lib/utils";
-
-const DEFAULT_PROJECT = "default";
 const ENV_OPTIONS = ["All Environments", "Production", "Staging", "Development"] as const;
 const TYPE_OPTIONS = ["All Types", "API Key", "Database", "Certificate", "Other"] as const;
 
@@ -38,6 +37,7 @@ function EnvBadge({ env }: { env: string }) {
 }
 
 export default function VaultPage() {
+  const projectId = useProjectStore((s) => s.currentProject?.id ?? "default");
   const [q, setQ] = useState("");
   const [env, setEnv] = useState("All Environments");
   const [typ, setTyp] = useState("All Types");
@@ -53,7 +53,7 @@ export default function VaultPage() {
   const [adding, setAdding] = useState(false);
 
   function loadSecrets() {
-    apiClient.listSecrets(DEFAULT_PROJECT)
+    apiClient.listSecrets(projectId)
       .then((res) => setSecrets(res.secrets))
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
@@ -77,7 +77,7 @@ export default function VaultPage() {
       return;
     }
     try {
-      const res = await apiClient.revealSecret(DEFAULT_PROJECT, secret.id);
+      const res = await apiClient.revealSecret(projectId, secret.id);
       setRevealedValues((r) => ({ ...r, [secret.id]: res.value ?? "" }));
     } catch {
       toast.error("Failed to reveal secret");
@@ -88,7 +88,7 @@ export default function VaultPage() {
     try {
       let val = revealedValues[secret.id];
       if (val === undefined) {
-        const res = await apiClient.revealSecret(DEFAULT_PROJECT, secret.id);
+        const res = await apiClient.revealSecret(projectId, secret.id);
         val = res.value ?? "";
       }
       await navigator.clipboard.writeText(val);
@@ -100,7 +100,7 @@ export default function VaultPage() {
 
   async function handleDelete(secret: VaultSecret) {
     try {
-      await apiClient.deleteSecret(DEFAULT_PROJECT, secret.id);
+      await apiClient.deleteSecret(projectId, secret.id);
       setSecrets((prev) => prev.filter((s) => s.id !== secret.id));
       toast.success(`Deleted "${secret.name}"`);
     } catch {
@@ -112,7 +112,7 @@ export default function VaultPage() {
     if (!newName.trim() || !newValue.trim()) return;
     setAdding(true);
     try {
-      await apiClient.createSecret(DEFAULT_PROJECT, {
+      await apiClient.createSecret(projectId, {
         name: newName.trim(),
         value: newValue.trim(),
         environment: newEnv,

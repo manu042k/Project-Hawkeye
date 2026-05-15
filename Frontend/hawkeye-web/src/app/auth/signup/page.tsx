@@ -57,6 +57,9 @@ export default function SignupPage() {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [registerError, setRegisterError] = useState<string | null>(null);
+
+  const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
 
   const nameError = useMemo(() => {
     if (!name) return null;
@@ -92,10 +95,26 @@ export default function SignupPage() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!canSubmit) return;
+    setRegisterError(null);
     setSubmitting(true);
-    await new Promise((r) => setTimeout(r, 700));
-    setSubmitting(false);
-    window.location.href = "/app";
+    try {
+      const res = await fetch(`${API_URL}/api/auth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, name }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setRegisterError((data as { detail?: string }).detail ?? "Registration failed. Try again.");
+        setSubmitting(false);
+        return;
+      }
+      await signIn("credentials", { email, password, redirect: false });
+      window.location.href = "/app";
+    } catch {
+      setRegisterError("Network error. Please try again.");
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -252,6 +271,9 @@ export default function SignupPage() {
                     {confirmError ? <p className="text-xs text-destructive">{confirmError}</p> : null}
                   </div>
 
+                  {registerError ? (
+                    <p className="text-xs text-destructive text-center">{registerError}</p>
+                  ) : null}
                   <Button className="h-11 w-full" disabled={!canSubmit}>
                     {submitting ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : null}
                     Create account

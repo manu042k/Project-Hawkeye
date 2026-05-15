@@ -128,6 +128,7 @@ def _make_openrouter(model_name: str) -> BaseChatModel:
 
 
 def _make_nvidia(model_name: str) -> BaseChatModel:
+    import warnings
     from langchain_nvidia_ai_endpoints import ChatNVIDIA
     api_key = os.environ.get("NVIDIA_API_KEY") or ""
     if not api_key:
@@ -135,11 +136,14 @@ def _make_nvidia(model_name: str) -> BaseChatModel:
             "NVIDIA_API_KEY environment variable is not set. "
             f"Required to use NVIDIA NIM model {model_name!r}."
         )
-    return ChatNVIDIA(
-        model=model_name,
-        api_key=api_key,
-        temperature=0,
-    )
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message=".*not known to support tools.*", category=UserWarning)
+        warnings.filterwarnings("ignore", message=".*type is unknown and inference may fail.*", category=UserWarning)
+        return ChatNVIDIA(
+            model=model_name,
+            api_key=api_key,
+            temperature=0,
+        )
 
 
 def _make_vllm(model_name: str) -> BaseChatModel:
