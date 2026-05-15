@@ -161,9 +161,13 @@ export const useNotificationStore = create<NotificationStore>()(
   )
 );
 
+const _EMPTY: Notification[] = [];
+
 /** Selector: returns the active user's notifications (empty array if no user set). */
 export function useNotifications(): Notification[] {
-  return useNotificationStore((s) => s.activeEmail ? (s.byUser[s.activeEmail]?.notifications ?? []) : []);
+  return useNotificationStore((s) =>
+    s.activeEmail ? (s.byUser[s.activeEmail]?.notifications ?? _EMPTY) : _EMPTY
+  );
 }
 
 export const unreadCount = (notifications: Notification[]) =>
