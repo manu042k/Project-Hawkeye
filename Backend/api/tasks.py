@@ -84,7 +84,7 @@ async def _inject_vault_secrets(test_case) -> None:
         logger.info("Vault: injected secret %r as env var %r", entry.value, entry.key)
 
     if missing:
-        raise RuntimeError(f"Vault secret(s) not found: {', '.join(repr(k) for k in missing)}")
+        logger.warning("Vault secret(s) not configured — skipping: %s", ", ".join(missing))
 
 
 def _utcnow() -> str:
