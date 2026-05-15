@@ -2,71 +2,30 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  CheckCircle2,
-  FlaskConical,
-  Loader2,
-  MoreVertical,
-  Plus,
-  Save,
-  Settings,
-  Shield,
-  Trash2,
-  Users,
-  Zap,
-} from "lucide-react";
+import { Loader2, MoreVertical, Plus, Save, Settings, Trash2, Users } from "lucide-react";
 
 import { AppTopbar } from "@/components/app/app-topbar";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { apiClient, type ProjectSummary, type ProjectMember, type RunSummary, type RunStatus } from "@/lib/api/client";
+import { apiClient, type ProjectSummary, type ProjectMember } from "@/lib/api/client";
 import { useProjectStore } from "@/lib/project/store";
-import { cn } from "@/lib/utils";
-
-type ProjectStats = {
-  pass_rate: number;
-  total_runs: number;
-  active_runs: number;
-  test_case_count: number;
-  cost_this_month_usd: number;
-};
-
-const TERMINAL = new Set<RunStatus>(["passed", "failed", "errored", "timed_out", "blocked", "cancelled"]);
-
-function statusColor(s: RunStatus): string {
-  if (s === "passed") return "text-emerald-400";
-  if (s === "failed" || s === "errored") return "text-rose-400";
-  if (s === "running") return "text-amber-400";
-  return "text-muted-foreground";
-}
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
@@ -83,11 +42,9 @@ export default function ProjectSettingsPage() {
   const setCurrentProject = useProjectStore((s) => s.setCurrentProject);
   const projectId = currentProject?.id ?? null;
 
-  const [tab, setTab] = useState("overview");
+  const [tab, setTab] = useState("members");
   const [project, setProject] = useState<ProjectSummary | null>(null);
-  const [stats, setStats] = useState<ProjectStats | null>(null);
   const [members, setMembers] = useState<ProjectMember[]>([]);
-  const [runs, setRuns] = useState<RunSummary[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Settings form
@@ -105,16 +62,12 @@ export default function ProjectSettingsPage() {
   const load = useCallback(async () => {
     if (!projectId) return;
     try {
-      const [proj, s, m, r] = await Promise.all([
+      const [proj, m] = await Promise.all([
         apiClient.getProject(projectId),
-        apiClient.getProjectStats(projectId),
         apiClient.getProjectMembers(projectId),
-        apiClient.getProjectRuns(projectId),
       ]);
       setProject(proj);
-      setStats(s);
       setMembers(m.members);
-      setRuns(r.runs.slice(0, 10));
       setEditName(proj.name);
       setEditDesc(proj.description ?? "");
     } catch {
@@ -136,9 +89,7 @@ export default function ProjectSettingsPage() {
     try {
       const updated = await apiClient.updateProject(projectId, { name: editName, description: editDesc });
       setProject(updated);
-      if (currentProject) {
-        setCurrentProject({ ...currentProject, name: updated.name });
-      }
+      if (currentProject) setCurrentProject({ ...currentProject, name: updated.name });
       toast.success("Project updated");
     } catch {
       toast.error("Failed to update project");
@@ -222,14 +173,10 @@ export default function ProjectSettingsPage() {
         breadcrumbs={[{ label: "Settings" }, { label: "Project" }]}
       />
 
-      {/* Tab bar */}
       <div className="sticky top-16 z-30 border-b border-border/60 bg-muted/25 backdrop-blur">
-        <div className="mx-auto max-w-5xl px-6 py-3">
+        <div className="mx-auto max-w-3xl px-6 py-3">
           <Tabs value={tab} onValueChange={setTab}>
             <TabsList className="h-9">
-              <TabsTrigger value="overview" className="gap-1.5 px-3 text-xs sm:text-sm">
-                <FlaskConical className="size-3.5" /> Overview
-              </TabsTrigger>
               <TabsTrigger value="members" className="gap-1.5 px-3 text-xs sm:text-sm">
                 <Users className="size-3.5" /> Members
                 <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-[10px]">{members.length}</Badge>
@@ -243,115 +190,7 @@ export default function ProjectSettingsPage() {
       </div>
 
       <main className="flex-1 min-h-0 overflow-y-auto px-6 py-8">
-        <div className="mx-auto max-w-5xl space-y-6">
-
-          {/* ── Overview ─────────────────────────────────────────── */}
-          {tab === "overview" && (
-            <>
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <Card className="border-border/60 bg-card/50">
-                  <CardContent className="flex items-center gap-3 p-4">
-                    <div className="flex size-9 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-border/60">
-                      <FlaskConical className="size-5" />
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Test Cases</p>
-                      <p className="text-2xl font-semibold tabular-nums">{stats?.test_case_count ?? 0}</p>
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card className="border-border/60 bg-card/50">
-                  <CardContent className="flex items-center gap-3 p-4">
-                    <div className="flex size-9 items-center justify-center rounded-xl bg-amber-500/10 text-amber-400 ring-1 ring-border/60">
-                      <Zap className="size-5" />
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Active Runs</p>
-                      <p className="text-2xl font-semibold tabular-nums">{stats?.active_runs ?? 0}</p>
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card className="border-border/60 bg-card/50">
-                  <CardContent className="flex items-center gap-3 p-4">
-                    <div className="flex size-9 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-400 ring-1 ring-border/60">
-                      <CheckCircle2 className="size-5" />
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Pass Rate</p>
-                      <p className="text-2xl font-semibold tabular-nums">
-                        {stats ? `${Math.round(stats.pass_rate * 100)}%` : "—"}
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card className="border-border/60 bg-card/50">
-                  <CardContent className="flex items-center gap-3 p-4">
-                    <div className="flex size-9 items-center justify-center rounded-xl bg-violet-500/10 text-violet-400 ring-1 ring-border/60">
-                      <Shield className="size-5" />
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Total Runs</p>
-                      <p className="text-2xl font-semibold tabular-nums">{stats?.total_runs ?? 0}</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-
-              <Card className="border-border/60 bg-card/50">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">Project details</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2 text-sm">
-                  {project.description && <p>{project.description}</p>}
-                  <div className="flex flex-wrap gap-4 text-muted-foreground">
-                    <span>Slug: <span className="font-mono text-foreground">{project.slug}</span></span>
-                    <span>Created: {formatDate(project.created_at)}</span>
-                    <span>Members: {members.length}</span>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="border-border/60 bg-card/50">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">Recent runs</CardTitle>
-                </CardHeader>
-                <CardContent className="p-0">
-                  {runs.length === 0 ? (
-                    <p className="px-6 py-8 text-center text-sm text-muted-foreground">No runs yet</p>
-                  ) : (
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="border-border/60 hover:bg-transparent">
-                          <TableHead className="text-xs">Test</TableHead>
-                          <TableHead className="text-xs">Status</TableHead>
-                          <TableHead className="text-xs">Started</TableHead>
-                          <TableHead className="text-xs">Duration</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {runs.map((r) => (
-                          <TableRow
-                            key={r.run_id}
-                            className="cursor-pointer border-border/60"
-                            onClick={() => router.push(
-                              TERMINAL.has(r.status) ? `/app/artifacts/${r.run_id}` : `/app/runs/live?id=${r.run_id}`
-                            )}
-                          >
-                            <TableCell className="font-medium">{r.test_name ?? r.run_id.slice(0, 8)}</TableCell>
-                            <TableCell className={cn("capitalize", statusColor(r.status))}>{r.status}</TableCell>
-                            <TableCell className="text-muted-foreground text-xs">{formatDate(r.created_at)}</TableCell>
-                            <TableCell className="text-muted-foreground text-xs">
-                              {r.duration_s != null ? `${r.duration_s.toFixed(1)}s` : "—"}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  )}
-                </CardContent>
-              </Card>
-            </>
-          )}
+        <div className="mx-auto max-w-3xl space-y-6">
 
           {/* ── Members ──────────────────────────────────────────── */}
           {tab === "members" && (
@@ -411,9 +250,7 @@ export default function ProjectSettingsPage() {
                           </TableCell>
                           <TableCell>
                             <DropdownMenu>
-                              <DropdownMenuTrigger
-                                className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                              >
+                              <DropdownMenuTrigger className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
                                 <MoreVertical className="size-3.5" />
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
@@ -454,6 +291,16 @@ export default function ProjectSettingsPage() {
                       />
                     </div>
                     <div className="space-y-1.5">
+                      <Label htmlFor="proj-slug">Slug</Label>
+                      <Input
+                        id="proj-slug"
+                        value={project.slug}
+                        readOnly
+                        disabled
+                        className="max-w-sm font-mono text-xs"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
                       <Label htmlFor="proj-desc">Description</Label>
                       <Textarea
                         id="proj-desc"
@@ -461,6 +308,7 @@ export default function ProjectSettingsPage() {
                         onChange={(e) => setEditDesc(e.target.value)}
                         className="max-w-sm resize-none"
                         rows={3}
+                        placeholder="What does this project test?"
                       />
                     </div>
                     <Button type="submit" size="sm" disabled={saving} className="gap-1.5">
@@ -480,7 +328,7 @@ export default function ProjectSettingsPage() {
                     <div>
                       <p className="text-sm font-medium">Archive project</p>
                       <p className="text-xs text-muted-foreground">
-                        Hides the project from the project list. Test cases and runs are preserved.
+                        Hides the project from the list. Test cases and runs are preserved.
                       </p>
                     </div>
                     <Button variant="destructive" size="sm" onClick={handleArchive}>
@@ -491,10 +339,10 @@ export default function ProjectSettingsPage() {
               </Card>
             </div>
           )}
+
         </div>
       </main>
 
-      {/* Add member modal */}
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent>
           <form onSubmit={handleAddMember}>
