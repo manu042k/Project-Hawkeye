@@ -147,9 +147,13 @@ activemq-data/
 # SageMath parsed files
 *.sage.py
 
-# Environments
+# Environments — keep only .env.example files
 .env
+.env.local
+.env.*.local
 .envrc
+Backend/.env
+Frontend/hawkeye-web/.env.local
 .venv
 env/
 venv/
