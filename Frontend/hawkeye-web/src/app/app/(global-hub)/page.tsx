@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSession } from "next-auth/react";
 import { ArrowRight, CheckCircle2, FlaskConical, Plus, Settings, Zap } from "lucide-react";
 
 import { AppTopbar } from "@/components/app/app-topbar";
@@ -74,7 +75,8 @@ function ProjectSelectorContent() {
   const router = useRouter();
   const params = useSearchParams();
   const resume = params.get("resume") || "/app/dashboard";
-  const setCurrentProject = useProjectStore((s) => s.setCurrentProject);
+  const { setCurrentProject, setProjectForUser } = useProjectStore();
+  const { data: session } = useSession();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newName, setNewName] = useState("");
@@ -121,7 +123,9 @@ function ProjectSelectorContent() {
   }, [projects, query, hubTab]);
 
   function enterProject(p: ProjectCard) {
-    setCurrentProject({ id: p.id, name: p.name, environment: "staging", lastRunOk: null });
+    const proj = { id: p.id, name: p.name, environment: "staging" as const, lastRunOk: null };
+    setCurrentProject(proj);
+    if (session?.user?.email) setProjectForUser(session.user.email, proj);
     router.push(resume.startsWith("/app") ? resume : "/app/dashboard");
   }
 
@@ -133,7 +137,9 @@ function ProjectSelectorContent() {
       const proj = await apiClient.createProject({ name: newName.trim(), slug });
       const card = toProjectCard(proj);
       setProjects((prev) => [card, ...prev]);
-      setCurrentProject({ id: proj.id, name: proj.name, environment: "staging", lastRunOk: null });
+      const newProj = { id: proj.id, name: proj.name, environment: "staging" as const, lastRunOk: null };
+      setCurrentProject(newProj);
+      if (session?.user?.email) setProjectForUser(session.user.email, newProj);
       setDialogOpen(false);
       router.push("/app/dashboard");
     } catch {
@@ -271,7 +277,9 @@ function ProjectSelectorContent() {
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      setCurrentProject({ id: p.id, name: p.name, environment: "staging", lastRunOk: null });
+                      const sp = { id: p.id, name: p.name, environment: "staging" as const, lastRunOk: null };
+                      setCurrentProject(sp);
+                      if (session?.user?.email) setProjectForUser(session.user.email, sp);
                       router.push("/app/settings/project");
                     }}
                     className="absolute right-3 top-3 rounded-md p-1 text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-muted hover:text-foreground transition-all"

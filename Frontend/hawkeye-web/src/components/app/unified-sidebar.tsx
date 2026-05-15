@@ -141,14 +141,24 @@ export function UnifiedSidebar({ className }: { className?: string }) {
   const pathname = usePathname();
   const hash = useHash();
   const { data: session, status } = useSession();
+  const userEmail = session?.user?.email ?? null;
 
   // useLayoutEffect fires before any useEffect in the tree — guarantees _authToken
   // is set before page-level useEffects that call apiFetch.
   useLayoutEffect(() => {
-    setAuthUser(session?.user?.email ?? null);
+    setAuthUser(userEmail);
     setAuthToken((session as { access_token?: string })?.access_token ?? null);
-  }, [session?.user?.email]);
-  const currentProject = useProjectStore((s) => s.currentProject);
+  }, [userEmail]);
+
+  const { currentProject, getProjectForUser, setCurrentProject } = useProjectStore();
+
+  // Restore the last project for the logged-in user when the session becomes available
+  useEffect(() => {
+    if (userEmail && !currentProject) {
+      const saved = getProjectForUser(userEmail);
+      if (saved) setCurrentProject(saved);
+    }
+  }, [userEmail]); // eslint-disable-line react-hooks/exhaustive-deps
   const hub = isGlobalHubPath(pathname);
 
   let hubKey: HubKey = "projects";
@@ -227,7 +237,7 @@ export function UnifiedSidebar({ className }: { className?: string }) {
                   active={pathname === "/app" || pathname === "/app/"}
                 />
                 <Link
-                  href="/app/dashboard"
+                  href={userEmail && getProjectForUser(userEmail) ? "/app/dashboard" : "/app"}
                   className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium tracking-tight text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
                 >
                   <Layers className="size-4 shrink-0" aria-hidden />
