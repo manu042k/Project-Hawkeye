@@ -172,8 +172,18 @@ async def get_run(run_id: str) -> RunResponse:
 
 @router.delete("/{run_id}")
 async def cancel_run(run_id: str) -> dict:
+    from api.redis_store import delete_run as _delete_run, get_run as _get_run
+    record = await _get_run(run_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    terminal = {"passed", "failed", "errored", "timed_out", "blocked", "cancelled"}
+    if record.get("status") in terminal:
+        # Hard-delete completed runs from Redis
+        await _delete_run(run_id)
+        return {"cancelled": True, "deleted": True}
+    # Cancel in-flight run
     cancelled = await job_queue.cancel(run_id)
-    return {"cancelled": cancelled}
+    return {"cancelled": cancelled, "deleted": False}
 
 
 @router.get("/{run_id}/traces")

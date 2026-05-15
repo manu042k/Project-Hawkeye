@@ -84,6 +84,15 @@ async def list_runs() -> list[dict]:
     return [json.loads(v) for v in values if v]
 
 
+async def delete_run(run_id: str) -> bool:
+    r = await get_redis()
+    deleted = await r.delete(_RUN_KEY.format(run_id))
+    if deleted:
+        # Remove from the IDs list so it no longer appears in list_runs
+        await r.lrem(_RUN_IDS_KEY, 0, run_id)
+    return bool(deleted)
+
+
 async def publish_event(run_id: str, event: dict) -> None:
     r = await get_redis()
     await r.publish(_EVENTS_CHANNEL.format(run_id), json.dumps(event))

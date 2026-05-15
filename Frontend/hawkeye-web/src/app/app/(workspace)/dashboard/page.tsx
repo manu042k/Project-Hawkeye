@@ -131,7 +131,7 @@ export default function DashboardPage() {
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "passed" | "failed">("all");
   const [page, setPage] = useState(1);
-  const { data: runs, loading, error } = useProjectRuns(project?.id ?? null);
+  const { data: runs, loading, error, refetch } = useProjectRuns(project?.id ?? null);
   const { deleteRun } = useDeleteRun();
 
   const metrics = useMemo(() => {
@@ -170,9 +170,10 @@ export default function DashboardPage() {
     router.push(runHref(run));
   }
 
-  function handleDelete(e: React.MouseEvent, runId: string) {
+  async function handleDelete(e: React.MouseEvent, runId: string) {
     e.stopPropagation();
-    deleteRun(runId);
+    await deleteRun(runId);
+    refetch();
   }
 
   const METRIC_TONE: Record<string, string> = {
