@@ -104,7 +104,15 @@ function NewRunPageInner() {
             <div className="space-y-6 lg:col-span-8">
               <div className="space-y-2">
                 <Label>Test Case</Label>
-                {tcLoading && dbCases.length === 0 ? (
+                {!tcLoading && dbCases.length === 0 && (testCases ?? []).length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-border/60 bg-muted/10 px-4 py-5 text-center">
+                    <p className="text-sm font-medium">No test cases in this project</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Create a test case first, then come back to run it.</p>
+                    <Link href="/app/test-cases" className={cn(buttonVariants({ variant: "outline", size: "sm" }), "mt-3 gap-1.5")}>
+                      Go to Test Cases
+                    </Link>
+                  </div>
+                ) : tcLoading && dbCases.length === 0 ? (
                   <div className="h-11 rounded-md border border-border/60 bg-muted/30 animate-pulse" />
                 ) : (
                   <Select

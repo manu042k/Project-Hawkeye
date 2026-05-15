@@ -293,6 +293,14 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { "Content-Type": "application/json", ...authHeaders, ...init?.headers },
     ...init,
   });
+  if (res.status === 401) {
+    // Token expired or missing — sign out and redirect to login on the client side
+    if (typeof window !== "undefined") {
+      const { signOut } = await import("next-auth/react");
+      signOut({ callbackUrl: "/auth/login" });
+    }
+    throw new Error("Unauthorized");
+  }
   if (!res.ok) throw new Error(`API ${path}: ${res.status} ${res.statusText}`);
   return res.json() as Promise<T>;
 }

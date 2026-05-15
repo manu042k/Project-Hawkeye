@@ -157,6 +157,7 @@ class SuiteRunRequest(BaseModel):
 async def run_suite(project_id: str, suite_id: str, http_request: Request, body: SuiteRunRequest = SuiteRunRequest()) -> dict:
     from api.schemas import RunRequest
     from api.job_queue import job_queue
+    from api.models import TestCase
     triggered_by = body.triggered_by or http_request.headers.get("X-User-Email")
     async with AsyncSessionLocal() as session:
         result = await session.execute(
@@ -166,6 +167,19 @@ async def run_suite(project_id: str, suite_id: str, http_request: Request, body:
         if not suite:
             raise HTTPException(status_code=404, detail="Suite not found")
         ids = suite.test_case_ids or []
+        if not ids:
+            raise HTTPException(status_code=422, detail="Suite has no test cases")
+        # Validate all test case IDs exist before queuing anything
+        existing = await session.execute(
+            select(TestCase.id).where(TestCase.id.in_(ids), TestCase.status != "archived")
+        )
+        existing_ids = {row[0] for row in existing.all()}
+        missing = [tc_id for tc_id in ids if tc_id not in existing_ids]
+        if missing:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Test case(s) not found or archived: {', '.join(missing)}",
+            )
     run_ids: list[str] = []
     for tc_id in ids:
         req = RunRequest(test_case_id=tc_id, model=body.model, triggered_by=triggered_by)

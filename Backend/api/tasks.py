@@ -20,42 +20,47 @@ logger = logging.getLogger(__name__)
 
 
 async def _inject_vault_secrets(test_case) -> None:
-    """Resolve target.vault[] secret references and set them as env vars."""
+    """Resolve target.vault[] secret references and set them as env vars.
+
+    Raises RuntimeError if any referenced secret is missing — caller should
+    transition the run to 'errored' rather than proceeding with empty env vars.
+    """
     if not test_case.target.vault:
         return
-    try:
-        from api.database import AsyncSessionLocal
-        from api.models import VaultSecret
-        from api.crypto import decrypt, encryption_enabled
-        from sqlalchemy import select
-        import base64
+    from api.database import AsyncSessionLocal
+    from api.models import VaultSecret
+    from api.crypto import decrypt, encryption_enabled
+    from sqlalchemy import select
+    import base64
 
-        project_id = test_case.project or "default"
-        async with AsyncSessionLocal() as session:
-            result = await session.execute(
-                select(VaultSecret).where(VaultSecret.project_id == project_id)
-            )
-            secrets_list = result.scalars().all()
+    project_id = test_case.project or "default"
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(VaultSecret).where(VaultSecret.project_id == project_id)
+        )
+        secrets_list = result.scalars().all()
 
-        secrets_by_name = {s.key: s for s in secrets_list}
-        for entry in test_case.target.vault:
-            secret = secrets_by_name.get(entry.value)
-            if secret is None:
-                logger.warning("Vault secret %r not found for key %r", entry.value, entry.key)
-                continue
-            stored = secret.encrypted_value or ""
-            iv_b64 = secret.iv or ""
-            if encryption_enabled() and iv_b64:
-                try:
-                    plain = decrypt(base64.b64decode(stored), base64.b64decode(iv_b64))
-                except Exception:
-                    plain = stored
-            else:
+    secrets_by_name = {s.key: s for s in secrets_list}
+    missing = []
+    for entry in test_case.target.vault:
+        secret = secrets_by_name.get(entry.value)
+        if secret is None:
+            missing.append(entry.value)
+            continue
+        stored = secret.encrypted_value or ""
+        iv_b64 = secret.iv or ""
+        if encryption_enabled() and iv_b64:
+            try:
+                plain = decrypt(base64.b64decode(stored), base64.b64decode(iv_b64))
+            except Exception:
                 plain = stored
-            os.environ[entry.key] = plain
-            logger.info("Vault: injected secret %r as env var %r", entry.value, entry.key)
-    except Exception as exc:
-        logger.warning("Vault resolution failed (non-fatal): %s", exc)
+        else:
+            plain = stored
+        os.environ[entry.key] = plain
+        logger.info("Vault: injected secret %r as env var %r", entry.value, entry.key)
+
+    if missing:
+        raise RuntimeError(f"Vault secret(s) not found: {', '.join(repr(k) for k in missing)}")
 
 
 def _utcnow() -> str:

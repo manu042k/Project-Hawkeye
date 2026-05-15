@@ -8,8 +8,9 @@ import os
 import uuid
 from datetime import datetime, timezone
 
+from croniter import croniter
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 
 from api.database import AsyncSessionLocal
@@ -24,6 +25,13 @@ class ScheduleCreate(BaseModel):
     cron: str
     branch: str = "main"
     enabled: bool = True
+
+    @field_validator("cron")
+    @classmethod
+    def validate_cron(cls, v: str) -> str:
+        if not croniter.is_valid(v):
+            raise ValueError(f"Invalid cron expression: {v!r}")
+        return v
 
 
 def _utcnow() -> datetime:

@@ -84,6 +84,8 @@ export function useProjectRuns(projectId: string | null): ApiState<RunSummary[]>
       const data = await apiClient.getProjectRuns(projectId);
       setState({ data: data.runs, loading: false, error: null });
     } catch (e) {
+      // Suppress 401 — apiFetch already triggers signOut; don't overwrite state
+      if (String(e).includes("Unauthorized")) return;
       setState((prev) => ({ ...prev, loading: false, error: String(e) }));
     }
   }, [projectId]);
