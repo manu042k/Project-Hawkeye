@@ -254,15 +254,31 @@ function ProjectSelectorContent() {
           {!loading && (
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {filtered.map((p) => (
-                <button
+                <div
                   key={p.id}
-                  type="button"
-                  onClick={() => enterProject(p)}
                   className={cn(
-                    "group rounded-xl border border-border/60 bg-card/60 p-5 text-left shadow-sm transition-all",
-                    "hover:border-primary/35 hover:bg-card/90 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    "group relative rounded-xl border border-border/60 bg-card/60 p-5 text-left shadow-sm transition-all cursor-pointer",
+                    "hover:border-primary/35 hover:bg-card/90 hover:shadow-md",
                   )}
+                  onClick={() => enterProject(p)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => e.key === "Enter" && enterProject(p)}
                 >
+                  {/* Gear icon — positioned top-right, stops propagation */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCurrentProject({ id: p.id, name: p.name, environment: "staging", lastRunOk: null });
+                      router.push("/app/settings/project");
+                    }}
+                    className="absolute right-3 top-3 rounded-md p-1 text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-muted hover:text-foreground transition-all"
+                    title="Project settings"
+                  >
+                    <Settings className="size-3.5" />
+                  </button>
+
                   <div className="flex items-start gap-3">
                     <Avatar className="size-10 shrink-0 rounded-lg border border-border/60">
                       <AvatarFallback className="rounded-lg bg-primary/10 text-sm font-semibold text-primary">
@@ -300,27 +316,13 @@ function ProjectSelectorContent() {
                         )}
                       </div>
 
-                      <div className="mt-4 flex items-center justify-between">
-                        <div className="flex items-center gap-2 text-sm font-medium text-primary">
-                          Open workspace
-                          <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
-                        </div>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setCurrentProject({ id: p.id, name: p.name, environment: "staging", lastRunOk: null });
-                            router.push("/app/settings/project");
-                          }}
-                          className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-                          title="Project settings"
-                        >
-                          <Settings className="size-3.5" />
-                        </button>
+                      <div className="mt-4 flex items-center gap-2 text-sm font-medium text-primary">
+                        Open workspace
+                        <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
                       </div>
                     </div>
                   </div>
-                </button>
+                </div>
               ))}
             </div>
           )}
