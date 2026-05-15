@@ -44,7 +44,7 @@ function NewRunPageInner() {
   const [record, setRecord] = useState(false);
   const [dbCases, setDbCases] = useState<Array<{ id: string; name: string }>>([]);
   const [environments, setEnvironments] = useState<Environment[]>([]);
-  const [environmentId, setEnvironmentId] = useState<string>("");
+  const [environmentId, setEnvironmentId] = useState<string | null>(null);
 
   useEffect(() => {
     apiClient.listProjectTestCases(projectId).then((res) => setDbCases(res.test_cases)).catch(() => {});
@@ -216,7 +216,7 @@ function NewRunPageInner() {
                   {environments.length > 0 && (
                     <div className="space-y-2">
                       <Label>Environment</Label>
-                      <Select value={environmentId} onValueChange={(v) => setEnvironmentId(v)}>
+                      <Select value={environmentId ?? ""} onValueChange={(v) => setEnvironmentId(v || null)}>
                         <SelectTrigger className="h-11 w-full">
                           <SelectValue placeholder="None (use test case URL)" />
                         </SelectTrigger>
