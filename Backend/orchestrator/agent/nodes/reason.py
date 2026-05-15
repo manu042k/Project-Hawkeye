@@ -291,6 +291,7 @@ async def reason_node(
         llm_start_ns=start_ns,
         llm_end_ns=end_ns,
     )
+    await asyncio.sleep(0)  # flush publish before tool execution starts
 
     return {
         "messages": [obs_message, ai_message],

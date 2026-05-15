@@ -155,6 +155,7 @@ async def act_node(
         act_start_ns=act_start_ns,
         act_end_ns=act_end_ns,
     )
+    await asyncio.sleep(0)  # flush publish before next step starts
 
     # Build the ToolMessage for the conversation history.
     tool_msg_content = output if success else f"[ERROR] {error_msg}"

@@ -61,6 +61,7 @@ async def observe_node(
 
     current_checkpoint = state.get("current_checkpoint")
     collector.on_step_start(step_number, current_checkpoint)
+    await asyncio.sleep(0)  # flush create_task'd publish before next await
 
     # --- wait_for_stable ---
     wait_ms = 0
@@ -153,6 +154,7 @@ async def observe_node(
         snapshot_chars=len(snapshot_text),
         screenshot_b64=screenshot_b64,
     )
+    await asyncio.sleep(0)  # flush publish before LLM call starts
 
     base_update: dict = {
         "step_number": step_number,
