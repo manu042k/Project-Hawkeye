@@ -7,8 +7,9 @@ import { Archive, CheckCircle2, ChevronLeft, ChevronRight, Clock, Search, XCircl
 import { AppTopbar } from "@/components/app/app-topbar";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { useRuns } from "@/lib/api/hooks";
+import { useProjectRuns } from "@/lib/api/hooks";
 import { type RunStatus } from "@/lib/api/client";
+import { useProjectStore } from "@/lib/project/store";
 
 const TERMINAL = new Set<RunStatus>(["passed", "failed", "errored", "timed_out", "blocked", "cancelled"]);
 
@@ -53,7 +54,8 @@ type StatusFilter = "all" | "passed" | "failed";
 
 export default function ArtifactsPage() {
   const router = useRouter();
-  const { data: runs, loading } = useRuns();
+  const projectId = useProjectStore((s) => s.currentProject?.id ?? null);
+  const { data: runs, loading } = useProjectRuns(projectId);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<StatusFilter>("all");
   const [page, setPage] = useState(1);
