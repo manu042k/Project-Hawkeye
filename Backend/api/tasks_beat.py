@@ -27,15 +27,31 @@ def tick_schedules() -> dict:
     return asyncio.run(_check_and_fire())
 
 
+def _make_beat_session():
+    from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+    from sqlalchemy.pool import NullPool
+    raw = os.environ.get("HAWKEYE_DB_URL", "")
+    if raw.startswith("postgresql://"):
+        url = raw.replace("postgresql://", "postgresql+asyncpg://", 1)
+    elif raw.startswith("postgres://"):
+        url = raw.replace("postgres://", "postgresql+asyncpg://", 1)
+    elif raw:
+        url = raw
+    else:
+        url = "sqlite+aiosqlite:///./hawkeye.db"
+    _engine = create_async_engine(url, echo=False, poolclass=NullPool)
+    return async_sessionmaker(_engine, class_=AsyncSession, expire_on_commit=False)
+
+
 async def _check_and_fire() -> dict:
-    from api.database import AsyncSessionLocal
     from api.models import SuiteSchedule
     from sqlalchemy import select
 
     now = datetime.now(timezone.utc)
     fired: list[str] = []
+    SessionLocal = _make_beat_session()
 
-    async with AsyncSessionLocal() as session:
+    async with SessionLocal() as session:
         result = await session.execute(select(SuiteSchedule).where(SuiteSchedule.enabled == True))  # noqa: E712
         schedules = result.scalars().all()
 
@@ -46,7 +62,7 @@ async def _check_and_fire() -> dict:
             continue
         fired_runs = await _fire_suite(str(sched.suite_id), str(sched.project_id), sched.branch or "main")
         fired.extend(fired_runs)
-        async with AsyncSessionLocal() as session:
+        async with SessionLocal() as session:
             result = await session.execute(select(SuiteSchedule).where(SuiteSchedule.id == sched.id))
             s = result.scalar_one_or_none()
             if s:
@@ -81,13 +97,13 @@ def _is_due(cron_expr: str, last_triggered_at: str | None, now: datetime) -> boo
 
 async def _fire_suite(suite_id: str, project_id: str, branch: str) -> list[str]:
     """Dispatch Celery run_test_case tasks for every test case in the suite."""
-    from api.database import AsyncSessionLocal
     from api.models import TestSuite
     from api.job_queue import job_queue
     from sqlalchemy import select
 
     run_ids: list[str] = []
-    async with AsyncSessionLocal() as session:
+    SessionLocal = _make_beat_session()
+    async with SessionLocal() as session:
         result = await session.execute(select(TestSuite).where(TestSuite.id == suite_id))
         suite = result.scalar_one_or_none()
     if not suite:

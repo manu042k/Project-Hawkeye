@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 import asyncio
 import json
@@ -19,6 +20,29 @@ from api.celery_app import celery_app, REDIS_URL
 logger = logging.getLogger(__name__)
 
 
+def _make_task_session():
+    """Create a fresh SQLAlchemy session with NullPool for use inside Celery tasks.
+
+    Celery workers call asyncio.run() once per task, creating a new event loop each time.
+    The module-level engine uses a connection pool whose connections are bound to the
+    previous event loop, causing asyncpg InterfaceError on reuse.  NullPool avoids this
+    by opening a brand-new connection for every session and closing it immediately.
+    """
+    from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+    from sqlalchemy.pool import NullPool
+    raw = os.environ.get("HAWKEYE_DB_URL", "")
+    if raw.startswith("postgresql://"):
+        url = raw.replace("postgresql://", "postgresql+asyncpg://", 1)
+    elif raw.startswith("postgres://"):
+        url = raw.replace("postgres://", "postgresql+asyncpg://", 1)
+    elif raw:
+        url = raw
+    else:
+        url = "sqlite+aiosqlite:///./hawkeye.db"
+    _engine = create_async_engine(url, echo=False, poolclass=NullPool)
+    return async_sessionmaker(_engine, class_=AsyncSession, expire_on_commit=False)
+
+
 async def _inject_vault_secrets(test_case) -> None:
     """Resolve target.vault[] secret references and set them as env vars.
 
@@ -27,14 +51,14 @@ async def _inject_vault_secrets(test_case) -> None:
     """
     if not test_case.target.vault:
         return
-    from api.database import AsyncSessionLocal
     from api.models import VaultSecret
     from api.crypto import decrypt, encryption_enabled
     from sqlalchemy import select
     import base64
 
     project_id = test_case.project or "default"
-    async with AsyncSessionLocal() as session:
+    SessionLocal = _make_task_session()
+    async with SessionLocal() as session:
         result = await session.execute(
             select(VaultSecret).where(VaultSecret.project_id == project_id)
         )
@@ -78,10 +102,10 @@ async def _resolve_tc_path(test_case_id: str) -> str | None:
     import tempfile
     import yaml as _yaml
     try:
-        from api.database import AsyncSessionLocal
         from api.models import TestCase
         from sqlalchemy import select
-        async with AsyncSessionLocal() as session:
+        SessionLocal = _make_task_session()
+        async with SessionLocal() as session:
             result = await session.execute(select(TestCase).where(TestCase.id == test_case_id))
             tc = result.scalar_one_or_none()
         if not tc or not tc.spec:
