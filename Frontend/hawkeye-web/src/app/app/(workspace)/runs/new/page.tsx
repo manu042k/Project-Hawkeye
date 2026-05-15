@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { useTestCases, useCreateRun } from "@/lib/api/hooks";
-import { apiClient, type TestCaseInfo } from "@/lib/api/client";
+import { apiClient, type TestCaseInfo, type Environment } from "@/lib/api/client";
 import { useProjectStore } from "@/lib/project/store";
 
 const MODEL_PRESETS = [
@@ -43,9 +43,16 @@ function NewRunPageInner() {
   const [timeoutSeconds, setTimeoutSeconds] = useState(300);
   const [record, setRecord] = useState(false);
   const [dbCases, setDbCases] = useState<Array<{ id: string; name: string }>>([]);
+  const [environments, setEnvironments] = useState<Environment[]>([]);
+  const [environmentId, setEnvironmentId] = useState<string>("");
 
   useEffect(() => {
     apiClient.listProjectTestCases(projectId).then((res) => setDbCases(res.test_cases)).catch(() => {});
+    apiClient.listEnvironments(projectId).then((res) => {
+      setEnvironments(res.environments);
+      const def = res.environments.find((e) => e.is_default);
+      if (def) setEnvironmentId(def.id);
+    }).catch(() => {});
   }, []);
 
   const isDbCase = selectedValue.startsWith("db:");
@@ -72,10 +79,11 @@ function NewRunPageInner() {
 
   function handleLaunch() {
     if (!selectedValue) return;
+    const envId = environmentId || undefined;
     if (isDbCase && selectedDbId) {
-      createRun({ test_case_id: selectedDbId, model, browser, record, max_steps: maxSteps, timeout: timeoutSeconds });
+      createRun({ test_case_id: selectedDbId, model, browser, record, max_steps: maxSteps, timeout: timeoutSeconds, environment_id: envId });
     } else {
-      createRun({ test_case_path: selectedYamlPath, model, browser, record, max_steps: maxSteps, timeout: timeoutSeconds });
+      createRun({ test_case_path: selectedYamlPath, model, browser, record, max_steps: maxSteps, timeout: timeoutSeconds, environment_id: envId });
     }
   }
 
@@ -204,6 +212,25 @@ function NewRunPageInner() {
                       </SelectContent>
                     </Select>
                   </div>
+
+                  {environments.length > 0 && (
+                    <div className="space-y-2">
+                      <Label>Environment</Label>
+                      <Select value={environmentId} onValueChange={(v) => setEnvironmentId(v)}>
+                        <SelectTrigger className="h-11 w-full">
+                          <SelectValue placeholder="None (use test case URL)" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">None (use test case URL)</SelectItem>
+                          {environments.map((e) => (
+                            <SelectItem key={e.id} value={e.id}>
+                              {e.name}{e.is_default ? " (default)" : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
 
                   <div className="space-y-2">
                     <Label>Max Steps</Label>

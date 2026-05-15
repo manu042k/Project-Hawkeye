@@ -3,12 +3,13 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import select
 
 from api.database import AsyncSessionLocal
 from api.models import Project, ProjectMember, TestCase
+from api.auth_utils import get_current_user
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -70,7 +71,7 @@ def _member_to_dict(m: ProjectMember) -> dict:
 # ── Project CRUD ──────────────────────────────────────────────────────────────
 
 @router.post("", status_code=201)
-async def create_project(body: ProjectCreate) -> dict:
+async def create_project(body: ProjectCreate, http_request: Request, user: dict = Depends(get_current_user)) -> dict:
     async with AsyncSessionLocal() as session:
         project = Project(
             id=str(uuid.uuid4()),
@@ -81,6 +82,15 @@ async def create_project(body: ProjectCreate) -> dict:
             settings=body.settings or {},
         )
         session.add(project)
+        await session.flush()
+        member = ProjectMember(
+            id=str(uuid.uuid4()),
+            project_id=project.id,
+            user_email=user["email"],
+            user_name=user.get("name"),
+            role="admin",
+        )
+        session.add(member)
         await session.commit()
         await session.refresh(project)
         return _to_response(project)

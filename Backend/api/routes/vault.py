@@ -4,13 +4,14 @@ import base64
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import select
 
 from api.database import AsyncSessionLocal
 from api.models import VaultSecret
 from api.crypto import encrypt, decrypt, encryption_enabled
+from api.auth_utils import get_current_user, require_project_member
 
 router = APIRouter(tags=["vault"])
 
@@ -66,7 +67,8 @@ def _to_response(s: VaultSecret, reveal: bool = False) -> dict:
 
 
 @router.get("/projects/{project_id}/vault")
-async def list_secrets(project_id: str, environment: str | None = None, type: str | None = None) -> dict:
+async def list_secrets(project_id: str, environment: str | None = None, type: str | None = None, user: dict = Depends(get_current_user)) -> dict:
+    await require_project_member(project_id, user["email"])
     async with AsyncSessionLocal() as session:
         stmt = select(VaultSecret).where(VaultSecret.project_id == project_id).order_by(VaultSecret.created_at.desc())
         result = await session.execute(stmt)
@@ -80,7 +82,8 @@ async def list_secrets(project_id: str, environment: str | None = None, type: st
 
 
 @router.post("/projects/{project_id}/vault", status_code=201)
-async def create_secret(project_id: str, body: SecretCreate) -> dict:
+async def create_secret(project_id: str, body: SecretCreate, user: dict = Depends(get_current_user)) -> dict:
+    await require_project_member(project_id, user["email"])
     async with AsyncSessionLocal() as session:
         existing = await session.execute(
             select(VaultSecret).where(VaultSecret.project_id == project_id, VaultSecret.key == body.name)
@@ -104,7 +107,8 @@ async def create_secret(project_id: str, body: SecretCreate) -> dict:
 
 
 @router.get("/projects/{project_id}/vault/{secret_id}/reveal")
-async def reveal_secret(project_id: str, secret_id: str) -> dict:
+async def reveal_secret(project_id: str, secret_id: str, user: dict = Depends(get_current_user)) -> dict:
+    await require_project_member(project_id, user["email"])
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(VaultSecret).where(VaultSecret.id == secret_id, VaultSecret.project_id == project_id)
@@ -116,7 +120,8 @@ async def reveal_secret(project_id: str, secret_id: str) -> dict:
 
 
 @router.put("/projects/{project_id}/vault/{secret_id}")
-async def update_secret(project_id: str, secret_id: str, body: SecretUpdate) -> dict:
+async def update_secret(project_id: str, secret_id: str, body: SecretUpdate, user: dict = Depends(get_current_user)) -> dict:
+    await require_project_member(project_id, user["email"])
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(VaultSecret).where(VaultSecret.id == secret_id, VaultSecret.project_id == project_id)
@@ -139,7 +144,8 @@ async def update_secret(project_id: str, secret_id: str, body: SecretUpdate) -> 
 
 
 @router.delete("/projects/{project_id}/vault/{secret_id}")
-async def delete_secret(project_id: str, secret_id: str) -> dict:
+async def delete_secret(project_id: str, secret_id: str, user: dict = Depends(get_current_user)) -> dict:
+    await require_project_member(project_id, user["email"])
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(VaultSecret).where(VaultSecret.id == secret_id, VaultSecret.project_id == project_id)

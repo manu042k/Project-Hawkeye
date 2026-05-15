@@ -26,6 +26,7 @@ class RunRequest(BaseModel):
     max_steps: int | None = Field(default=None, description="Override max steps from test case.")
     timeout: int | None = Field(default=None, description="Override timeout seconds from test case.")
     triggered_by: str | None = Field(default=None, description="Email / identity of the user who triggered this run.")
+    environment_id: str | None = Field(default=None, description="Environment ID to use for this run.")
 
 
 class RunResponse(BaseModel):

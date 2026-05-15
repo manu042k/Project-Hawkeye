@@ -6,12 +6,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import select
 
 from api.database import AsyncSessionLocal
 from api.models import TestCase
+from api.auth_utils import get_current_user, require_project_member
 from orchestrator.loader.yaml_loader import load_test_case
 
 router = APIRouter(prefix="/projects", tags=["test-cases"])
@@ -184,7 +185,8 @@ async def _enrich_with_run_info(summaries: list[dict]) -> list[dict]:
 
 
 @router.post("/{project_id}/test-cases", status_code=201)
-async def create_test_case(project_id: str, body: TestCaseCreate, http_request: Request) -> dict:
+async def create_test_case(project_id: str, body: TestCaseCreate, http_request: Request, user: dict = Depends(get_current_user)) -> dict:
+    await require_project_member(project_id, user["email"])
     if not body.created_by:
         user_email = http_request.headers.get("X-User-Email")
         if user_email:
@@ -210,7 +212,8 @@ async def create_test_case(project_id: str, body: TestCaseCreate, http_request: 
 
 
 @router.get("/{project_id}/test-cases")
-async def list_test_cases(project_id: str, status: str = "active", q: str = "") -> dict:
+async def list_test_cases(project_id: str, status: str = "active", q: str = "", user: dict = Depends(get_current_user)) -> dict:
+    await require_project_member(project_id, user["email"])
     async with AsyncSessionLocal() as session:
         stmt = select(TestCase).where(TestCase.project_id == project_id)
         if status != "all":
@@ -227,7 +230,8 @@ async def list_test_cases(project_id: str, status: str = "active", q: str = "") 
 
 
 @router.get("/{project_id}/test-cases/{tc_id}")
-async def get_test_case(project_id: str, tc_id: str) -> dict:
+async def get_test_case(project_id: str, tc_id: str, user: dict = Depends(get_current_user)) -> dict:
+    await require_project_member(project_id, user["email"])
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(TestCase).where(TestCase.id == tc_id, TestCase.project_id == project_id)
@@ -243,7 +247,8 @@ async def get_test_case(project_id: str, tc_id: str) -> dict:
 
 
 @router.put("/{project_id}/test-cases/{tc_id}")
-async def update_test_case(project_id: str, tc_id: str, body: TestCaseCreate) -> dict:
+async def update_test_case(project_id: str, tc_id: str, body: TestCaseCreate, user: dict = Depends(get_current_user)) -> dict:
+    await require_project_member(project_id, user["email"])
     spec = _build_spec(tc_id, body)
     async with AsyncSessionLocal() as session:
         result = await session.execute(
@@ -264,7 +269,8 @@ async def update_test_case(project_id: str, tc_id: str, body: TestCaseCreate) ->
 
 
 @router.delete("/{project_id}/test-cases/{tc_id}")
-async def archive_test_case(project_id: str, tc_id: str) -> dict:
+async def archive_test_case(project_id: str, tc_id: str, user: dict = Depends(get_current_user)) -> dict:
+    await require_project_member(project_id, user["email"])
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(TestCase).where(TestCase.id == tc_id, TestCase.project_id == project_id)
@@ -279,7 +285,8 @@ async def archive_test_case(project_id: str, tc_id: str) -> dict:
 
 
 @router.post("/{project_id}/test-cases/{tc_id}/clone", status_code=201)
-async def clone_test_case(project_id: str, tc_id: str) -> dict:
+async def clone_test_case(project_id: str, tc_id: str, user: dict = Depends(get_current_user)) -> dict:
+    await require_project_member(project_id, user["email"])
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(TestCase).where(TestCase.id == tc_id, TestCase.project_id == project_id)
@@ -293,7 +300,7 @@ async def clone_test_case(project_id: str, tc_id: str) -> dict:
             id=new_id,
             project_id=project_id,
             name=f"{original.name} (copy)",
-            status="draft",
+            status=original.status,
             version=1,
             priority=original.priority or "P1",
             tags=list(original.tags or []),

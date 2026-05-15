@@ -3,12 +3,13 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import select, update
 
 from api.database import AsyncSessionLocal
 from api.models import TestSuite, SuiteSchedule
+from api.auth_utils import get_current_user, require_project_member
 
 router = APIRouter(tags=["suites"])
 
@@ -154,7 +155,8 @@ class SuiteRunRequest(BaseModel):
 
 
 @router.post("/projects/{project_id}/suites/{suite_id}/run", status_code=202)
-async def run_suite(project_id: str, suite_id: str, http_request: Request, body: SuiteRunRequest = SuiteRunRequest()) -> dict:
+async def run_suite(project_id: str, suite_id: str, http_request: Request, body: SuiteRunRequest = SuiteRunRequest(), user: dict = Depends(get_current_user)) -> dict:
+    await require_project_member(project_id, user["email"])
     from api.schemas import RunRequest
     from api.job_queue import job_queue
     from api.models import TestCase

@@ -92,6 +92,7 @@ export type RunRequest = {
   max_steps?: number | null;
   timeout?: number | null;
   triggered_by?: string | null;
+  environment_id?: string | null;
 };
 
 export type TestCaseSummary = {
