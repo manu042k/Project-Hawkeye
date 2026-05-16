@@ -648,6 +648,38 @@ function ScheduleModal({
   );
 }
 
+// ─── Unassigned Test Cases ────────────────────────────────────────────────
+
+function UnassignedTestCases({
+  allTestCases,
+  suites,
+  onMove,
+}: {
+  allTestCases: TestCaseSummary[];
+  suites: SuiteSummary[];
+  onMove: (tc: TestCaseSummary) => void;
+}) {
+  const assignedIds = new Set(suites.flatMap((s) => s.test_case_ids));
+  const unassigned = allTestCases.filter((tc) => !assignedIds.has(tc.id));
+  if (unassigned.length === 0) return null;
+  return (
+    <div className="space-y-2 pt-2">
+      <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground/50">Unassigned test cases</p>
+      <div className="rounded-xl border border-border/50 bg-card/30 divide-y divide-border/40 overflow-hidden">
+        {unassigned.map((tc) => (
+          <div key={tc.id} className="flex items-center gap-3 px-4 py-2.5">
+            <span className="flex-1 text-sm text-muted-foreground truncate">{tc.name}</span>
+            <Button size="sm" variant="ghost" className="h-7 gap-1 text-xs" onClick={() => onMove(tc)}>
+              <Folder className="size-3" />
+              Add to suite
+            </Button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── Suite Row (table row style) ───────────────────────────────────────────
 
 function SuiteRow({
@@ -940,32 +972,13 @@ export default function SuitesPage() {
           )}
 
           {/* Test cases not in any suite */}
-          {!loading && allTestCases.length > 0 && (() => {
-            const assignedIds = new Set(suites.flatMap((s) => s.test_case_ids));
-            const unassigned = allTestCases.filter((tc) => !assignedIds.has(tc.id));
-            if (unassigned.length === 0) return null;
-            return (
-              <div className="space-y-2 pt-2">
-                <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground/50">Unassigned test cases</p>
-                <div className="rounded-xl border border-border/50 bg-card/30 divide-y divide-border/40 overflow-hidden">
-                  {unassigned.map((tc) => (
-                    <div key={tc.id} className="flex items-center gap-3 px-4 py-2.5">
-                      <span className="flex-1 text-sm text-muted-foreground truncate">{tc.name}</span>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 gap-1 text-xs"
-                        onClick={() => setMoveTc(tc)}
-                      >
-                        <Folder className="size-3" />
-                        Add to suite
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })()}
+          {!loading && allTestCases.length > 0 && (
+            <UnassignedTestCases
+              allTestCases={allTestCases}
+              suites={suites}
+              onMove={setMoveTc}
+            />
+          )}
 
         </div>
       </main>
