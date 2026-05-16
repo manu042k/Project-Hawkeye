@@ -45,12 +45,14 @@ type ConnectedProvider = {
 export default function AccountPage() {
   const { data: session, status } = useSession();
 
-  // Demo-first defaults (if user isn't actually signed in yet).
-  const initialName = session?.user?.name ?? "Alex Mitchell";
-  const initialEmail = session?.user?.email ?? "alex@techflow.pro";
+  const [fullName, setFullName] = useState(session?.user?.name ?? "");
+  const [email, setEmail] = useState(session?.user?.email ?? "");
 
-  const [fullName, setFullName] = useState(initialName);
-  const [email, setEmail] = useState(initialEmail);
+  // Sync profile fields once the NextAuth session resolves
+  useEffect(() => {
+    if (session?.user?.name) setFullName(session.user.name);
+    if (session?.user?.email) setEmail(session.user.email);
+  }, [session?.user?.name, session?.user?.email]);
   const [mfaEnabled, setMfaEnabled] = useState(true);
   const [securityAlerts, setSecurityAlerts] = useState(true);
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -86,12 +88,15 @@ export default function AccountPage() {
     }
   }
 
+  // Provider status can't be determined from the client-side session alone —
+  // the JWT `provider` field is not forwarded to the session. Show both as
+  // informational (connect via sign-in page) rather than falsely marking them connected.
   const providers = useMemo<ConnectedProvider[]>(
     () => [
-      { id: "google", label: "Google", status: session ? "connected" : "not_connected" },
-      { id: "github", label: "GitHub", status: session ? "connected" : "not_connected" },
+      { id: "google", label: "Google", status: "not_connected" },
+      { id: "github", label: "GitHub", status: "not_connected" },
     ],
-    [session]
+    []
   );
 
   const avatarFallback = (fullName || "User")

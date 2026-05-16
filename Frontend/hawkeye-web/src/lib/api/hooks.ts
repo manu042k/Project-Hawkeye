@@ -14,6 +14,12 @@ import {
 
 const TERMINAL = new Set<RunStatus>(["passed", "failed", "errored", "timed_out", "blocked", "cancelled"]);
 
+// Deduplicate useProjectRuns fetches across multiple mounted instances.
+// Multiple components on the same page each call refetch on their own interval —
+// without this cache they all fire independent network requests simultaneously.
+const _runsCache: Record<string, { data: RunSummary[]; ts: number; pending?: Promise<RunSummary[]> }> = {};
+const _RUNS_CACHE_TTL_MS = 4_000;
+
 export type ApiState<T> = { data: T | null; loading: boolean; error: string | null };
 
 function initState<T>(): ApiState<T> {
@@ -80,10 +86,29 @@ export function useProjectRuns(projectId: string | null): ApiState<RunSummary[]>
 
   const refetch = useCallback(async () => {
     if (!projectId) { setState({ data: [], loading: false, error: null }); return; }
+
+    const now = Date.now();
+    const cached = _runsCache[projectId];
+
+    // Share an in-flight request if one is already pending
+    if (cached?.pending) {
+      cached.pending.then((data) => setState({ data, loading: false, error: null })).catch(() => {});
+      return;
+    }
+    // Return cached data if it's still fresh
+    if (cached && now - cached.ts < _RUNS_CACHE_TTL_MS) {
+      setState({ data: cached.data, loading: false, error: null });
+      return;
+    }
+
+    const pending = apiClient.getProjectRuns(projectId).then((d) => d.runs);
+    _runsCache[projectId] = { data: cached?.data ?? [], ts: now, pending };
     try {
-      const data = await apiClient.getProjectRuns(projectId);
-      setState({ data: data.runs, loading: false, error: null });
+      const data = await pending;
+      _runsCache[projectId] = { data, ts: Date.now() };
+      setState({ data, loading: false, error: null });
     } catch (e) {
+      delete _runsCache[projectId];
       // Suppress 401 — apiFetch already triggers signOut; don't overwrite state
       if (String(e).includes("Unauthorized")) return;
       setState((prev) => ({ ...prev, loading: false, error: String(e) }));

@@ -198,9 +198,6 @@ export default function BillingPage() {
                     })}
                   </div>
 
-                  <p className="border-t border-border/60 pt-4 text-xs text-muted-foreground">
-                    Figures are illustrative until usage metering is connected to your backend.
-                  </p>
                 </CardContent>
               </Card>
 
@@ -227,7 +224,12 @@ export default function BillingPage() {
 
                   <div className="flex flex-col gap-3 border-t border-border/60 pt-4 sm:flex-row sm:items-center sm:justify-between">
                     <div className="text-sm text-muted-foreground">
-                      Next billing date: <span className="text-foreground/90">{subscription.next_billing_date ?? "—"}</span>
+                      Next billing date:{" "}
+                      <span className="text-foreground/90">
+                        {subscription.next_billing_date
+                          ? new Date(subscription.next_billing_date).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })
+                          : "Not available"}
+                      </span>
                     </div>
                     <Button variant="outline" disabled={portalLoading} onClick={handleManageBilling}>
                       {portalLoading ? "Opening…" : "Manage billing"}

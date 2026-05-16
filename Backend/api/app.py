@@ -6,13 +6,19 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 
 import os
 import uuid
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from api.auth_middleware import AuthMiddleware
 from api.job_queue import job_queue
 from api.routes import (runs, test_cases, ws, artifacts, projects, test_cases_crud,
                         suites, vault, schedules, me, usage, billing, orgs,
                         environments, baselines, integrations, webhooks, auth)
+
+limiter = Limiter(key_func=get_remote_address, default_limits=["120/minute"])
 
 
 # Tables owned by SQLAlchemy ORM — must not be created with UUID PKs by schema.sql
@@ -143,7 +149,18 @@ async def lifespan(app: FastAPI):
     await close_pool()
 
 
-app = FastAPI(title="Hawkeye API", version="0.1.0", lifespan=lifespan)
+_is_production = os.getenv("ENV", "").lower() == "production"
+app = FastAPI(
+    title="Hawkeye API",
+    version="0.1.0",
+    lifespan=lifespan,
+    docs_url=None if _is_production else "/docs",
+    redoc_url=None,
+    openapi_url=None if _is_production else "/openapi.json",
+)
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 _origins = [
     o.strip()

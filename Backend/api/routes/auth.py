@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from api.auth_utils import (
     create_access_token,
@@ -17,6 +19,7 @@ from api.auth_utils import (
 from api.db import db_enabled, execute, fetchrow
 
 router = APIRouter(tags=["auth"])
+limiter = Limiter(key_func=get_remote_address)
 
 _users: dict[str, dict] = {}  # email -> {id, email, name, pw_hash, created_at}
 
@@ -65,7 +68,8 @@ class OAuthTokenRequest(BaseModel):
 
 
 @router.post("/auth/register", status_code=201)
-async def register(body: RegisterRequest):
+@limiter.limit("10/minute")
+async def register(request: Request, body: RegisterRequest):
     email = body.email.lower().strip()
     if db_enabled():
         existing = await fetchrow("SELECT id FROM users WHERE email=$1", email)
@@ -93,7 +97,8 @@ async def register(body: RegisterRequest):
 
 
 @router.post("/auth/login")
-async def login(body: LoginRequest):
+@limiter.limit("5/minute")
+async def login(request: Request, body: LoginRequest):
     email = body.email.lower().strip()
     if db_enabled():
         row = await fetchrow("SELECT id, name, pw_hash FROM users WHERE email=$1", email)

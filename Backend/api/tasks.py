@@ -267,21 +267,23 @@ async def _execute(celery_task_id: str, run_id: str, request_dict: dict) -> dict
         await _update_record({**result_dict, "completed_at": _utcnow()})
         await _publish("complete", {"status": result.status})
 
-        # Propagate triggered_by → last_run_by on the test case record
+        # Write last_run_status / last_run_at / last_run_by back to the DB record
         triggered_by = request_dict.get("triggered_by")
         tc_id = request_dict.get("test_case_id")
         if tc_id:
             try:
-                from api.routes.test_cases_crud import _store as _tc_store
-                for proj in _tc_store.values():
-                    if tc_id in proj:
-                        proj[tc_id]["last_run_status"] = result.status
-                        proj[tc_id]["last_run_at"] = _utcnow()
+                from api.models import TestCase as _TCModel
+                SessionLocal = _make_task_session()
+                async with SessionLocal() as _session:
+                    _tc = await _session.get(_TCModel, tc_id)
+                    if _tc:
+                        _tc.last_run_status = result.status
+                        _tc.last_run_at = datetime.now(timezone.utc)
                         if triggered_by:
-                            proj[tc_id]["last_run_by"] = triggered_by
-                        break
-            except Exception:
-                pass
+                            _tc.last_run_by = triggered_by
+                        await _session.commit()
+            except Exception as _e:
+                logger.warning("Failed to update last_run_status for %r: %s", tc_id, _e)
 
         _fire_notifications(run_id=run_id, result_dict=result_dict)
         return result_dict

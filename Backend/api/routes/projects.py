@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 
 from api.database import AsyncSessionLocal
@@ -21,6 +22,10 @@ def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _strip_html(v: str) -> str:
+    return re.sub(r"<[^>]+>", "", v).strip()
+
+
 class ProjectCreate(BaseModel):
     name: str
     slug: str
@@ -28,10 +33,30 @@ class ProjectCreate(BaseModel):
     org_id: str | None = None
     settings: dict = {}
 
+    @field_validator("name", "slug")
+    @classmethod
+    def sanitize(cls, v: str) -> str:
+        return _strip_html(v)
+
+    @field_validator("description")
+    @classmethod
+    def sanitize_desc(cls, v: str | None) -> str | None:
+        return _strip_html(v) if v else v
+
 
 class ProjectUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def sanitize_name(cls, v: str | None) -> str | None:
+        return _strip_html(v) if v else v
+
+    @field_validator("description")
+    @classmethod
+    def sanitize_desc(cls, v: str | None) -> str | None:
+        return _strip_html(v) if v else v
 
 
 class MemberAdd(BaseModel):
@@ -224,8 +249,10 @@ async def get_project_stats(project_id: str) -> dict:
 # ── Project runs ──────────────────────────────────────────────────────────────
 
 @router.get("/{project_id}/runs")
-async def list_project_runs(project_id: str) -> dict:
+async def list_project_runs(project_id: str, user: dict = Depends(get_current_user)) -> dict:
     from api.job_queue import job_queue
+    from api.auth_utils import require_project_member
+    await require_project_member(project_id, user["email"])
 
     async with AsyncSessionLocal() as session:
         tc_result = await session.execute(

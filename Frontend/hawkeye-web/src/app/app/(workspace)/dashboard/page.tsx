@@ -21,6 +21,12 @@ const PAGE_SIZE = 10;
 const ACTIVE = new Set<RunStatus>(["queued", "running"]);
 const TERMINAL = new Set<RunStatus>(["passed", "failed", "errored", "timed_out", "blocked", "cancelled"]);
 
+const METRIC_TONE: Record<string, string> = {
+  success: "text-emerald-400",
+  warning: "text-amber-400",
+  primary: "text-foreground",
+};
+
 function runHref(run: RunSummary): string {
   return ACTIVE.has(run.status)
     ? `/app/runs/live?id=${run.run_id}`
@@ -125,11 +131,139 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString();
 }
 
+type StatusFilter = "all" | "active" | "passed" | "failed";
+
+function RunFilterTabs({
+  runs,
+  statusFilter,
+  onStatusChange,
+  q,
+  onQ,
+}: {
+  runs: RunSummary[] | null;
+  statusFilter: StatusFilter;
+  onStatusChange: (f: StatusFilter) => void;
+  q: string;
+  onQ: (v: string) => void;
+}) {
+  const counts = {
+    all:    (runs ?? []).length,
+    active: (runs ?? []).filter((r) => ACTIVE.has(r.status)).length,
+    passed: (runs ?? []).filter((r) => r.status === "passed").length,
+    failed: (runs ?? []).filter((r) => r.status === "failed" || r.status === "errored" || r.status === "blocked").length,
+  };
+  const labels: Record<StatusFilter, string> = { all: "All", active: "Active", passed: "Passed", failed: "Failed" };
+
+  return (
+    <div className="flex flex-row items-center justify-between gap-4 pb-3">
+      <div className="flex gap-1">
+        {(["all", "active", "passed", "failed"] as const).map((f) => {
+          const isActive = statusFilter === f;
+          return (
+            <button
+              key={f}
+              onClick={() => onStatusChange(f)}
+              className={cn(
+                "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                isActive
+                  ? "bg-muted text-foreground"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
+              )}
+            >
+              {labels[f]}
+              <span className={cn(
+                "rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums",
+                isActive ? "bg-background text-foreground" : "bg-muted/60 text-muted-foreground",
+              )}>
+                {counts[f]}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="relative w-56">
+        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          placeholder="Filter by name or run ID…"
+          className="pl-9 h-8 text-sm"
+          value={q}
+          onChange={(e) => onQ(e.target.value)}
+        />
+      </div>
+    </div>
+  );
+}
+
+function RunsPagination({
+  page,
+  totalPages,
+  filteredCount,
+  onPage,
+}: {
+  page: number;
+  totalPages: number;
+  filteredCount: number;
+  onPage: (p: number) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between border-t border-border/60 px-6 py-3">
+      <p className="text-xs text-muted-foreground">
+        {filteredCount <= PAGE_SIZE
+          ? `${filteredCount} run${filteredCount !== 1 ? "s" : ""}`
+          : `${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, filteredCount)} of ${filteredCount} runs`}
+      </p>
+      {totalPages > 1 && (
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => onPage(Math.max(1, page - 1))}
+            disabled={page === 1}
+            className="inline-flex size-7 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            <ChevronLeft className="size-4" />
+          </button>
+          {Array.from({ length: totalPages }, (_, i) => i + 1)
+            .filter((p) => p === 1 || p === totalPages || Math.abs(p - page) <= 1)
+            .reduce<(number | "...")[]>((acc, p, idx, arr) => {
+              if (idx > 0 && (p as number) - (arr[idx - 1] as number) > 1) acc.push("...");
+              acc.push(p);
+              return acc;
+            }, [])
+            .map((p, i) =>
+              p === "..." ? (
+                <span key={`ellipsis-${i}`} className="px-1 text-xs text-muted-foreground">…</span>
+              ) : (
+                <button
+                  key={p}
+                  onClick={() => onPage(p as number)}
+                  className={cn(
+                    "inline-flex size-7 items-center justify-center rounded text-xs transition-colors",
+                    page === p
+                      ? "bg-primary text-primary-foreground font-semibold"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+                  )}
+                >
+                  {p}
+                </button>
+              ),
+            )}
+          <button
+            onClick={() => onPage(Math.min(totalPages, page + 1))}
+            disabled={page === totalPages}
+            className="inline-flex size-7 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            <ChevronRight className="size-4" />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const project = useProjectStore((s) => s.currentProject);
   const router = useRouter();
   const [q, setQ] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "passed" | "failed">("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [page, setPage] = useState(1);
   const { data: runs, loading, error, refetch } = useProjectRuns(project?.id ?? null);
   const { deleteRun } = useDeleteRun();
@@ -175,12 +309,6 @@ export default function DashboardPage() {
     await deleteRun(runId);
     refetch();
   }
-
-  const METRIC_TONE: Record<string, string> = {
-    success: "text-emerald-400",
-    warning: "text-amber-400",
-    primary: "text-foreground",
-  };
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
@@ -247,49 +375,13 @@ export default function DashboardPage() {
           {/* Recent Activity */}
           <Card className="border-border/60 bg-card/60">
             <CardHeader className="flex flex-col gap-0 pb-0">
-              <div className="flex flex-row items-center justify-between gap-4 pb-3">
-                <div className="flex gap-1">
-                  {(["all", "active", "passed", "failed"] as const).map((f) => {
-                    const labels = { all: "All", active: "Active", passed: "Passed", failed: "Failed" };
-                    const counts = {
-                      all:    (runs ?? []).length,
-                      active: (runs ?? []).filter((r) => ACTIVE.has(r.status)).length,
-                      passed: (runs ?? []).filter((r) => r.status === "passed").length,
-                      failed: (runs ?? []).filter((r) => r.status === "failed" || r.status === "errored" || r.status === "blocked").length,
-                    };
-                    const isActive = statusFilter === f;
-                    return (
-                      <button
-                        key={f}
-                        onClick={() => handleStatus(f)}
-                        className={cn(
-                          "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-                          isActive
-                            ? "bg-muted text-foreground"
-                            : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
-                        )}
-                      >
-                        {labels[f]}
-                        <span className={cn(
-                          "rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums",
-                          isActive ? "bg-background text-foreground" : "bg-muted/60 text-muted-foreground",
-                        )}>
-                          {counts[f]}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-                <div className="relative w-56">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    placeholder="Filter by name or run ID…"
-                    className="pl-9 h-8 text-sm"
-                    value={q}
-                    onChange={(e) => handleQ(e.target.value)}
-                  />
-                </div>
-              </div>
+              <RunFilterTabs
+                runs={runs}
+                statusFilter={statusFilter}
+                onStatusChange={handleStatus}
+                q={q}
+                onQ={handleQ}
+              />
             </CardHeader>
 
             <CardContent className="space-y-4 px-0 pb-0">
@@ -398,57 +490,12 @@ export default function DashboardPage() {
 
               {/* Pagination — always shown when there are rows */}
               {!loading && filtered.length > 0 && (
-                <div className="flex items-center justify-between border-t border-border/60 px-6 py-3">
-                  <p className="text-xs text-muted-foreground">
-                    {filtered.length <= PAGE_SIZE
-                      ? `${filtered.length} run${filtered.length !== 1 ? "s" : ""}`
-                      : `${(safePage - 1) * PAGE_SIZE + 1}–${Math.min(safePage * PAGE_SIZE, filtered.length)} of ${filtered.length} runs`}
-                  </p>
-                  <div className="flex items-center gap-1">
-                    {totalPages > 1 && <>
-                    <button
-                      onClick={() => setPage((p) => Math.max(1, p - 1))}
-                      disabled={safePage === 1}
-                      className="inline-flex size-7 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                    >
-                      <ChevronLeft className="size-4" />
-                    </button>
-                    {Array.from({ length: totalPages }, (_, i) => i + 1)
-                      .filter((p) => p === 1 || p === totalPages || Math.abs(p - safePage) <= 1)
-                      .reduce<(number | "...")[]>((acc, p, idx, arr) => {
-                        if (idx > 0 && (p as number) - (arr[idx - 1] as number) > 1) acc.push("...");
-                        acc.push(p);
-                        return acc;
-                      }, [])
-                      .map((p, i) =>
-                        p === "..." ? (
-                          <span key={`ellipsis-${i}`} className="px-1 text-xs text-muted-foreground">…</span>
-                        ) : (
-                          <button
-                            key={p}
-                            onClick={() => setPage(p as number)}
-                            className={cn(
-                              "inline-flex size-7 items-center justify-center rounded text-xs transition-colors",
-                              safePage === p
-                                ? "bg-primary text-primary-foreground font-semibold"
-                                : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
-                            )}
-                          >
-                            {p}
-                          </button>
-                        ),
-                      )}
-                    <button
-                      onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                      disabled={safePage === totalPages}
-                      className="inline-flex size-7 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                    >
-                      <ChevronRight className="size-4" />
-                    </button>
-                    </>
-                    }
-                  </div>
-                </div>
+                <RunsPagination
+                  page={safePage}
+                  totalPages={totalPages}
+                  filteredCount={filtered.length}
+                  onPage={setPage}
+                />
               )}
             </CardContent>
           </Card>

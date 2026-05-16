@@ -44,7 +44,8 @@ export default function TestCasesPage() {
       const res = await apiClient.listProjectTestCases(projectId, { status: "all", q: query });
       setCases(res.test_cases);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to load test cases");
+      const msg = e instanceof Error ? e.message : "";
+      setError(msg.includes("403") ? "You don't have access to this project's test cases." : "Failed to load test cases.");
     } finally {
       setLoading(false);
     }

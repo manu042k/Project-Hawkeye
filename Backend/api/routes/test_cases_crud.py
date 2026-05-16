@@ -214,7 +214,11 @@ async def create_test_case(project_id: str, body: TestCaseCreate, http_request: 
 @router.get("/{project_id}/test-cases")
 async def list_test_cases(project_id: str, status: str = "active", q: str = "", user: dict = Depends(get_current_user)) -> dict:
     await require_project_member(project_id, user["email"])
+    from api.models import Project
     async with AsyncSessionLocal() as session:
+        proj = await session.execute(select(Project).where(Project.id == project_id))
+        if not proj.scalar_one_or_none():
+            raise HTTPException(404, f"Project {project_id!r} not found")
         stmt = select(TestCase).where(TestCase.project_id == project_id)
         if status != "all":
             stmt = stmt.where(TestCase.status == status)
@@ -390,8 +394,12 @@ async def seed_from_yaml_dir(project_id: str = "default") -> None:
 
     async with AsyncSessionLocal() as session:
         for r in records:
-            existing = await session.execute(select(TestCase).where(TestCase.id == r["id"]))
-            if existing.scalar_one_or_none():
+            result = await session.execute(select(TestCase).where(TestCase.id == r["id"]))
+            existing = result.scalar_one_or_none()
+            if existing:
+                # Restore if accidentally archived — keep other fields intact
+                if existing.status == "archived":
+                    existing.status = "active"
                 continue
             session.add(TestCase(
                 id=r["id"],
