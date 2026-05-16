@@ -49,7 +49,7 @@ export default function IntegrationsPage() {
     }
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [projectId]);
 
   async function deleteIntegration(id: string) {
     try {

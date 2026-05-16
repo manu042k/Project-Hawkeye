@@ -66,9 +66,9 @@ class PlaywrightMcpClient:
             base_args = ["--browser", self._browser]
 
         if sys.platform == "win32":
-            cmd = ["cmd", "/c", "npx", "@playwright/mcp@latest"] + base_args
+            cmd = ["cmd", "/c", "npx", "--yes", "@playwright/mcp"] + base_args
         else:
-            cmd = ["npx", "@playwright/mcp@latest"] + base_args
+            cmd = ["npx", "--yes", "@playwright/mcp"] + base_args
 
         # 10MB limit: Playwright accessibility tree snapshots for complex pages
         # easily exceed asyncio's default 64KB StreamReader limit.

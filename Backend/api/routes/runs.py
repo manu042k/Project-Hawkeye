@@ -77,7 +77,8 @@ async def submit_run(request: RunRequest, http_request: Request, user: dict = De
         if email:
             request = request.model_copy(update={"triggered_by": email})
 
-    # Phase 5A: resolve test_case_id from DB -> write tmp yaml path
+    # Phase 5A: validate test_case_id exists in DB; let the worker resolve the path
+    # (writing a temp file here would be on the API container's filesystem, invisible to the worker)
     if request.test_case_id:
         from api.database import AsyncSessionLocal
         from api.models import TestCase
@@ -87,17 +88,9 @@ async def submit_run(request: RunRequest, http_request: Request, user: dict = De
             tc = result.scalar_one_or_none()
         if not tc:
             raise HTTPException(404, f"Test case {request.test_case_id!r} not found")
-        import tempfile
         spec = tc.spec or {}
-        # Inherit save_record from the test case spec if not explicitly set
         if not request.record and spec.get("save_record"):
             request = request.model_copy(update={"record": True})
-        # Write spec as a temp YAML-compatible JSON file the loader can parse
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
-            import yaml as _yaml
-            _yaml.dump(spec, f, allow_unicode=True)
-            tmp_path = f.name
-        request = request.model_copy(update={"test_case_path": tmp_path})
         _viewport = (spec.get("target") or {}).get("viewport")
         _test_name = spec.get("name")
     else:

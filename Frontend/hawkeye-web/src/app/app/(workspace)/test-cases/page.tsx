@@ -50,7 +50,7 @@ export default function TestCasesPage() {
     }
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [projectId]);
 
   async function handleClone(tcId: string) {
     await apiClient.cloneProjectTestCase(projectId, tcId);

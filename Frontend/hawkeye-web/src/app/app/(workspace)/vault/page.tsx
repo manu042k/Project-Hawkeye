@@ -59,7 +59,7 @@ export default function VaultPage() {
       .finally(() => setLoading(false));
   }
 
-  useEffect(() => { loadSecrets(); }, []);
+  useEffect(() => { loadSecrets(); }, [projectId]);
 
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();

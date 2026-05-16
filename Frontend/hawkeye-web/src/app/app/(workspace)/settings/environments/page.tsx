@@ -40,7 +40,7 @@ export default function EnvironmentsPage() {
     }
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [projectId]);
 
   function parseHeaders(raw: string): Record<string, string> {
     const out: Record<string, string> = {};

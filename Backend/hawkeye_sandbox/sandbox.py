@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import contextlib
+import os
 import time
 import uuid
 import subprocess
@@ -31,6 +32,11 @@ class SandboxConfig:
     host: str = "127.0.0.1"
     scheme: str = "http"
 
+    # When set, attach container to this Docker network and use container-name
+    # for CDP instead of a host-published port (required when the worker runs
+    # inside Docker and 127.0.0.1 on the host is unreachable).
+    docker_network: str = ""
+
     # Runtime
     name_prefix: str = "hawkeye-sandbox-run"
     shm_size: str = "1g"
@@ -46,6 +52,19 @@ class SandboxHandle:
 
     def __str__(self) -> str:
         return f"{self.container_name} novnc={self.novnc_url} cdp={self.cdp_url or '-'}"
+
+
+def _get_container_ip(container_name: str, network: str) -> str:
+    """Return the container's IP on the given Docker network, or empty string on failure."""
+    try:
+        fmt = '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'
+        out = subprocess.run(
+            ["docker", "inspect", container_name, "--format", fmt],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        return out
+    except Exception:
+        return ""
 
 
 class SandboxManager:
@@ -176,9 +195,17 @@ class SandboxManager:
         for k, v in env.items():
             cmd += ["-e", f"{k}={v}"]
 
-        # Bind to cfg.host and let Docker choose random host ports.
+        if cfg.docker_network:
+            cmd += ["--network", cfg.docker_network]
+
+        # Always publish noVNC so the browser can watch the run.
         cmd += ["-p", f"{cfg.host}::{cfg.novnc_port}"]
-        cmd += ["-p", f"{cfg.host}::{cfg.cdp_proxy_port}"]
+
+        # Only publish CDP as a host port when running outside Docker.
+        # When docker_network is set the worker reaches CDP via container name.
+        if not cfg.docker_network:
+            cmd += ["-p", f"{cfg.host}::{cfg.cdp_proxy_port}"]
+
         cmd += [cfg.image]
 
         logger.debug("docker run: %s", " ".join(cmd))
@@ -199,13 +226,21 @@ class SandboxManager:
                 if line.startswith(f"{cfg.novnc_port}/tcp ->"):
                     host_port = line.rsplit(":", 1)[-1].strip()
                     novnc_url = f"{cfg.scheme}://{cfg.host}:{host_port}/"
-                if line.startswith(f"{cfg.cdp_proxy_port}/tcp ->"):
+                if not cfg.docker_network and line.startswith(f"{cfg.cdp_proxy_port}/tcp ->"):
                     host_port = line.rsplit(":", 1)[-1].strip()
                     cdp_url = f"{cfg.scheme}://{cfg.host}:{host_port}"
 
             if novnc_url:
                 break
             time.sleep(0.2)
+
+        # When on a Docker network, reach CDP via container IP (not name).
+        # Chrome rejects CDP requests whose Host header is a non-IP hostname
+        # (DNS rebinding protection), so using the container name directly fails.
+        if cfg.docker_network:
+            container_ip = _get_container_ip(name, cfg.docker_network)
+            cdp_host = container_ip if container_ip else name
+            cdp_url = f"{cfg.scheme}://{cdp_host}:{cfg.cdp_proxy_port}"
 
         if not novnc_url:
             raise RuntimeError("Sandbox started, but noVNC port was not published in time.")

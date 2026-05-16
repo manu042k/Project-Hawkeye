@@ -773,7 +773,7 @@ export default function SuitesPage() {
       .finally(() => setLoading(false));
   }
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => { loadData(); }, [projectId]);
 
   const filtered = useMemo(() => {
     const lq = q.trim().toLowerCase();

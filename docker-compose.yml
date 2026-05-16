@@ -104,6 +104,7 @@ services:
       REDIS_URL: "redis://redis:6379/0"
       HAWKEYE_SANDBOX_IMAGE: "project-hawkeye-hawkeye-sandbox:latest"
       HAWKEYE_DB_URL: "postgresql://hawkeye:hawkeye@postgres:5432/hawkeye"
+      HAWKEYE_DOCKER_NETWORK: "project-hawkeye_hawkeye-net"
     networks:
       - hawkeye-net
     depends_on:

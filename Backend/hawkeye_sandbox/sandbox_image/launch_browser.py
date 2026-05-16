@@ -43,6 +43,7 @@ def main() -> int:
                 "--disable-gpu",
                 "--no-restore-last-session",
                 "--restore-last-session=false",
+                "--remote-allow-origins=*",
             ]
         elif browser_name == "firefox":
             browser_type = p.firefox

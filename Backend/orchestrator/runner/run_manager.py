@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import sys
 import time
 import uuid
@@ -35,6 +36,31 @@ from orchestrator.trace.collector import TraceCollector
 _DEFAULT_IMAGE = "project-hawkeye-hawkeye-sandbox:latest"
 _DEFAULT_OUTPUT_DIR = Path("artifacts")
 _BROWSER_STARTUP_WAIT_S = 6.0
+_CDP_READY_TIMEOUT_S = 45.0
+
+
+async def _wait_for_cdp(cdp_url: str, timeout_s: float = _CDP_READY_TIMEOUT_S) -> bool:
+    """Poll Chrome CDP /json/version until it returns HTTP 200 or timeout.
+
+    Chrome takes several seconds to start inside the sandbox container.
+    The noVNC port being published only means supervisord is up, not that
+    Chrome has finished initializing its remote debugging server.
+    """
+    import httpx
+    version_url = cdp_url.rstrip("/") + "/json/version"
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        try:
+            async with httpx.AsyncClient(timeout=2.0) as client:
+                r = await client.get(version_url)
+                if r.status_code == 200:
+                    logger.info("CDP ready at %s", cdp_url)
+                    return True
+        except Exception:
+            pass
+        await asyncio.sleep(1.0)
+    logger.warning("CDP not ready after %.0fs at %s — proceeding anyway", timeout_s, cdp_url)
+    return False
 
 
 class RunManager:
@@ -149,12 +175,15 @@ class RunManager:
                     url="about:blank",
                     browser=browser,
                     image=self._sandbox_image,
+                    docker_network=os.environ.get("HAWKEYE_DOCKER_NETWORK", ""),
                 )
                 sandbox_handle = self._sandbox_manager.spawn(cfg)
                 cdp_url = sandbox_handle.cdp_url or ""
                 novnc_url = sandbox_handle.novnc_url
-                # Wait for browser to fully start.
+                # Wait for Chrome CDP to be ready (polls /json/version).
                 await asyncio.sleep(_BROWSER_STARTUP_WAIT_S)
+                if cdp_url:
+                    await _wait_for_cdp(cdp_url)
                 capture_video = test_case.on_failure.capture.get("video", True)
                 if self._record and capture_video and sandbox_handle:
                     try:
