@@ -20,40 +20,9 @@ services:
       timeout: 3s
       retries: 10
 
-  hawkeye-sandbox:
-    networks:
-      - hawkeye-net
-    container_name: hawkeye-sandbox
-    build:
-      context: ./Backend/hawkeye_sandbox/sandbox_image
-      dockerfile: Dockerfile
-    env_file:
-      - .env
-    ports:
-      - "6080:6080"
-      - "19223:9223" # CDP proxy for MCP servers (-> 9222 in-container)
-    environment:
-      DISPLAY: ":99"
-      SCREEN_WIDTH: "1280"
-      SCREEN_HEIGHT: "720"
-      SCREEN_DEPTH: "24"
-      # Allow runtime override: CHROME_URL="..." docker compose up -d
-      CHROME_URL: "${CHROME_URL:-about:blank}"
-      CHROME_CDP_PORT: "${CHROME_CDP_PORT:-9222}"
-      BROWSER: "${BROWSER:-chromium}"
-      # Optional: if your site uses Google services, pass the key through.
-      GOOGLE_API_KEY: "${GOOGLE_API_KEY:-}"
-    restart: unless-stopped
-    shm_size: "1gb"
-    healthcheck:
-      # Root serves an auto-connect noVNC index.html
-      test: ["CMD", "bash", "-lc", "curl -fsS http://localhost:6080/ >/dev/null"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-
   redis:
     image: redis:7-alpine
+    container_name: hawkeye-redis
     ports:
       - "6379:6379"
     networks:
@@ -65,10 +34,41 @@ services:
       timeout: 3s
       retries: 5
 
+  hawkeye-sandbox:
+    image: project-hawkeye-hawkeye-sandbox:latest   # explicit tag so worker can find it
+    build:
+      context: ./Backend/hawkeye_sandbox/sandbox_image
+      dockerfile: Dockerfile
+    container_name: hawkeye-sandbox
+    env_file:
+      - Backend/.env
+    ports:
+      - "6080:6080"
+      - "19223:9223"
+    environment:
+      DISPLAY: ":99"
+      SCREEN_WIDTH: "1280"
+      SCREEN_HEIGHT: "720"
+      SCREEN_DEPTH: "24"
+      CHROME_URL: "${CHROME_URL:-about:blank}"
+      CHROME_CDP_PORT: "${CHROME_CDP_PORT:-9222}"
+      BROWSER: "${BROWSER:-chromium}"
+      GOOGLE_API_KEY: "${GOOGLE_API_KEY:-}"
+    networks:
+      - hawkeye-net
+    restart: unless-stopped
+    shm_size: "1gb"
+    healthcheck:
+      test: ["CMD", "bash", "-lc", "curl -fsS http://localhost:6080/ >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   hawkeye-api:
     build:
       context: ./Backend
       dockerfile: Dockerfile.api
+    container_name: hawkeye-api
     ports:
       - "8000:8000"
     env_file:
@@ -82,16 +82,23 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      hawkeye-sandbox:
-        condition: service_started
       redis:
         condition: service_healthy
+      hawkeye-sandbox:
+        condition: service_started
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
 
   hawkeye-worker:
     build:
       context: ./Backend
       dockerfile: Dockerfile.api
+    container_name: hawkeye-worker
     command: celery -A api.celery_app worker --loglevel=info --concurrency=2
     env_file:
       - Backend/.env
@@ -114,7 +121,8 @@ services:
     build:
       context: ./Backend
       dockerfile: Dockerfile.api
-    command: celery -A api.celery_app beat --loglevel=info --scheduler celery.beat:PersistentScheduler
+    container_name: hawkeye-beat
+    command: celery -A api.celery_app beat --loglevel=info --scheduler celery.beat:PersistentScheduler --schedule /app/celerybeat/celerybeat-schedule
     env_file:
       - Backend/.env
     environment:
@@ -128,9 +136,31 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    volumes:
+      - beat_schedule:/app/celerybeat   # persists schedule across restarts
+
+  hawkeye-frontend:
+    build:
+      context: ./Frontend/hawkeye-web
+      dockerfile: Dockerfile
+    container_name: hawkeye-frontend
+    ports:
+      - "3000:3000"
+    env_file:
+      - Frontend/hawkeye-web/.env.local
+    environment:
+      NEXT_PUBLIC_API_URL: "http://hawkeye-nginx:80"
+      NEXTAUTH_URL: "${NEXTAUTH_URL:-http://localhost:3000}"
+    networks:
+      - hawkeye-net
+    depends_on:
+      hawkeye-api:
+        condition: service_healthy
+    restart: unless-stopped
 
   hawkeye-nginx:
     image: nginx:alpine
+    container_name: hawkeye-nginx
     ports:
       - "80:80"
     volumes:
@@ -138,7 +168,8 @@ services:
     networks:
       - hawkeye-net
     depends_on:
-      - hawkeye-api
+      hawkeye-api:
+        condition: service_healthy
     restart: unless-stopped
 
 networks:
@@ -147,4 +178,4 @@ networks:
 
 volumes:
   postgres_data:
-
+  beat_schedule:
