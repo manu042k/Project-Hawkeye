@@ -15,9 +15,37 @@ from api.routes import (runs, test_cases, ws, artifacts, projects, test_cases_cr
                         environments, baselines, integrations, webhooks, auth)
 
 
+# Tables owned by SQLAlchemy ORM — must not be created with UUID PKs by schema.sql
+_SQLA_TABLES = ["project_members", "suite_schedules", "test_suites", "vault_secrets", "test_cases", "projects"]
+
+
+async def _fix_schema_conflicts() -> None:
+    """Drop tables that schema.sql created with UUID PKs before SQLAlchemy could own them.
+
+    schema.sql uses `UUID PRIMARY KEY` for projects/test_cases/etc., but the SQLAlchemy
+    models use String(36). Postgres refuses `uuid = character varying` comparisons, crashing
+    startup. If the conflict is detected, drop the empty tables so create_all rebuilds them.
+    """
+    from api.db import db_enabled, fetchval, execute
+    if not db_enabled():
+        return
+    try:
+        id_type = await fetchval(
+            "SELECT data_type FROM information_schema.columns "
+            "WHERE table_name='projects' AND column_name='id' AND table_schema='public'"
+        )
+        if id_type != "uuid":
+            return  # already correct — nothing to do
+        # Tables are empty (API never started successfully), safe to drop
+        for table in _SQLA_TABLES:
+            await execute(f"DROP TABLE IF EXISTS {table} CASCADE")
+    except Exception:
+        pass
+
+
 async def _apply_schema() -> None:
-    """Run schema.sql idempotently (all statements use IF NOT EXISTS)."""
-    from api.db import db_enabled, execute, fetchval
+    """Run orchestrator-only tables from schema.sql (SQLAlchemy-managed tables are skipped)."""
+    from api.db import db_enabled, execute
     if not db_enabled():
         return
     schema_path = Path(__file__).parent.parent / "orchestrator" / "db" / "schema.sql"
@@ -26,27 +54,17 @@ async def _apply_schema() -> None:
     sql = schema_path.read_text()
     for stmt in sql.split(";"):
         stmt = stmt.strip()
-        if stmt:
-            try:
-                await execute(stmt)
-            except Exception:
-                pass  # e.g. extension already exists in a read-only schema
-    # Seed a default org + project so string project_id "default" resolves
-    try:
-        exists = await fetchval("SELECT id FROM projects WHERE slug='default' LIMIT 1")
-        if not exists:
-            org_id = await fetchval(
-                "INSERT INTO organizations (name, slug) VALUES ('Default Org','default') "
-                "ON CONFLICT (slug) DO UPDATE SET slug=EXCLUDED.slug RETURNING id"
-            )
-            await execute(
-                "INSERT INTO projects (id, org_id, name, slug) "
-                "VALUES ('00000000-0000-0000-0000-000000000001', $1, 'Default Project', 'default') "
-                "ON CONFLICT DO NOTHING",
-                org_id,
-            )
-    except Exception:
-        pass
+        if not stmt:
+            continue
+        # Skip CREATE TABLE / CREATE INDEX statements for SQLAlchemy-managed tables
+        stmt_lower = stmt.lower()
+        if any(f"table {t}" in stmt_lower or f"index" in stmt_lower and f" on {t}" in stmt_lower
+               for t in _SQLA_TABLES):
+            continue
+        try:
+            await execute(stmt)
+        except Exception:
+            pass
 
 
 async def _seed_default_project() -> None:
@@ -56,35 +74,58 @@ async def _seed_default_project() -> None:
     from sqlalchemy import select
     dev_email = os.environ.get("HAWKEYE_DEV_EMAIL", "dev@hawkeye.local")
     async with AsyncSessionLocal() as session:
-        result = await session.execute(select(Project).where(Project.id == "default"))
-        if not result.scalar_one_or_none():
-            session.add(Project(id="default", name="Default Project", slug="default"))
+        result = await session.execute(select(Project).where(Project.slug == "default"))
+        project = result.scalar_one_or_none()
+        if not project:
+            project = Project(id="default", name="Default Project", slug="default")
+            session.add(project)
             await session.flush()
-        # Ensure dev user is admin on the default project
         mem = await session.execute(
             select(ProjectMember).where(
-                ProjectMember.project_id == "default",
+                ProjectMember.project_id == project.id,
                 ProjectMember.user_email == dev_email,
             )
         )
         if not mem.scalar_one_or_none():
             session.add(ProjectMember(
                 id=str(uuid.uuid4()),
-                project_id="default",
+                project_id=project.id,
                 user_email=dev_email,
                 role="admin",
             ))
         await session.commit()
 
 
+async def _seed_db_dev_user() -> None:
+    """Insert the dev user into the Postgres users table when running with a DB."""
+    from api.db import db_enabled, execute, fetchrow
+    if not db_enabled():
+        return
+    from api.auth_utils import hash_password
+    dev_email = os.environ.get("HAWKEYE_DEV_EMAIL", "dev@hawkeye.local")
+    dev_password = os.environ.get("HAWKEYE_DEV_PASSWORD", "devpassword")
+    try:
+        existing = await fetchrow("SELECT id FROM users WHERE email=$1", dev_email)
+        if not existing:
+            await execute(
+                "INSERT INTO users (id, email, name, auth_provider, pw_hash) "
+                "VALUES ($1,$2,'Dev Admin','local',$3) ON CONFLICT (email) DO NOTHING",
+                str(uuid.uuid4()), dev_email, hash_password(dev_password),
+            )
+    except Exception:
+        pass
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from api.db import init_pool, close_pool
     from api.database import init_db
-    await init_pool()  # asyncpg pool for legacy routes (auth, orgs, etc.)
-    await _apply_schema()
-    await init_db()  # SQLAlchemy — creates tables if not exist
+    await init_pool()           # asyncpg pool for legacy routes (auth, orgs, etc.)
+    await _fix_schema_conflicts()  # drop UUID-typed tables if schema.sql ran first
+    await init_db()             # SQLAlchemy creates tables with String(36) PKs
+    await _apply_schema()       # orchestrator-only tables (test_runs, agent_traces, etc.)
     await _seed_default_project()
+    await _seed_db_dev_user()
     pool_size = int(os.environ.get("HAWKEYE_POOL_SIZE", "0"))
     if pool_size > 0:
         from api.container_pool import container_pool
@@ -93,7 +134,7 @@ async def lifespan(app: FastAPI):
     from api.routes.test_cases_crud import seed_from_yaml_dir
     await seed_from_yaml_dir(project_id="default")
     from api.routes.auth import _seed_dev_user
-    _seed_dev_user()
+    _seed_dev_user()  # seeds in-memory fallback (no-op when DB enabled)
     yield
     await job_queue.stop()
     if pool_size > 0:

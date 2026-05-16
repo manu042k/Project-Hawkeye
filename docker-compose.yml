@@ -145,9 +145,10 @@ services:
     ports:
       - "3000:3000"
     env_file:
-      - Frontend/hawkeye-web/.env.local
+      - Frontend/hawkeye-web/.env
     environment:
-      NEXT_PUBLIC_API_URL: "http://hawkeye-nginx:80"
+      NEXT_PUBLIC_API_URL: "http://localhost:8000"
+      HAWKEYE_BACKEND_URL: "http://hawkeye-api:8000"
       NEXTAUTH_URL: "${NEXTAUTH_URL:-http://localhost:3000}"
     networks:
       - hawkeye-net

@@ -4,7 +4,14 @@ import GitHubProvider from "next-auth/providers/github";
 import CredentialsProvider from "next-auth/providers/credentials";
 import crypto from "crypto";
 
-const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
+// Server-side only: use HAWKEYE_BACKEND_URL (Docker internal hostname) when set,
+// so the NextAuth jwt callback reaches the API within the Docker network.
+// NEXT_PUBLIC_API_URL is baked at build time and points to localhost — unusable inside Docker.
+const API_URL = (
+  process.env.HAWKEYE_BACKEND_URL ??
+  process.env.NEXT_PUBLIC_API_URL ??
+  "http://localhost:8000"
+).replace(/\/$/, "");
 
 function internalHmac(email: string, name: string): string {
   const secret = process.env.HAWKEYE_INTERNAL_SECRET ?? "";
