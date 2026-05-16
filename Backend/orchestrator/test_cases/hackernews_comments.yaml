@@ -1,8 +1,11 @@
 id: "TC-004"
-name: "HackerNews: open top story comments thread"
+name: "HackerNews â€” open top story comments thread"
 suite: "eval-dataset-v1"
 priority: "P1"
 tags: ["hackernews", "navigation", "ssr", "news"]
+created_by: "<user-id>"
+project: "<project-id>"
+save_record: false
 
 target:
   url: "https://news.ycombinator.com"
@@ -10,44 +13,55 @@ target:
   viewport:
     width: 1280
     height: 720
+    device_scale_factor: 1.0
+  page_type: ssr
+  app_description: |
+    Hacker News â€” a social news aggregator. Stories are ranked by votes.
+    Each story has a comments link showing the discussion count.
+    No login required to browse.
 
-goal: |
-  Starting from the Hacker News homepage, find the top-ranked story (number 1)
-  and click its comments link to open the discussion thread. Scroll down once to
-  see a few comments, then emit GOAL_COMPLETE.
+goal:
+  objective: |
+    Starting from the Hacker News homepage, find the top-ranked story (number 1)
+    and click its comments link to open the discussion thread. Scroll down once
+    to see a few comments. Do not log in, upvote, flag, or submit posts.
 
-assertions:
-  - id: "A1"
-    type: "content"
-    description: "Comments page shows 'points' indicating a valid HN story"
-    params:
-      check: "text_present"
-      text: "points"
+  constraints:
+    max_steps: 15
+    timeout_seconds: 120
+    max_retries_per_action: 2
 
-  - id: "A2"
-    type: "console"
-    description: "No critical JS errors"
-    params:
-      level: "error"
-      max_count: 5
-      ignore_patterns:
-        - "favicon"
-        - "analytics"
+  extra_details: |
+    The homepage lists numbered stories. Story #1 is at the very top.
+    Below each story title is a subtext line with points, author, time, and
+    a 'N comments' or 'discuss' link â€” click THAT link, not the story title.
+    The comments page URL looks like news.ycombinator.com/item?id=XXXXXXX.
+    Once on the comments page and you can see the point count, scroll down
+    once then emit <GOAL_COMPLETE>.
 
-constraints:
-  max_steps: 15
-  timeout_seconds: 120
-  navigation_policy: "explicit_urls_allowed"
-  forbidden_actions:
-    - "log in or create an account"
-    - "upvote, flag, or submit a post"
+  steps:
+    checkpoints:
+      - id: S1
+        description: |
+          Locate story #1 on the homepage and click its 'N comments' or 'discuss'
+          link in the subtext row below the title.
+        success_signal: |
+          The comments thread page loads. The URL contains 'item?id=' and the
+          story title with a 'points' count is visible at the top.
 
-context:
-  page_type: "ssr"
-  app_description: "Hacker News — a social news aggregator. Stories are ranked by votes. Each story has a comments link showing the discussion count. No login required to browse."
-  hints:
-    - "The homepage lists numbered stories. Story #1 is at the very top."
-    - "Below each story title is a subtext line with points, author, time, and a 'X comments' or 'discuss' link"
-    - "Click the 'N comments' link for story #1 — NOT the story title itself"
-    - "The comments page URL looks like news.ycombinator.com/item?id=XXXXXXX"
-    - "After the comments page loads and you can see the story with its point count, press PageDown once then emit <GOAL_COMPLETE>"
+      - id: S2
+        description: |
+          Scroll down once on the comments page to reveal top-level comments.
+        success_signal: |
+          Comments are visible below the story header and the 'points' label
+          is shown. Goal is complete.
+
+on_failure:
+  capture:
+    screenshot: true
+    dom_snapshot: true
+    network_log: true
+    console_log: true
+    agent_trace: true
+    video: true
+  notify: {}

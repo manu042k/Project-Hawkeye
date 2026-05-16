@@ -60,7 +60,7 @@ class EvalRunner:
         test_cases: list[TestCase],
         repetitions: int = 1,
     ) -> BenchmarkResult:
-        """Execute all test_cases × repetitions and return aggregated results.
+        """Execute all test_cases x repetitions and return aggregated results.
 
         Results are written incrementally to ``output_dir/eval.jsonl`` so that
         partial data survives an interrupted run.
@@ -72,16 +72,17 @@ class EvalRunner:
         total = len(test_cases) * repetitions
         _console.print(
             f"\n[bold cyan]Hawkeye Eval[/bold cyan]  benchmark=[bold]{benchmark}[/bold] | "
-            f"tasks={len(test_cases)} × runs={repetitions} = {total} total\n"
+            f"tasks={len(test_cases)} x runs={repetitions} = {total} total\n"
         )
 
         for tc in test_cases:
+            goal_text = tc.goal.objective.strip()
             tr = TaskResult(
                 task_id=tc.id,
                 task_name=tc.name,
                 source=benchmark,
                 domain=(tc.tags[1] if len(tc.tags) > 1 else ""),
-                goal=tc.goal.strip(),
+                goal=goal_text,
                 url=tc.target.url,
             )
 
@@ -89,7 +90,7 @@ class EvalRunner:
                 rep_label = f"run {rep + 1}/{repetitions}" if repetitions > 1 else ""
                 _console.print(
                     f"  [cyan]{tc.id}[/cyan] {rep_label}  "
-                    f"{tc.goal.strip()[:64]}{'…' if len(tc.goal.strip()) > 64 else ''}"
+                    f"{goal_text[:64]}{'...' if len(goal_text) > 64 else ''}"
                 )
 
                 try:

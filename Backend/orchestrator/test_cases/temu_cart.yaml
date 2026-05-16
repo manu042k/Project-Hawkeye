@@ -1,5 +1,5 @@
 id: "TC-003"
-name: "Temu — search for product, add to cart, and verify"
+name: "Temu â€” search for product, add to cart, and verify"
 suite: "e-commerce"
 priority: "P1"
 tags: ["temu", "cart", "search", "e-commerce"]
@@ -75,7 +75,7 @@ goal:
           Confirm the cart contents are correct.
         success_signal: |
           At least one headphones item is in the cart with a price shown.
-          The goal is complete — do not click checkout.
+          The goal is complete â€” do not click checkout.
 
 on_failure:
   capture:

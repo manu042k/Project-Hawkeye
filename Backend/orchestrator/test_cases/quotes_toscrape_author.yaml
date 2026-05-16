@@ -1,8 +1,11 @@
 id: "TC-006"
-name: "Quotes.toscrape: navigate via tag to author bio"
+name: "Quotes.toscrape â€” navigate via tag to author bio"
 suite: "eval-dataset-v1"
 priority: "P1"
 tags: ["quotes", "navigation", "static", "multi-step", "content-extraction"]
+created_by: "<user-id>"
+project: "<project-id>"
+save_record: false
 
 target:
   url: "https://quotes.toscrape.com"
@@ -10,43 +13,65 @@ target:
   viewport:
     width: 1280
     height: 720
+    device_scale_factor: 1.0
+  page_type: static
+  app_description: |
+    Quotes to Scrape â€” a static HTML practice site with quotes, authors, and tags.
+    No JavaScript required. All navigation is via standard anchor links.
+    No login or registration needed.
 
-goal: |
-  Starting from the Quotes to Scrape homepage, click the 'inspirational' tag
-  to see quotes filtered by that tag. Then click the author name of the first
-  quote shown to open their biography page. Verify the bio page shows a born date.
+goal:
+  objective: |
+    Starting from the Quotes to Scrape homepage, click the 'inspirational' tag
+    to see quotes filtered by that tag. Click the author name of the first quote
+    shown to open their biography page. Verify the bio page shows a born date.
+    Do not log in or register an account.
 
-assertions:
-  - id: "A1"
-    type: "content"
-    description: "Author bio page shows born date label"
-    params:
-      check: "text_present"
-      text: "Born"
+  constraints:
+    max_steps: 15
+    timeout_seconds: 120
+    max_retries_per_action: 2
 
-  - id: "A2"
-    type: "console"
-    description: "No critical JS errors"
-    params:
-      level: "error"
-      max_count: 5
-      ignore_patterns:
-        - "favicon"
+  extra_details: |
+    The homepage shows quotes; each quote has colored tag bubbles at the bottom.
+    Find the 'inspirational' tag on any quote and click it.
+    The tag-filtered page shows quotes tagged 'inspirational' â€” each quote has
+    a small '- Author Name' link below the text.
+    Click the author's name link (e.g. '- Albert Einstein') to go to their bio.
+    The biography page shows 'Born:' followed by a date and location.
+    Once you see the 'Born:' label with a date, emit <GOAL_COMPLETE>.
 
-constraints:
-  max_steps: 15
-  timeout_seconds: 120
-  navigation_policy: "explicit_urls_allowed"
-  forbidden_actions:
-    - "log in or register an account"
+  steps:
+    checkpoints:
+      - id: S1
+        description: |
+          On the homepage, find the 'inspirational' tag bubble on any quote
+          and click it.
+        success_signal: |
+          The page filters to show only quotes tagged 'inspirational'. The tag
+          name is visible in the page heading or URL path.
 
-context:
-  page_type: "static"
-  app_description: "Quotes to Scrape — a static HTML practice site with quotes, authors, and tags. No JavaScript required. All navigation is via standard anchor links."
-  hints:
-    - "The homepage shows quotes; each quote has colored tag bubbles at the bottom"
-    - "Find the 'inspirational' tag on any quote and click it"
-    - "The tag-filtered page shows quotes tagged 'inspirational' — each quote has a small '- Author Name' link below it"
-    - "Click the author's name link (e.g. '- Albert Einstein') to go to their biography page"
-    - "The biography page shows 'Born:' followed by a date and location"
-    - "Once you see the 'Born:' label with a date, emit <GOAL_COMPLETE>"
+      - id: S2
+        description: |
+          Click the author name link (e.g. '- Albert Einstein') below the
+          first quote on the filtered page.
+        success_signal: |
+          The author biography page loads showing the author's name as the
+          page title or heading.
+
+      - id: S3
+        description: |
+          Confirm the biography page shows a born date.
+        success_signal: |
+          A 'Born:' label followed by a date is visible on the page.
+          Goal is complete.
+
+on_failure:
+  capture:
+    screenshot: true
+    dom_snapshot: true
+    network_log: true
+    console_log: true
+    agent_trace: true
+    video: true
+  notify: {}

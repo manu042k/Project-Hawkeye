@@ -1,5 +1,5 @@
 id: "TC-001"
-name: "Wikipedia — search for AI article and scroll through content"
+name: "Wikipedia â€” search for AI article and scroll through content"
 suite: "smoke"
 priority: "P1"
 tags: ["wikipedia", "search", "scroll", "smoke"]
@@ -30,7 +30,7 @@ goal:
     max_retries_per_action: 2
 
   extra_details: |
-    Search homepage is https://www.wikipedia.org — this has the main search box.
+    Search homepage is https://www.wikipedia.org â€” this has the main search box.
     After searching, you will land on en.wikipedia.org/wiki/Artificial_intelligence.
     Once you are on the article page DO NOT navigate away. Do not go back to any homepage.
     Scroll through the article 3 times using PageDown, then immediately emit <GOAL_COMPLETE>.

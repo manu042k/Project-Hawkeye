@@ -1,5 +1,5 @@
 id: "TC-002"
-name: "Amazon — add product to cart and verify"
+name: "Amazon â€” add product to cart and verify"
 suite: "e-commerce"
 priority: "P1"
 tags: ["amazon", "cart", "e-commerce", "smoke"]
@@ -37,7 +37,7 @@ goal:
 
   extra_details: |
     Always navigate using explicit URLs rather than clicking links.
-    The Add to Cart button may take 3–8 seconds to respond — wait for
+    The Add to Cart button may take 3â€“8 seconds to respond â€” wait for
     confirmation before navigating away.
     If a CAPTCHA or mandatory sign-in wall appears that cannot be
     dismissed, emit <GOAL_BLOCKED>.
@@ -72,7 +72,7 @@ goal:
           Review the cart contents and confirm everything looks correct.
         success_signal: |
           The cart displays the headphones item and a subtotal amount.
-          The goal is complete — do not click checkout or Buy Now.
+          The goal is complete â€” do not click checkout or Buy Now.
 
 on_failure:
   capture:
@@ -82,4 +82,4 @@ on_failure:
     console_log: true
     agent_trace: true
     video: true # always record video on failure
-  notify: {} # e.g. email, slack — configure per project
+  notify: {} # e.g. email, slack â€” configure per project

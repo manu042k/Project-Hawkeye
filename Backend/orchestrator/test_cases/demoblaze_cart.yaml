@@ -1,8 +1,11 @@
 id: "TC-009"
-name: "DemoBlaze: add phone to cart and verify"
+name: "DemoBlaze â€” add phone to cart and verify"
 suite: "eval-dataset-v1"
 priority: "P1"
 tags: ["e-commerce", "cart", "spa", "ajax", "demoblaze"]
+created_by: "<user-id>"
+project: "<project-id>"
+save_record: false
 
 target:
   url: "https://www.demoblaze.com"
@@ -10,51 +13,71 @@ target:
   viewport:
     width: 1280
     height: 720
+    device_scale_factor: 1.0
+  page_type: spa
+  app_description: |
+    DemoBlaze â€” a demo e-commerce site for automation practice. Products are
+    organized in three categories: Phones, Laptops, Monitors. The cart is
+    AJAX-powered. No login required.
 
-goal: |
-  Starting from the DemoBlaze homepage, click on the 'Phones' category link
-  in the sidebar. Click on the first phone listed to open its product page.
-  Click 'Add to cart' and dismiss the confirmation alert. Then navigate to
-  the Cart page and verify the phone appears with a Total shown.
+goal:
+  objective: |
+    Click the 'Phones' category, open the first phone listed, click 'Add to cart',
+    dismiss the confirmation alert, then navigate to the Cart page and verify the
+    phone appears with a Total shown. Do not proceed to checkout or enter payment
+    information.
 
-assertions:
-  - id: "A1"
-    type: "content"
-    description: "Cart page shows a Total row"
-    params:
-      check: "text_present"
-      text: "Total"
+  constraints:
+    max_steps: 20
+    timeout_seconds: 180
+    max_retries_per_action: 2
 
-  - id: "A2"
-    type: "console"
-    description: "No critical JS errors"
-    params:
-      level: "error"
-      max_count: 10
-      ignore_patterns:
-        - "favicon"
-        - "analytics"
-        - "ads"
-        - "400"
-        - "Failed to load resource"
+  extra_details: |
+    The left sidebar has three category links: 'Phones', 'Laptops', 'Monitors'.
+    After clicking 'Phones', wait a moment for the product grid to reload via AJAX.
+    Click the first phone thumbnail or title to open its detail page.
+    Click 'Add to cart' â€” a browser JavaScript alert saying 'Product added' will
+    appear; accept/dismiss it before continuing.
+    Click 'Cart' in the top navigation bar to open the shopping cart page.
+    The cart shows a table with product rows and a 'Total' label at the bottom right.
+    If any startup modal or popup appears, close it before proceeding.
 
-constraints:
-  max_steps: 20
-  timeout_seconds: 180
-  navigation_policy: "interact_only"
-  forbidden_actions:
-    - "proceed to checkout or place an order"
-    - "enter payment or personal information"
+  steps:
+    checkpoints:
+      - id: S1
+        description: |
+          Click the 'Phones' category link in the left sidebar.
+        success_signal: |
+          The product grid reloads showing only phone products (e.g. Samsung
+          galaxy s6, Nokia lumia 1520, Nexus 6).
 
-context:
-  page_type: "spa"
-  app_description: "DemoBlaze — a demo e-commerce site for Selenium/Playwright automation practice. Products organized in three categories: Phones, Laptops, Monitors. Cart is AJAX-powered with no login required."
-  hints:
-    - "The left sidebar has three category links: 'Phones', 'Laptops', 'Monitors' — click 'Phones'"
-    - "Wait a moment for the product grid to load via AJAX, then click on the first phone thumbnail or title"
-    - "On the product detail page, click the 'Add to cart' button"
-    - "A browser JavaScript alert will appear saying 'Product added' — accept/dismiss it before continuing"
-    - "Click 'Cart' in the top navigation bar to open the shopping cart page"
-    - "The cart shows a table with product rows and a 'Total' label at the bottom right"
-    - "Once the cart page shows the phone item and a Total, emit <GOAL_COMPLETE>"
-    - "If any modal or popup appears at startup, close it before proceeding"
+      - id: S2
+        description: |
+          Click on the first phone in the grid to open its detail page.
+        success_signal: |
+          The phone detail page loads showing the product name, image, price,
+          description, and an 'Add to cart' button.
+
+      - id: S3
+        description: |
+          Click 'Add to cart'. When the browser alert appears saying 'Product
+          added', dismiss or accept it.
+        success_signal: |
+          The alert is dismissed and the page returns to its normal state.
+
+      - id: S4
+        description: |
+          Click 'Cart' in the top navigation bar.
+        success_signal: |
+          The Cart page loads showing a table with the phone listed as a row
+          and a 'Total' label at the bottom right. Goal is complete.
+
+on_failure:
+  capture:
+    screenshot: true
+    dom_snapshot: true
+    network_log: true
+    console_log: true
+    agent_trace: true
+    video: true
+  notify: {}
