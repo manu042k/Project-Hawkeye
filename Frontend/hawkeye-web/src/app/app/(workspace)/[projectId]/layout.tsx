@@ -3,7 +3,6 @@
 import { use, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { WorkspaceChrome } from "@/components/app/workspace-layout";
 import { useProjectStore } from "@/lib/project/store";
 import { apiClient } from "@/lib/api/client";
 
@@ -31,5 +30,5 @@ export default function ProjectLayout({
       .catch(() => router.replace("/app"));
   }, [projectId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  return <WorkspaceChrome>{children}</WorkspaceChrome>;
+  return <>{children}</>;
 }
