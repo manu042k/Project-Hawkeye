@@ -1,0 +1,13 @@
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.db-shm
+*.db-wal
+logs/
+.env
+.env.*
+artifacts/
+celerybeat-schedule*
