@@ -14,7 +14,7 @@
 
 | | |
 |---|---|
-| **Status** | Open |
+| **Status** | ✅ Fixed |
 | **Severity** | Critical |
 | **Where** | `Frontend/hawkeye-web/src/lib/project/store.ts` |
 | **Pages** | All `/app/(workspace)/` pages |
@@ -40,7 +40,7 @@ currentProject: state.projectsByUser[newUserEmail] ?? null
 
 | | |
 |---|---|
-| **Status** | Open |
+| **Status** | ✅ Fixed |
 | **Severity** | Critical |
 | **Where** | `Frontend/hawkeye-web/src/app/app/(workspace)/test-cases/page.tsx`, `vault/page.tsx`, `suites/page.tsx` |
 | **Pages** | `/app/test-cases`, `/app/vault`, `/app/suites` |
@@ -64,7 +64,7 @@ if (error) return <ErrorBanner message="Could not load data. Check your project 
 
 | | |
 |---|---|
-| **Status** | Open |
+| **Status** | ✅ Fixed |
 | **Severity** | Critical |
 | **Where** | `Frontend/hawkeye-web/src/app/app/(workspace)/runs/new/page.tsx` |
 | **Pages** | `/app/runs/new` |
@@ -79,7 +79,7 @@ if (error) return <ErrorBanner message="Could not load data. Check your project 
 
 | | |
 |---|---|
-| **Status** | Open |
+| **Status** | ✅ Fixed (hid "Forgot password?" link until endpoint is implemented) |
 | **Severity** | Critical |
 | **Where** | `Backend/api/routes/auth.py` |
 | **Pages** | `/auth/password-recovery` |
@@ -98,7 +98,7 @@ if (error) return <ErrorBanner message="Could not load data. Check your project 
 
 | | |
 |---|---|
-| **Status** | Open |
+| **Status** | ✅ Fixed |
 | **Severity** | Critical (Security) |
 | **Where** | `Backend/api/routes/projects.py` — `POST /api/projects` |
 
@@ -125,7 +125,7 @@ def sanitize_name(cls, v):
 
 | | |
 |---|---|
-| **Status** | Open |
+| **Status** | ✅ Fixed |
 | **Severity** | Critical (Security) |
 | **Where** | `Backend/api/app.py` |
 
@@ -149,7 +149,7 @@ limiter = Limiter(key_func=get_remote_address)
 
 | | |
 |---|---|
-| **Status** | Open |
+| **Status** | ✅ Fixed |
 | **Severity** | Critical (Security) |
 | **Where** | `Backend/api/app.py` — `FastAPI(...)` constructor |
 | **URLs** | `http://localhost:8000/docs`, `http://localhost:8000/openapi.json` |
@@ -176,7 +176,7 @@ app = FastAPI(
 
 | | |
 |---|---|
-| **Status** | Open |
+| **Status** | Deferred (large architectural change — URL restructure required) |
 | **Severity** | High |
 | **Where** | `Frontend/hawkeye-web/src/app/app/(workspace)/` layout |
 
@@ -197,7 +197,7 @@ Read `params.projectId` in the workspace layout and hydrate Zustand from it.
 
 | | |
 |---|---|
-| **Status** | Open |
+| **Status** | Deferred (depends on BUG-08 URL restructure) |
 | **Severity** | High |
 | **Where** | `Frontend/hawkeye-web/src/app/auth/login/page.tsx` — `onSubmit` |
 
@@ -211,7 +211,7 @@ Read `params.projectId` in the workspace layout and hydrate Zustand from it.
 
 | | |
 |---|---|
-| **Status** | Open |
+| **Status** | ✅ Fixed |
 | **Severity** | High (Security) |
 | **Where** | `Backend/api/routes/runs.py` — `GET /api/projects/{id}/runs` |
 
@@ -232,7 +232,7 @@ async def list_runs(project_id: str, user=Depends(require_project_member)):
 
 | | |
 |---|---|
-| **Status** | Open |
+| **Status** | ✅ Fixed |
 | **Severity** | High |
 | **Where** | `Backend/api/tasks.py` — `run_test_case` Celery task |
 | **Pages** | `/app/test-cases` |
@@ -256,7 +256,7 @@ async with AsyncSessionLocal() as session:
 
 | | |
 |---|---|
-| **Status** | Open |
+| **Status** | ✅ Fixed |
 | **Severity** | High |
 | **Where** | `Frontend/hawkeye-web/src/lib/api/hooks.ts` — `useProjectRuns` |
 
@@ -270,7 +270,7 @@ async with AsyncSessionLocal() as session:
 
 | | |
 |---|---|
-| **Status** | Open |
+| **Status** | ✅ Fixed (seed_from_yaml_dir now restores accidentally-archived cases) |
 | **Severity** | High |
 | **Where** | `Backend/api/routes/test_cases_crud.py` — list endpoint |
 | **Pages** | `/app/test-cases` |
@@ -289,7 +289,7 @@ async with AsyncSessionLocal() as session:
 
 | | |
 |---|---|
-| **Status** | Open |
+| **Status** | ✅ Fixed |
 | **Severity** | Medium |
 | **Where** | `Frontend/hawkeye-web/src/app/app/(global-hub)/account/page.tsx` |
 | **Pages** | `/app/account` |
@@ -307,7 +307,7 @@ async with AsyncSessionLocal() as session:
 
 | | |
 |---|---|
-| **Status** | Open |
+| **Status** | ✅ Fixed |
 | **Severity** | Medium |
 | **Where** | `Frontend/hawkeye-web/src/app/app/(global-hub)/billing/page.tsx` |
 | **Pages** | `/app/billing` |
@@ -324,7 +324,7 @@ async with AsyncSessionLocal() as session:
 
 | | |
 |---|---|
-| **Status** | Open |
+| **Status** | ✅ Already fixed (page.tsx already reads and uses the resume param) |
 | **Severity** | Medium |
 | **Where** | Workspace layout redirect logic + `Frontend/hawkeye-web/src/app/app/(global-hub)/page.tsx` |
 
@@ -343,7 +343,7 @@ router.push(resume && resume.startsWith('/app') ? resume : '/app/dashboard');
 
 | | |
 |---|---|
-| **Status** | Open |
+| **Status** | ✅ Already fixed (outer card uses div[role=button], inner button is valid) |
 | **Severity** | Medium |
 | **Where** | `Frontend/hawkeye-web/src/app/app/(global-hub)/page.tsx` — project card component |
 | **Pages** | `/app` |
@@ -358,7 +358,7 @@ router.push(resume && resume.startsWith('/app') ? resume : '/app/dashboard');
 
 | | |
 |---|---|
-| **Status** | Open |
+| **Status** | ✅ Fixed |
 | **Severity** | Medium |
 | **Where** | `Backend/api/routes/test_cases_crud.py` — `GET /api/projects/{id}/test-cases` |
 
@@ -372,7 +372,7 @@ router.push(resume && resume.startsWith('/app') ? resume : '/app/dashboard');
 
 | | |
 |---|---|
-| **Status** | Open |
+| **Status** | ✅ Fixed (removed the paragraph) |
 | **Severity** | Medium |
 | **Where** | `Frontend/hawkeye-web/src/app/app/(global-hub)/billing/page.tsx` |
 | **Pages** | `/app/billing` |
@@ -387,7 +387,7 @@ router.push(resume && resume.startsWith('/app') ? resume : '/app/dashboard');
 
 | | |
 |---|---|
-| **Status** | Open |
+| **Status** | ✅ Fixed (default changed to openrouter:openai/gpt-4o) |
 | **Severity** | Medium |
 | **Where** | `Frontend/hawkeye-web/src/app/app/(workspace)/runs/new/page.tsx` |
 | **Pages** | `/app/runs/new` |
@@ -400,12 +400,12 @@ router.push(resume && resume.startsWith('/app') ? resume : '/app/dashboard');
 
 ## Summary
 
-| Severity | Count | Fixed | Open |
+| Severity | Count | Fixed | Deferred/N-A |
 |---|---|---|---|
-| 🔴 Critical | 7 | 0 | 7 |
-| 🟠 High | 6 | 0 | 6 |
-| 🟡 Medium | 7 | 0 | 7 |
-| **Total** | **20** | **0** | **20** |
+| 🔴 Critical | 7 | 7 | 0 |
+| 🟠 High | 6 | 4 | 2 (BUG-08, BUG-09 — architectural) |
+| 🟡 Medium | 7 | 7 | 0 |
+| **Total** | **20** | **18** | **2** |
 
 ### Recommended Fix Order
 

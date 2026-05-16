@@ -55,7 +55,10 @@ export default function VaultPage() {
   function loadSecrets() {
     apiClient.listSecrets(projectId)
       .then((res) => setSecrets(res.secrets))
-      .catch((e) => setError(String(e)))
+      .catch((e) => {
+        const msg = e instanceof Error ? e.message : String(e);
+        setError(msg.includes("403") ? "You don't have access to this project's vault." : "Failed to load secrets.");
+      })
       .finally(() => setLoading(false));
   }
 

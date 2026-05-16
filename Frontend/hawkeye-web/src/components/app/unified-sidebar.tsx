@@ -154,14 +154,14 @@ export function UnifiedSidebar({ className }: { className?: string }) {
   const { currentProject, getProjectForUser, setCurrentProject } = useProjectStore();
   const setActiveEmail = useNotificationStore((s) => s.setActiveEmail);
 
-  // Restore the last project and activate per-user notifications when session loads
+  // Re-key currentProject to the logged-in user on every session change.
+  // Without this, User A's project persists in localStorage when User B logs in.
   useEffect(() => {
     setActiveEmail(userEmail);
-    if (userEmail && !currentProject) {
-      const saved = getProjectForUser(userEmail);
-      if (saved) setCurrentProject(saved);
-    }
-  }, [userEmail]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (status === "loading") return;
+    const saved = userEmail ? getProjectForUser(userEmail) : null;
+    setCurrentProject(saved ?? null);
+  }, [userEmail, status]); // eslint-disable-line react-hooks/exhaustive-deps
   const hub = isGlobalHubPath(pathname);
 
   let hubKey: HubKey = "projects";

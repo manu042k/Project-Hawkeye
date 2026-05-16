@@ -18,10 +18,10 @@ import { apiClient, type TestCaseInfo, type Environment } from "@/lib/api/client
 import { useProjectStore } from "@/lib/project/store";
 
 const MODEL_PRESETS = [
-  { value: "nvidia:moonshotai/kimi-k2.6", label: "NVIDIA – Kimi K2.6 (recommended)" },
-  { value: "openrouter:openai/gpt-4o", label: "OpenRouter – GPT-4o" },
+  { value: "openrouter:openai/gpt-4o", label: "OpenRouter – GPT-4o (recommended)" },
   { value: "openrouter:openai/gpt-oss-120b:free", label: "OpenRouter – GPT-OSS 120B (free)" },
   { value: "openrouter:google/gemma-4-31b-it:free", label: "OpenRouter – Gemma 4 31B (free)" },
+  { value: "nvidia:moonshotai/kimi-k2.6", label: "NVIDIA – Kimi K2.6" },
   { value: "ollama:llama3.2", label: "Ollama – Llama 3.2 (local)" },
 ];
 
@@ -43,11 +43,18 @@ function NewRunPageInner() {
   const [timeoutSeconds, setTimeoutSeconds] = useState(300);
   const [record, setRecord] = useState(false);
   const [dbCases, setDbCases] = useState<Array<{ id: string; name: string }>>([]);
+  const [dbCasesAccessDenied, setDbCasesAccessDenied] = useState(false);
   const [environments, setEnvironments] = useState<Environment[]>([]);
   const [environmentId, setEnvironmentId] = useState<string | null>(null);
 
   useEffect(() => {
-    apiClient.listProjectTestCases(projectId).then((res) => setDbCases(res.test_cases)).catch(() => {});
+    apiClient.listProjectTestCases(projectId).then((res) => {
+      setDbCases(res.test_cases);
+      setDbCasesAccessDenied(false);
+    }).catch((e) => {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.includes("403")) setDbCasesAccessDenied(true);
+    });
     apiClient.listEnvironments(projectId).then((res) => {
       setEnvironments(res.environments);
       const def = res.environments.find((e) => e.is_default);
@@ -112,7 +119,12 @@ function NewRunPageInner() {
             <div className="space-y-6 lg:col-span-8">
               <div className="space-y-2">
                 <Label>Test Case</Label>
-                {!tcLoading && dbCases.length === 0 && (testCases ?? []).length === 0 ? (
+                {dbCasesAccessDenied ? (
+                  <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-5 text-center">
+                    <p className="text-sm font-medium text-rose-400">You don&apos;t have access to test cases in this project.</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Ask a project admin to add you as a member.</p>
+                  </div>
+                ) : !tcLoading && dbCases.length === 0 && (testCases ?? []).length === 0 ? (
                   <div className="rounded-lg border border-dashed border-border/60 bg-muted/10 px-4 py-5 text-center">
                     <p className="text-sm font-medium">No test cases in this project</p>
                     <p className="mt-1 text-xs text-muted-foreground">Create a test case first, then come back to run it.</p>

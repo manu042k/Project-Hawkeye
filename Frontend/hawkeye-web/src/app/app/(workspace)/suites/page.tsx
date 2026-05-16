@@ -769,7 +769,10 @@ export default function SuitesPage() {
         setSuites(suitesRes.suites);
         setAllTestCases(tcRes.test_cases);
       })
-      .catch((e) => setError(String(e)))
+      .catch((e) => {
+        const msg = e instanceof Error ? e.message : String(e);
+        setError(msg.includes("403") ? "You don't have access to this project's suites." : "Failed to load suites.");
+      })
       .finally(() => setLoading(false));
   }
 

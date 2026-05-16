@@ -210,9 +210,6 @@ function LoginPageInner() {
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <Label htmlFor="password">Password</Label>
-                      <Link className="text-sm text-primary hover:underline" href="/auth/password-recovery">
-                        Forgot password?
-                      </Link>
                     </div>
                     <div className="relative">
                       <ShieldCheck
