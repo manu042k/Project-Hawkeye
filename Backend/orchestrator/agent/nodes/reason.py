@@ -25,6 +25,56 @@ _KEEP_TAIL_PAIRS = 3           # keep last 3 turn-pairs after trimming
 _MAX_SNAPSHOT_CHARS = 6_000    # ~2K tokens; fits within 6K TPM budget with system+tools overhead
 
 
+def _make_fatal_exit(step: int, error_type: str, prefix: str, exc_str: str) -> dict:
+    """Build a terminal error state dict for fatal LLM failures."""
+    from orchestrator.models.run_state import ErrorInfo
+    msg = f"{prefix}: {exc_str[:200]}"
+    return {
+        "status": "errored",
+        "goal_complete": True,
+        "termination_reason": msg,
+        "last_error": ErrorInfo(
+            error_type=error_type,
+            message=exc_str[:200],
+            step_number=step,
+            recoverable=False,
+        ),
+    }
+
+
+def _extract_token_usage(ai_message: AIMessage) -> dict:
+    """Extract input/output token counts from an AIMessage, handling provider differences."""
+    usage: dict = {}
+    if hasattr(ai_message, "usage_metadata") and ai_message.usage_metadata:
+        meta = ai_message.usage_metadata
+        if isinstance(meta, dict):
+            usage = {"input_tokens": meta.get("input_tokens", 0), "output_tokens": meta.get("output_tokens", 0)}
+        else:
+            usage = {"input_tokens": getattr(meta, "input_tokens", 0), "output_tokens": getattr(meta, "output_tokens", 0)}
+    if not any(usage.values()) and hasattr(ai_message, "response_metadata"):
+        token_usage = (ai_message.response_metadata or {}).get("token_usage", {})
+        if token_usage:
+            usage = {
+                "input_tokens": token_usage.get("prompt_tokens", 0),
+                "output_tokens": token_usage.get("completion_tokens", 0),
+            }
+    return usage
+
+
+def _extract_agent_text(ai_message: AIMessage) -> str | None:
+    """Extract any text reasoning the model produced alongside tool calls."""
+    if isinstance(ai_message.content, str):
+        return ai_message.content or None
+    if isinstance(ai_message.content, list):
+        texts = [
+            block.get("text", "") if isinstance(block, dict) else str(block)
+            for block in ai_message.content
+            if not isinstance(block, dict) or block.get("type") != "tool_use"
+        ]
+        return " ".join(t for t in texts if t) or None
+    return None
+
+
 async def reason_node(
     state: AgentState,
     *,
@@ -41,18 +91,15 @@ async def reason_node(
     Returns partial state dict. Never raises.
     """
     from orchestrator.models.run_state import ErrorInfo, compute_step_cost
-
     from orchestrator.llm.provider import is_vision_capable
 
     all_tools = mcp_tools + custom_tools
     messages = list(state["messages"])
 
-    # Inject current page state as the latest user observation.
     observation = _build_observation(state)
     obs_message = _build_observation_message(state, observation, model_name)
     messages = messages + [obs_message]
 
-    # Context window management: trim history if too long.
     total_chars = sum(len(str(m.content)) for m in messages)
     if total_chars > _CONTEXT_CHAR_LIMIT:
         messages = _trim_messages(messages, _KEEP_TAIL_PAIRS)
@@ -61,14 +108,13 @@ async def reason_node(
             total_chars, sum(len(str(m.content)) for m in messages),
         )
 
-    # Bind tools to the LLM.
     llm_with_tools = llm.bind_tools(all_tools) if all_tools else llm
 
-    # Invoke with retry for rate limits.
     start_ms = time.monotonic()
     start_ns = time.time_ns()
     ai_message: AIMessage | None = None
     last_error: ErrorInfo | None = None
+    step = state["step_number"]
 
     _delays: list[float] = [0.0] + _BACKOFF_DELAYS
     attempt = 0
@@ -78,7 +124,6 @@ async def reason_node(
             logger.info("REASON: rate-limit backoff %.1fs (attempt %d)", delay, attempt)
             await asyncio.sleep(delay)
         try:
-            # Use ainvoke() — both ChatOllama and ChatOpenAI support async.
             response = await llm_with_tools.ainvoke(messages)
             ai_message = response
             end_ns = time.time_ns()
@@ -88,132 +133,86 @@ async def reason_node(
             attempt += 1
             logger.warning("REASON: LLM call attempt %d failed: %s", attempt + 1, exc_str[:200])
 
-            # Connection failures are fatal — no point retrying if Ollama/Groq is unreachable.
             if any(k in exc_str.lower() for k in (
                 "connection attempts failed", "connection refused", "connection error",
                 "connecterror", "no route to host", "name or service not known",
                 "failed to connect",
             )):
                 logger.error("REASON: LLM connection failed — terminating: %s", exc_str)
-                return {
-                    "status": "errored",
-                    "goal_complete": True,
-                    "termination_reason": f"LLM unreachable: {exc_str[:200]}",
-                    "last_error": ErrorInfo(
-                        error_type="llm_auth_error",
-                        message=exc_str[:200],
-                        step_number=state["step_number"],
-                        recoverable=False,
-                    ),
-                }
+                return _make_fatal_exit(step, "llm_auth_error", "LLM unreachable", exc_str)
 
-            # Auth / access / billing errors: do not retry.
-            if any(k in exc_str for k in ("402",)) or any(k in exc_str.lower() for k in ("insufficient", "not enough credits", "requires more credits")):
+            if any(k in exc_str for k in ("402",)) or any(k in exc_str.lower() for k in (
+                "insufficient", "not enough credits", "requires more credits",
+            )):
                 logger.error("REASON: insufficient credits (402) — terminating: %s", exc_str)
-                return {
-                    "status": "errored",
-                    "goal_complete": True,
-                    "termination_reason": f"LLM billing error (402): {exc_str[:200]}",
-                    "last_error": ErrorInfo(
-                        error_type="llm_auth_error",
-                        message=exc_str[:200],
-                        step_number=state["step_number"],
-                        recoverable=False,
-                    ),
-                }
-            if any(k in exc_str.lower() for k in ("401", "403", "unauthorized", "invalid api key", "blocked at", "forbidden", "not allowed", "access denied")):
-                logger.error("REASON: auth/access error — terminating: %s", exc_str)
-                return {
-                    "status": "errored",
-                    "goal_complete": True,
-                    "termination_reason": f"LLM access error: {exc_str[:200]}",
-                    "last_error": ErrorInfo(
-                        error_type="llm_auth_error",
-                        message=exc_str[:200],
-                        step_number=state["step_number"],
-                        recoverable=False,
-                    ),
-                }
-            if any(k in exc_str.lower() for k in ("401", "unauthorized", "invalid api key")):  # kept for clarity
-                logger.error("REASON: LLM auth error — terminating: %s", exc_str)
-                return {
-                    "status": "errored",
-                    "goal_complete": True,
-                    "termination_reason": f"LLM auth error: {exc_str[:200]}",
-                    "last_error": ErrorInfo(
-                        error_type="llm_auth_error",
-                        message=exc_str[:200],
-                        step_number=state["step_number"],
-                        recoverable=False,
-                    ),
-                }
+                return _make_fatal_exit(step, "llm_auth_error", "LLM billing error (402)", exc_str)
 
-            # Context window overflow (413): trim aggressively and retry once.
+            if any(k in exc_str.lower() for k in (
+                "401", "403", "unauthorized", "invalid api key", "blocked at",
+                "forbidden", "not allowed", "access denied",
+            )):
+                logger.error("REASON: auth/access error — terminating: %s", exc_str)
+                return _make_fatal_exit(step, "llm_auth_error", "LLM access error", exc_str)
+
             if "413" in exc_str or "too large" in exc_str.lower() or "reduce the length" in exc_str.lower():
                 if attempt == 0 and len(messages) > 4:
-                    # Emergency trim: keep only system prompt + last 1 pair
                     messages = _trim_messages(messages, 1)
                     logger.warning("REASON: 413 context overflow — emergency trim to 1 pair, retrying")
                     continue
                 last_error = ErrorInfo(
-                    error_type="llm_auth_error",  # non-recoverable: not a transient error
+                    error_type="llm_auth_error",
                     message=f"Context window exceeded (413): {exc_str[:200]}",
-                    step_number=state["step_number"],
+                    step_number=step,
                     recoverable=False,
                 )
                 break
 
-            # Upstream congestion on free-tier models (OpenRouter).
-            # Switch to longer delays and keep retrying.
             if "temporarily rate-limited" in exc_str.lower() or "please retry shortly" in exc_str.lower():
                 if _delays == [0.0] + _BACKOFF_DELAYS:
                     _delays = [0.0] + _SOFT_RATE_LIMIT_DELAYS
-                    attempt = 1  # restart with new delay schedule
+                    attempt = 1
                 last_error = ErrorInfo(
                     error_type="llm_rate_limit",
                     message=exc_str[:200],
-                    step_number=state["step_number"],
+                    step_number=step,
                     recoverable=True,
                 )
                 if attempt < len(_delays):
                     continue
 
-            # Daily/account hard rate limit: no point retrying.
             if "tokens per day" in exc_str.lower() or ("tpd" in exc_str.lower() and "429" in exc_str):
                 last_error = ErrorInfo(
                     error_type="llm_rate_limit",
                     message=exc_str[:200],
-                    step_number=state["step_number"],
+                    step_number=step,
                     recoverable=False,
                 )
                 break
 
-            # Model doesn't support tools or not found — fatal, no point retrying.
             if any(k in exc_str.lower() for k in ("does not support tools", "tool_use is not supported")) or \
                     ("404" in exc_str and any(k in exc_str.lower() for k in ("no endpoints", "not found", "unknown model"))):
                 last_error = ErrorInfo(
                     error_type="llm_auth_error",
                     message=exc_str[:200],
-                    step_number=state["step_number"],
+                    step_number=step,
                     recoverable=False,
                 )
                 break
-            # Standard rate limit or server errors: retry with short backoff.
+
             if any(k in exc_str for k in ("429", "500", "503", "rate", "overloaded")):
                 last_error = ErrorInfo(
                     error_type="llm_rate_limit",
                     message=exc_str[:200],
-                    step_number=state["step_number"],
+                    step_number=step,
                     recoverable=True,
                 )
                 if attempt < len(_delays):
                     continue
 
-            # Other errors — treat as recoverable for one retry, then give up.
             last_error = ErrorInfo(
                 error_type="llm_rate_limit",
                 message=exc_str[:200],
-                step_number=state["step_number"],
+                step_number=step,
                 recoverable=attempt < len(_delays),
             )
             break
@@ -231,47 +230,12 @@ async def reason_node(
             "error_history": state.get("error_history", []) + ([last_error] if last_error else []),
         }
 
-    # Extract usage metadata. LangChain providers use different attribute names:
-    # - ChatOllama / most providers: AIMessage.usage_metadata (dataclass or dict)
-    # - langchain-openai (Groq): AIMessage.response_metadata["token_usage"]
-    usage = {}
-    if hasattr(ai_message, "usage_metadata") and ai_message.usage_metadata:
-        meta = ai_message.usage_metadata
-        if isinstance(meta, dict):
-            usage = {
-                "input_tokens": meta.get("input_tokens", 0),
-                "output_tokens": meta.get("output_tokens", 0),
-            }
-        else:
-            usage = {
-                "input_tokens": getattr(meta, "input_tokens", 0),
-                "output_tokens": getattr(meta, "output_tokens", 0),
-            }
-    if not any(usage.values()) and hasattr(ai_message, "response_metadata"):
-        token_usage = (ai_message.response_metadata or {}).get("token_usage", {})
-        if token_usage:
-            usage = {
-                "input_tokens": token_usage.get("prompt_tokens", 0),
-                "output_tokens": token_usage.get("completion_tokens", 0),
-            }
-
+    usage = _extract_token_usage(ai_message)
     latency_ms = int((time.monotonic() - start_ms) * 1000)
     end_ns = locals().get("end_ns") or time.time_ns()
     cost = compute_step_cost(model_name, usage)
-
     stop_reason = "tool_use" if ai_message.tool_calls else "end_turn"
-
-    # Extract any text content the agent produced.
-    agent_text: str | None = None
-    if isinstance(ai_message.content, str):
-        agent_text = ai_message.content or None
-    elif isinstance(ai_message.content, list):
-        texts = [
-            block.get("text", "") if isinstance(block, dict) else str(block)
-            for block in ai_message.content
-            if not isinstance(block, dict) or block.get("type") != "tool_use"
-        ]
-        agent_text = " ".join(t for t in texts if t) or None
+    agent_text = _extract_agent_text(ai_message)
 
     tool_calls: list[dict] | None = (
         [{"name": tc.get("name", ""), "args": tc.get("args", {})} for tc in ai_message.tool_calls]
@@ -364,7 +328,6 @@ def _build_observation(state: AgentState) -> str:
             parts.append(f"PROGRESS: Completed checkpoints: {', '.join(completed)} of {', '.join(all_checkpoints)}")
         if remaining:
             next_cp = remaining[0]
-            # Find the checkpoint description
             cp_desc = next(
                 (cp.description for cp in tc.goal.steps.checkpoints if cp.id == next_cp), ""
             )
@@ -392,7 +355,6 @@ def _trim_messages(messages: list, keep_tail_pairs: int) -> list:
     system = [m for m in messages if isinstance(m, SystemMessage)]
     rest = [m for m in messages if not isinstance(m, SystemMessage)]
 
-    # Keep last N*2 messages (pairs: human/ai or ai/tool)
     tail = rest[-(keep_tail_pairs * 2):] if len(rest) > keep_tail_pairs * 2 else rest
 
     summary = HumanMessage(
