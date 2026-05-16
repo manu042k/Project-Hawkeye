@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import {
   Activity, Bell, CheckCircle2, Copy, ExternalLink, FileText, FlaskConical,
   Loader2, MoreVertical, Plus, Save, Trash2, Upload, Users, Zap,
@@ -75,9 +75,9 @@ const ROLE_DESC: Record<string, string> = {
 
 export default function ProjectSettingsPage() {
   const router = useRouter();
+  const { projectId } = useParams<{ projectId: string }>();
   const currentProject = useProjectStore((s) => s.currentProject);
   const setCurrentProject = useProjectStore((s) => s.setCurrentProject);
-  const projectId = currentProject?.id ?? null;
 
   const [tab, setTab] = useState("overview");
   const [project, setProject] = useState<ProjectSummary | null>(null);
@@ -324,7 +324,7 @@ export default function ProjectSettingsPage() {
                       </TableHeader>
                       <TableBody>
                         {recentRuns.map((r) => (
-                          <TableRow key={r.run_id} className="border-border/60 cursor-pointer hover:bg-muted/30" onClick={() => router.push(`/app/runs/report?id=${r.run_id}`)}>
+                          <TableRow key={r.run_id} className="border-border/60 cursor-pointer hover:bg-muted/30" onClick={() => router.push(`/app/${projectId}/artifacts/${r.run_id}`)}>
                             <TableCell>
                               <p className="text-sm font-medium truncate max-w-[200px]">{r.test_name ?? r.run_id.slice(0, 8)}</p>
                               <p className="text-xs text-muted-foreground font-mono">{r.run_id.slice(0, 8)}</p>

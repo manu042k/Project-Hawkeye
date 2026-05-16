@@ -2,7 +2,7 @@
 
 import { use, useState, useEffect, useMemo } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Clock, Play, Plus, Trash2 } from "lucide-react";
 
 import { AppTopbar } from "@/components/app/app-topbar";
@@ -24,7 +24,7 @@ type Tab = "tests" | "schedule" | "history";
 
 export default function SuiteDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: suiteId } = use(params);
-  const projectId = useProjectStore((s) => s.currentProject?.id ?? "default");
+  const { projectId = "default" } = useParams<{ projectId: string }>();
   const router = useRouter();
 
   const [tab, setTab] = useState<Tab>("tests");
@@ -50,7 +50,7 @@ export default function SuiteDetailPage({ params }: { params: Promise<{ id: stri
       setAllCases(casesData.test_cases);
     } catch {
       toast.error("Suite not found");
-      router.push("/app/suites");
+      router.push(`/app/${projectId}/suites`);
     } finally {
       setLoading(false);
     }
@@ -163,7 +163,7 @@ export default function SuiteDetailPage({ params }: { params: Promise<{ id: stri
       <main className="flex-1 min-h-0 overflow-y-auto px-6 py-6">
         <div className="mx-auto max-w-3xl space-y-6">
           <div className="flex items-center justify-between gap-3 flex-wrap">
-            <Link href="/app/suites" className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
+            <Link href={`/app/${projectId}/suites`} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
               <ArrowLeft className="size-3.5" /> Test suites
             </Link>
             <Button size="sm" onClick={handleRunAll} disabled={!suite?.test_count}>
@@ -197,7 +197,7 @@ export default function SuiteDetailPage({ params }: { params: Promise<{ id: stri
                   <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Current tests</p>
                   {memberCases.map((tc) => (
                     <div key={tc.id} className="flex items-center gap-3 rounded-lg border border-border/60 bg-card/50 px-4 py-3">
-                      <Link href={`/app/test-cases/${tc.id}`} className="flex-1 text-sm font-medium hover:underline truncate">
+                      <Link href={`/app/${projectId}/test-cases/${tc.id}`} className="flex-1 text-sm font-medium hover:underline truncate">
                         {tc.name}
                       </Link>
                       <span className={cn(
@@ -309,7 +309,7 @@ export default function SuiteDetailPage({ params }: { params: Promise<{ id: stri
                 suiteRuns.map((r) => (
                   <Link
                     key={r.run_id}
-                    href={`/app/artifacts/${r.run_id}`}
+                    href={`/app/${projectId}/artifacts/${r.run_id}`}
                     className="flex items-center gap-3 rounded-lg border border-border/60 bg-card/50 px-4 py-3 hover:border-border transition-colors"
                   >
                     <span className={cn(

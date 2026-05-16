@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { Activity, CheckCircle2, ChevronLeft, ChevronRight, ExternalLink, FlaskConical, Search, Trash2, Zap } from "lucide-react";
 import Link from "next/link";
 
@@ -27,10 +27,10 @@ const METRIC_TONE: Record<string, string> = {
   primary: "text-foreground",
 };
 
-function runHref(run: RunSummary): string {
+function runHref(run: RunSummary, projectId: string): string {
   return ACTIVE.has(run.status)
-    ? `/app/runs/live?id=${run.run_id}`
-    : `/app/artifacts/${run.run_id}`;
+    ? `/app/${projectId}/runs/live?id=${run.run_id}`
+    : `/app/${projectId}/artifacts/${run.run_id}`;
 }
 
 // Deterministic muted-color avatar from a string
@@ -261,6 +261,7 @@ function RunsPagination({
 
 export default function DashboardPage() {
   const project = useProjectStore((s) => s.currentProject);
+  const { projectId = project?.id ?? "default" } = useParams<{ projectId: string }>();
   const router = useRouter();
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -301,7 +302,7 @@ export default function DashboardPage() {
 
   function handleView(e: React.MouseEvent, run: RunSummary) {
     e.stopPropagation();
-    router.push(runHref(run));
+    router.push(runHref(run, projectId));
   }
 
   async function handleDelete(e: React.MouseEvent, runId: string) {
@@ -328,7 +329,7 @@ export default function DashboardPage() {
           {/* KPI cards */}
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
             {/* Action card — first */}
-            <Link href="/app/test-cases/new" className="block h-full">
+            <Link href={`/app/${projectId}/test-cases/new`} className="block h-full">
               <Card className="group h-full cursor-pointer border-dashed border-border/60 bg-card/40 transition-all hover:border-primary/50 hover:bg-card/70">
                 <CardContent className="flex items-center gap-4 px-5 py-3">
                   <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-border/60 transition-colors group-hover:bg-primary/20">
@@ -415,7 +416,7 @@ export default function DashboardPage() {
                       pageRows.map((row: RunSummary) => {
                         const name = row.test_name ?? row.run_id.slice(0, 8);
                         const actor = row.triggered_by ?? "";
-                        const href = runHref(row);
+                        const href = runHref(row, projectId);
                         return (
                           <TableRow
                             key={row.run_id}

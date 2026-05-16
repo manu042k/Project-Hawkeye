@@ -28,7 +28,7 @@ import { useProjectStore } from "@/lib/project/store";
 import { useNotificationStore } from "@/lib/notifications/store";
 import { cn } from "@/lib/utils";
 
-import { globalFooterNav, primaryNav, workspaceSettingsNav, type AppNavItem, type GlobalFooterNavItem } from "./nav-items";
+import { globalFooterNav, getPrimaryNav, getWorkspaceSettingsNav, type AppNavItem, type GlobalFooterNavItem } from "./nav-items";
 
 function useHash() {
   const [hash, setHash] = useState("");
@@ -164,6 +164,13 @@ export function UnifiedSidebar({ className }: { className?: string }) {
   }, [userEmail, status]); // eslint-disable-line react-hooks/exhaustive-deps
   const hub = isGlobalHubPath(pathname);
 
+  // Extract projectId from /app/{projectId}/... workspace URLs
+  const segments = pathname.split("/").filter(Boolean);
+  const projectId = !hub && segments.length >= 2 ? segments[1] : null;
+
+  const primaryNav = projectId ? getPrimaryNav(projectId) : [];
+  const workspaceSettingsNav = projectId ? getWorkspaceSettingsNav(projectId) : [];
+
   let hubKey: HubKey = "projects";
   if (pathname.startsWith("/app/account")) hubKey = "account";
   else if (pathname.startsWith("/app/billing")) hubKey = "billing";
@@ -240,7 +247,7 @@ export function UnifiedSidebar({ className }: { className?: string }) {
                   active={pathname === "/app" || pathname === "/app/"}
                 />
                 <Link
-                  href={userEmail && getProjectForUser(userEmail) ? "/app/dashboard" : "/app"}
+                  href={userEmail && getProjectForUser(userEmail) ? `/app/${getProjectForUser(userEmail)!.id}/dashboard` : "/app"}
                   className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium tracking-tight text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
                 >
                   <Layers className="size-4 shrink-0" aria-hidden />

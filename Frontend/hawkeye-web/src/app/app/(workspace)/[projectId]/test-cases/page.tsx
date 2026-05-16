@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { Copy, MoreHorizontal, Play, Plus, Search, Trash2 } from "lucide-react";
 
 import { AppTopbar } from "@/components/app/app-topbar";
@@ -27,7 +27,7 @@ const PRIORITY_COLORS: Record<string, string> = {
 };
 
 export default function TestCasesPage() {
-  const projectId = useProjectStore((s) => s.currentProject?.id ?? "default");
+  const { projectId = "default" } = useParams<{ projectId: string }>();
   const router = useRouter();
   const [cases, setCases] = useState<TestCaseSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -93,7 +93,7 @@ export default function TestCasesPage() {
               onChange={(e) => setQ(e.target.value)}
             />
           </div>
-          <Link href="/app/test-cases/new" className={cn(buttonVariants({ variant: "default" }), "gap-2")}>
+          <Link href={`/app/${projectId}/test-cases/new`} className={cn(buttonVariants({ variant: "default" }), "gap-2")}>
             <Plus className="size-4" />
             New Test Case
           </Link>
@@ -116,7 +116,7 @@ export default function TestCasesPage() {
             <p className="text-muted-foreground text-sm mb-4">
               {q ? `No test cases matching "${q}"` : "No test cases yet."}
             </p>
-            <Link href="/app/test-cases/new" className={cn(buttonVariants({ variant: "default" }), "gap-2")}>
+            <Link href={`/app/${projectId}/test-cases/new`} className={cn(buttonVariants({ variant: "default" }), "gap-2")}>
               <Plus className="size-4" />
               Create your first test case
             </Link>
@@ -127,7 +127,7 @@ export default function TestCasesPage() {
               <Card
                 key={tc.id}
                 className="group border-border/60 bg-card/50 hover:border-primary/40 transition-colors cursor-pointer"
-                onClick={() => router.push(`/app/test-cases/${tc.id}`)}
+                onClick={() => router.push(`/app/${projectId}/test-cases/${tc.id}`)}
               >
                 <CardHeader className="pb-2">
                   <div className="flex items-start justify-between gap-2">

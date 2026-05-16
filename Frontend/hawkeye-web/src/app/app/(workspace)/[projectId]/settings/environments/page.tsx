@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
 import { Plus, Trash2, Star } from "lucide-react";
 
 import { AppTopbar } from "@/components/app/app-topbar";
@@ -12,11 +13,10 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 
 import { apiClient, type Environment } from "@/lib/api/client";
-import { useProjectStore } from "@/lib/project/store";
 import { cn } from "@/lib/utils";
 
 export default function EnvironmentsPage() {
-  const projectId = useProjectStore((s) => s.currentProject?.id ?? "default");
+  const { projectId = "default" } = useParams<{ projectId: string }>();
   const [envs, setEnvs] = useState<Environment[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);

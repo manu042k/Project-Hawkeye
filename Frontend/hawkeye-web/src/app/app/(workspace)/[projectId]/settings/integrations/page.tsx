@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
 import { Eye, EyeOff, Trash2 } from "lucide-react";
 
 import { AppTopbar } from "@/components/app/app-topbar";
@@ -12,7 +13,6 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 
 import { apiClient } from "@/lib/api/client";
-import { useProjectStore } from "@/lib/project/store";
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
 const WEBHOOK_URL = `${API_URL}/api/webhook/github`;
@@ -20,7 +20,7 @@ const WEBHOOK_URL = `${API_URL}/api/webhook/github`;
 type Integration = { id: string; type: string; enabled: boolean; config: Record<string, unknown>; created_at: string };
 
 export default function IntegrationsPage() {
-  const projectId = useProjectStore((s) => s.currentProject?.id ?? "default");
+  const { projectId = "default" } = useParams<{ projectId: string }>();
   const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [loading, setLoading] = useState(true);
 

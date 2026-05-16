@@ -126,7 +126,9 @@ function ProjectSelectorContent() {
     const proj = { id: p.id, name: p.name, environment: "staging" as const, lastRunOk: null };
     setCurrentProject(proj);
     if (session?.user?.email) setProjectForUser(session.user.email, proj);
-    router.push(resume.startsWith("/app") ? resume : "/app/dashboard");
+    // If resume points to a project-scoped path use it, otherwise go to the project dashboard
+    const destination = resume.startsWith(`/app/${p.id}/`) ? resume : `/app/${p.id}/dashboard`;
+    router.push(destination);
   }
 
   async function onCreateProject(e: React.FormEvent) {
@@ -141,7 +143,7 @@ function ProjectSelectorContent() {
       setCurrentProject(newProj);
       if (session?.user?.email) setProjectForUser(session.user.email, newProj);
       setDialogOpen(false);
-      router.push("/app/dashboard");
+      router.push(`/app/${proj.id}/dashboard`);
     } catch {
       toast.error("Failed to create project");
     }
@@ -280,7 +282,7 @@ function ProjectSelectorContent() {
                       const sp = { id: p.id, name: p.name, environment: "staging" as const, lastRunOk: null };
                       setCurrentProject(sp);
                       if (session?.user?.email) setProjectForUser(session.user.email, sp);
-                      router.push("/app/settings/project");
+                      router.push(`/app/${p.id}/settings/project`);
                     }}
                     className="absolute right-3 top-3 rounded-md p-1 text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-muted hover:text-foreground transition-all"
                     title="Project settings"

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useParams } from "next/navigation";
 import {
   CheckCircle2, ChevronDown, ChevronRight, Clock,
   Film, ImageIcon, Printer, XCircle, Zap,
@@ -224,6 +225,7 @@ function StepTraceItem({
 
 export default function ArtifactDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: runId } = use(params);
+  const { projectId = "default" } = useParams<{ projectId: string }>();
   const reportRef = useRef<HTMLDivElement>(null);
   const [lightbox, setLightbox] = useState<string | null>(null);
 
@@ -261,7 +263,7 @@ export default function ArtifactDetailPage({ params }: { params: Promise<{ id: s
         <main className="flex-1 flex items-center justify-center">
           <div className="text-center space-y-2">
             <p className="text-sm text-rose-400">{runError ?? "Run not found"}</p>
-            <Link href="/app/artifacts" className={cn(buttonVariants({ variant: "outline" }), "h-8 text-xs")}>
+            <Link href={`/app/${projectId}/artifacts`} className={cn(buttonVariants({ variant: "outline" }), "h-8 text-xs")}>
               Back to Artifacts
             </Link>
           </div>
@@ -326,7 +328,7 @@ export default function ArtifactDetailPage({ params }: { params: Promise<{ id: s
                 Video
               </a>
             )}
-            <Link href="/app/artifacts" className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
+            <Link href={`/app/${projectId}/artifacts`} className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
               All reports
             </Link>
           </div>
