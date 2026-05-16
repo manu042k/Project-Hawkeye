@@ -94,6 +94,148 @@ function Toggle({
   );
 }
 
+function StepsTab({
+  checkpoints,
+  activeCheckpoint,
+  onSetActive,
+  onAdd,
+  onUpdate,
+  onRemove,
+  savedView,
+  onEdit,
+}: {
+  checkpoints: Checkpoint[];
+  activeCheckpoint: number | null;
+  onSetActive: (i: number) => void;
+  onAdd: () => void;
+  onUpdate: (i: number, patch: Partial<Checkpoint>) => void;
+  onRemove: (i: number) => void;
+  savedView: boolean;
+  onEdit: () => void;
+}) {
+  const cp = activeCheckpoint !== null ? checkpoints[activeCheckpoint] : null;
+  return (
+    <div
+      className="rounded-xl border border-border/60 bg-card/40 overflow-hidden"
+      style={{ minHeight: "calc(100vh - 260px)" }}
+    >
+      <div className="flex items-center justify-between gap-3 border-b border-border/60 px-4 py-3 bg-card/60">
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-semibold">Steps</span>
+          <span className="text-xs text-muted-foreground">
+            {checkpoints.length} step{checkpoints.length !== 1 ? "s" : ""}
+          </span>
+        </div>
+        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={onAdd}>
+          <Plus className="size-3" /> Add step
+        </Button>
+      </div>
+
+      <div className="flex overflow-hidden" style={{ height: "calc(100vh - 320px)" }}>
+        {/* LEFT — step list */}
+        <div className="w-52 shrink-0 border-r border-border/60 overflow-y-auto bg-card/20">
+          {checkpoints.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full py-8 px-3 text-center">
+              <p className="text-xs text-muted-foreground mb-3">No steps yet</p>
+              <Button variant="outline" size="sm" className="text-xs h-7" onClick={onAdd}>
+                Add first step
+              </Button>
+            </div>
+          ) : (
+            <ul className="py-1">
+              {checkpoints.map((c, i) => (
+                <li key={i}>
+                  <button
+                    onClick={() => onSetActive(i)}
+                    className={cn(
+                      "w-full text-left px-3 py-3 text-xs flex items-start gap-2 border-b border-border/40 transition-colors group",
+                      activeCheckpoint === i
+                        ? "bg-primary/10 text-foreground"
+                        : "text-muted-foreground hover:bg-muted/40 hover:text-foreground",
+                    )}
+                  >
+                    <GripVertical className="size-3 mt-0.5 shrink-0 opacity-30 group-hover:opacity-60" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <span className="font-mono text-[10px] opacity-60">{c.id}</span>
+                      </div>
+                      <p className="truncate text-[11px] leading-snug">
+                        {c.description ? (
+                          c.description.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 60) || <em className="opacity-40">empty</em>
+                        ) : (
+                          <em className="opacity-40">empty</em>
+                        )}
+                      </p>
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {/* RIGHT — step editor */}
+        <div className="flex-1 overflow-y-auto">
+          {cp !== null && activeCheckpoint !== null ? (
+            <div className="p-5 space-y-5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex items-center gap-2">
+                  <span className="flex size-6 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary font-mono">
+                    {activeCheckpoint + 1}
+                  </span>
+                  <span className="text-xs text-muted-foreground font-mono">{cp.id}</span>
+                </span>
+                <button
+                  onClick={() => onRemove(activeCheckpoint)}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-rose-400 transition-colors px-2 py-1 rounded hover:bg-rose-500/10"
+                >
+                  <Trash2 className="size-3.5" /> Delete step
+                </button>
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="flex size-5 items-center justify-center rounded-full bg-muted/60 text-[10px] font-bold text-muted-foreground shrink-0">1</span>
+                  <p className="text-xs font-semibold text-foreground">What happens</p>
+                </div>
+                <RichTextEditor
+                  value={cp.description}
+                  onChange={(v) => onUpdate(activeCheckpoint, { description: v })}
+                  rows={4}
+                  compact
+                  placeholder="Describe the action or state at this step…"
+                  viewMode={savedView}
+                  onEdit={onEdit}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="flex size-5 items-center justify-center rounded-full bg-muted/60 text-[10px] font-bold text-muted-foreground shrink-0">2</span>
+                  <p className="text-xs font-semibold text-foreground">Success signal</p>
+                </div>
+                <RichTextEditor
+                  value={cp.success_signal}
+                  onChange={(v) => onUpdate(activeCheckpoint, { success_signal: v })}
+                  rows={3}
+                  viewMode={savedView}
+                  onEdit={onEdit}
+                  compact
+                  placeholder="How does the agent know this step passed?"
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+              {checkpoints.length > 0 ? "Select a step to edit" : "Add a step to get started"}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SectionHeader({ title }: { title: string }) {
   return (
     <h3 className="text-sm font-semibold border-b border-border/60 pb-2">
@@ -963,177 +1105,18 @@ export default function TestCaseDetailPage({
           )}
 
           {/* ── STEPS & ASSERTIONS — master-detail ── */}
-          {tab === "test-design" &&
-            (() => {
-              const cp =
-                activeCheckpoint !== null
-                  ? checkpoints[activeCheckpoint]
-                  : null;
-
-              return (
-                <div
-                  className="rounded-xl border border-border/60 bg-card/40 overflow-hidden"
-                  style={{ minHeight: "calc(100vh - 260px)" }}
-                >
-                  {/* panel header */}
-                  <div className="flex items-center justify-between gap-3 border-b border-border/60 px-4 py-3 bg-card/60">
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm font-semibold">Steps</span>
-                      <span className="text-xs text-muted-foreground">
-                        {checkpoints.length} step
-                        {checkpoints.length !== 1 ? "s" : ""}
-                      </span>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-7 text-xs"
-                      onClick={addCheckpoint}
-                    >
-                      <Plus className="size-3" /> Add step
-                    </Button>
-                  </div>
-
-                  {/* master | detail */}
-                  <div
-                    className="flex overflow-hidden"
-                    style={{ height: "calc(100vh - 320px)" }}
-                  >
-                    {/* LEFT — step list */}
-                    <div className="w-52 shrink-0 border-r border-border/60 overflow-y-auto bg-card/20">
-                      {checkpoints.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center h-full py-8 px-3 text-center">
-                          <p className="text-xs text-muted-foreground mb-3">
-                            No steps yet
-                          </p>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="text-xs h-7"
-                            onClick={addCheckpoint}
-                          >
-                            Add first step
-                          </Button>
-                        </div>
-                      ) : (
-                        <ul className="py-1">
-                          {checkpoints.map((c, i) => (
-                            <li key={i}>
-                              <button
-                                onClick={() => setActiveCheckpoint(i)}
-                                className={cn(
-                                  "w-full text-left px-3 py-3 text-xs flex items-start gap-2 border-b border-border/40 transition-colors group",
-                                  activeCheckpoint === i
-                                    ? "bg-primary/10 text-foreground"
-                                    : "text-muted-foreground hover:bg-muted/40 hover:text-foreground",
-                                )}
-                              >
-                                <GripVertical className="size-3 mt-0.5 shrink-0 opacity-30 group-hover:opacity-60" />
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-1.5 mb-0.5">
-                                    <span className="font-mono text-[10px] opacity-60">
-                                      {c.id}
-                                    </span>
-                                  </div>
-                                  <p className="truncate text-[11px] leading-snug">
-                                    {c.description ? (
-                                      c.description.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 60) || <em className="opacity-40">empty</em>
-                                    ) : (
-                                      <em className="opacity-40">empty</em>
-                                    )}
-                                  </p>
-                                </div>
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-
-                    {/* RIGHT — step editor */}
-                    <div className="flex-1 overflow-y-auto">
-                      {cp !== null && activeCheckpoint !== null ? (
-                        <div className="p-5 space-y-5">
-                          {/* step num + delete */}
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="flex items-center gap-2">
-                              <span className="flex size-6 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary font-mono">
-                                {activeCheckpoint + 1}
-                              </span>
-                              <span className="text-xs text-muted-foreground font-mono">{cp.id}</span>
-                            </span>
-                            <button
-                              onClick={() => removeCheckpoint(activeCheckpoint)}
-                              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-rose-400 transition-colors px-2 py-1 rounded hover:bg-rose-500/10"
-                            >
-                              <Trash2 className="size-3.5" /> Delete step
-                            </button>
-                          </div>
-
-                          {/* ① What happens */}
-                          <div className="space-y-1.5">
-                            <div className="flex items-center gap-2">
-                              <span className="flex size-5 items-center justify-center rounded-full bg-muted/60 text-[10px] font-bold text-muted-foreground shrink-0">
-                                1
-                              </span>
-                              <p className="text-xs font-semibold text-foreground">
-                                What happens
-                              </p>
-                            </div>
-                            <RichTextEditor
-                              value={cp.description}
-                              onChange={(v) =>
-                                updateCheckpoint(activeCheckpoint, {
-                                  description: v,
-                                })
-                              }
-                              rows={4}
-                              compact
-                              placeholder="Describe the action or state at this step…"
-                              viewMode={savedView}
-                              onEdit={editAll}
-                            />
-                          </div>
-
-                          {/* ② Success signal */}
-                          <div className="space-y-1.5">
-                            <div className="flex items-center gap-2">
-                              <span className="flex size-5 items-center justify-center rounded-full bg-muted/60 text-[10px] font-bold text-muted-foreground shrink-0">
-                                2
-                              </span>
-                              <p className="text-xs font-semibold text-foreground">
-                                Success signal
-                              </p>
-                            </div>
-                            <RichTextEditor
-                              value={cp.success_signal}
-                              onChange={(v) =>
-                                updateCheckpoint(activeCheckpoint, {
-                                  success_signal: v,
-                                })
-                              }
-                              rows={3}
-                              viewMode={savedView}
-                              onEdit={editAll}
-                              compact
-                              placeholder="How does the agent know this step passed?"
-                            />
-                          </div>
-
-
-                        </div>
-                      ) : (
-                        <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-                          {checkpoints.length > 0
-                            ? "Select a step to edit"
-                            : "Add a step to get started"}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
+          {tab === "test-design" && (
+            <StepsTab
+              checkpoints={checkpoints}
+              activeCheckpoint={activeCheckpoint}
+              onSetActive={setActiveCheckpoint}
+              onAdd={addCheckpoint}
+              onUpdate={updateCheckpoint}
+              onRemove={removeCheckpoint}
+              savedView={savedView}
+              onEdit={editAll}
+            />
+          )}
 
           {/* ── HISTORY ── */}
           {tab === "history" && (
