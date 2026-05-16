@@ -21,6 +21,25 @@ import { useProjectStore } from "@/lib/project/store";
 
 const TERMINAL = new Set<RunStatus>(["passed", "failed", "errored", "timed_out", "blocked", "cancelled"]);
 
+const LOG_TAG_CFG: Record<LogLevel, { chip: string; msg: string }> = {
+  step:       { chip: "bg-muted text-muted-foreground",
+                msg:  "text-foreground/70 font-semibold" },
+  observe:    { chip: "bg-sky-500/15 text-sky-600 dark:text-sky-400",
+                msg:  "text-sky-700 dark:text-sky-400/80" },
+  reasoning:  { chip: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
+                msg:  "text-amber-800 dark:text-amber-200/70" },
+  action:     { chip: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
+                msg:  "text-emerald-700 dark:text-emerald-400" },
+  action_err: { chip: "bg-rose-500/15 text-rose-600 dark:text-rose-400",
+                msg:  "text-rose-600 dark:text-rose-400" },
+  error:      { chip: "bg-rose-500/20 text-rose-700 dark:text-rose-300 font-bold",
+                msg:  "text-rose-700 dark:text-rose-300" },
+  complete:   { chip: "bg-violet-500/15 text-violet-700 dark:text-violet-300",
+                msg:  "text-violet-700 dark:text-violet-300" },
+  system:     { chip: "bg-muted text-muted-foreground/70",
+                msg:  "text-muted-foreground/70" },
+};
+
 type LogLevel = "step" | "observe" | "reasoning" | "action" | "action_err" | "error" | "complete" | "system";
 type LogLine = { ts: string; level: LogLevel; tag: string; message: string };
 
@@ -112,7 +131,173 @@ function formatDuration(s: number | null): string {
   return `${Math.floor(s / 60)}m ${(s % 60).toFixed(0)}s`;
 }
 
-// ---- Run detail panel (extracted from original page) ----
+// ---- Agent execution log panel ----
+
+function AgentLogPanel({ logLines, isDone }: { logLines: LogLine[]; isDone: boolean }) {
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    scrollRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+  }, [logLines.length]);
+
+  return (
+    <div className="flex w-[40%] shrink-0 flex-col border-r border-border/60 min-h-0">
+      <div className="flex items-center gap-2 border-b border-border/60 bg-muted/60 px-4 py-2.5 shrink-0">
+        <div className="flex items-center gap-1.5">
+          <span className="size-2.5 rounded-full bg-rose-500/70" />
+          <span className="size-2.5 rounded-full bg-amber-500/70" />
+          <span className="size-2.5 rounded-full bg-emerald-500/70" />
+        </div>
+        <div className="flex-1 flex items-center justify-center gap-1.5">
+          <TerminalIcon className="size-3 text-muted-foreground/60" />
+          <span className="text-[11px] font-medium text-muted-foreground/70 tracking-wide">agent · execution log</span>
+        </div>
+      </div>
+
+      <ScrollArea className="flex-1 min-h-0 bg-muted/20">
+        <div className="p-3 font-mono text-[11px] leading-relaxed space-y-0.5">
+          {logLines.length === 0 && !isDone && (
+            <div className="text-muted-foreground/40 italic px-1">connecting…</div>
+          )}
+          {logLines.map((l, idx) => {
+            const cfg = LOG_TAG_CFG[l.level];
+            if (l.level === "step") {
+              return (
+                <div key={idx} className="flex items-center gap-2 py-1.5 mt-1">
+                  <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold tracking-wider ${cfg.chip}`}>
+                    {l.tag}
+                  </span>
+                  <span className="flex-1 h-px bg-border/60" />
+                  <span className="text-muted-foreground/40 text-[10px]">{l.ts}</span>
+                </div>
+              );
+            }
+            return (
+              <div key={idx} className="flex items-start gap-2 px-1 py-0.5 rounded hover:bg-muted/40 transition-colors">
+                <span className="shrink-0 text-muted-foreground/40 w-[4.2rem] pt-0.5 tabular-nums">{l.ts}</span>
+                <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold tracking-wider leading-none ${cfg.chip}`}>
+                  {l.tag}
+                </span>
+                <span className={`${cfg.msg} break-all`}>{l.message}</span>
+              </div>
+            );
+          })}
+          {!isDone && (
+            <div className="flex items-center gap-2 px-1 py-1 text-muted-foreground/40">
+              <span className="text-muted-foreground/50">$</span>
+              <span className="h-3.5 w-1.5 bg-muted-foreground/50 animate-pulse rounded-sm" />
+            </div>
+          )}
+          <div ref={scrollRef} />
+        </div>
+      </ScrollArea>
+    </div>
+  );
+}
+
+// ---- Run configuration + browser feed panel ----
+
+function RunConfigAndBrowser({ run, novncUrl, status }: {
+  run: ReturnType<typeof useRun>["data"];
+  novncUrl: string | null;
+  status: RunStatus | null;
+}) {
+  return (
+    <div className="flex flex-1 min-h-0 flex-col overflow-y-auto">
+      <div className="shrink-0 border-b border-border/60 bg-card/30 px-5 py-4 space-y-3">
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
+          Run Configuration
+        </p>
+        <div className="space-y-0 divide-y divide-border/40 rounded-lg border border-border/50 overflow-hidden text-sm">
+          <div className="flex items-center gap-3 px-3 py-2.5 bg-background/50">
+            <span className="w-28 shrink-0 text-xs text-muted-foreground/60">Test case</span>
+            <span className="font-medium text-foreground truncate">{run?.test_name ?? <span className="text-muted-foreground/40 italic">loading…</span>}</span>
+          </div>
+          <div className="flex items-center gap-3 px-3 py-2.5 bg-background/30">
+            <span className="w-28 shrink-0 text-xs text-muted-foreground/60">Browser</span>
+            <span className="inline-flex items-center gap-1.5 text-foreground/80">
+              <Globe className="size-3 text-muted-foreground/50" />
+              <span className="capitalize text-sm">{run?.browser_used ?? "chromium"}</span>
+            </span>
+          </div>
+          <div className="flex items-center gap-3 px-3 py-2.5 bg-background/50">
+            <span className="w-28 shrink-0 text-xs text-muted-foreground/60">Recording</span>
+            {run?.recording ? (
+              <span className="inline-flex items-center gap-1.5 text-rose-400">
+                <Video className="size-3" /><span className="text-sm font-medium">On</span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 text-muted-foreground/60">
+                <Video className="size-3" /><span className="text-sm">Off</span>
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-3 px-3 py-2.5 bg-background/30">
+            <span className="w-28 shrink-0 text-xs text-muted-foreground/60">Viewport</span>
+            <span className="font-mono text-sm text-foreground/80">
+              {run?.viewport
+                ? `${run.viewport.width} × ${run.viewport.height}${run.viewport.device_scale_factor && run.viewport.device_scale_factor !== 1 ? ` @${run.viewport.device_scale_factor}x` : ""}`
+                : "—"}
+            </span>
+          </div>
+          <div className="flex items-start gap-3 px-3 py-2.5 bg-background/50">
+            <span className="w-28 shrink-0 text-xs text-muted-foreground/60 pt-0.5">Model</span>
+            <span className="font-mono text-xs text-foreground/70 break-all leading-relaxed">{run?.model_used ?? "—"}</span>
+          </div>
+          {run?.max_steps_override != null && (
+            <div className="flex items-center gap-3 px-3 py-2.5 bg-background/50">
+              <span className="w-28 shrink-0 text-xs text-muted-foreground/60">Max steps</span>
+              <span className="font-mono text-sm text-foreground/80">{run.max_steps_override}</span>
+            </div>
+          )}
+          {run?.timeout_override != null && (
+            <div className="flex items-center gap-3 px-3 py-2.5 bg-background/30">
+              <span className="w-28 shrink-0 text-xs text-muted-foreground/60">Timeout</span>
+              <span className="font-mono text-sm text-foreground/80">{run.timeout_override}s</span>
+            </div>
+          )}
+          <div className="flex items-center gap-3 px-3 py-2.5 bg-background/50">
+            <span className="w-28 shrink-0 text-xs text-muted-foreground/60">Triggered by</span>
+            <span className="inline-flex items-center gap-1.5 text-foreground/70">
+              <User className="size-3 text-muted-foreground/50" />
+              <span className="text-sm truncate">{run?.triggered_by ?? "—"}</span>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="shrink-0">
+        <div className="flex items-center justify-between border-b border-border/60 bg-muted/20 px-4 py-2.5">
+          <div className="flex items-center gap-2">
+            <Monitor className="size-3.5 text-muted-foreground" />
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Browser Feed</span>
+          </div>
+          {novncUrl && (
+            <span className="flex items-center gap-1.5 text-[10px] font-semibold text-emerald-400">
+              <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              Live
+            </span>
+          )}
+        </div>
+        <div className="p-3">
+          {novncUrl ? (
+            <BrowserFeedFrame url={novncUrl} />
+          ) : (
+            <div className="flex flex-col items-center justify-center gap-3 py-12">
+              <div className="inline-flex size-12 items-center justify-center rounded-full bg-muted/30">
+                <Monitor className="size-6 text-muted-foreground/30" />
+              </div>
+              <p className="text-xs text-muted-foreground/50">
+                {status === "running" ? "Awaiting sandbox…" : "Available during active runs"}
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---- Run detail panel ----
 
 function RunDetailPanel({ runId }: { runId: string }) {
   const { events, liveStatus } = useRunTraceStream(runId);
@@ -134,11 +319,6 @@ function RunDetailPanel({ runId }: { runId: string }) {
     () => events.filter((e) => e.event_type === "step_start").length,
     [events],
   );
-
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    scrollRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
-  }, [logLines.length]);
 
   // Once the HTTP-polled run reaches a terminal state, trust it over the WS signal.
   const status = (run?.status && TERMINAL.has(run.status))
@@ -215,198 +395,8 @@ function RunDetailPanel({ runId }: { runId: string }) {
 
       {/* ── Main split: logs 40% | browser 60% ─────────────────────── */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
-
-        {/* Logs — terminal style */}
-        <div className="flex w-[40%] shrink-0 flex-col border-r border-border/60 min-h-0">
-          {/* Terminal title bar */}
-          <div className="flex items-center gap-2 border-b border-border/60 bg-muted/60 px-4 py-2.5 shrink-0">
-            <div className="flex items-center gap-1.5">
-              <span className="size-2.5 rounded-full bg-rose-500/70" />
-              <span className="size-2.5 rounded-full bg-amber-500/70" />
-              <span className="size-2.5 rounded-full bg-emerald-500/70" />
-            </div>
-            <div className="flex-1 flex items-center justify-center gap-1.5">
-              <TerminalIcon className="size-3 text-muted-foreground/60" />
-              <span className="text-[11px] font-medium text-muted-foreground/70 tracking-wide">agent · execution log</span>
-            </div>
-          </div>
-
-          {/* Terminal body */}
-          <ScrollArea className="flex-1 min-h-0 bg-muted/20">
-            <div className="p-3 font-mono text-[11px] leading-relaxed space-y-0.5">
-              {logLines.length === 0 && !isDone && (
-                <div className="text-muted-foreground/40 italic px-1">connecting…</div>
-              )}
-              {logLines.map((l, idx) => {
-                const tagCfg: Record<LogLevel, { chip: string; msg: string }> = {
-                  step:       { chip: "bg-muted text-muted-foreground",
-                                msg:  "text-foreground/70 font-semibold" },
-                  observe:    { chip: "bg-sky-500/15 text-sky-600 dark:text-sky-400",
-                                msg:  "text-sky-700 dark:text-sky-400/80" },
-                  reasoning:  { chip: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
-                                msg:  "text-amber-800 dark:text-amber-200/70" },
-                  action:     { chip: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
-                                msg:  "text-emerald-700 dark:text-emerald-400" },
-                  action_err: { chip: "bg-rose-500/15 text-rose-600 dark:text-rose-400",
-                                msg:  "text-rose-600 dark:text-rose-400" },
-                  error:      { chip: "bg-rose-500/20 text-rose-700 dark:text-rose-300 font-bold",
-                                msg:  "text-rose-700 dark:text-rose-300" },
-                  complete:   { chip: "bg-violet-500/15 text-violet-700 dark:text-violet-300",
-                                msg:  "text-violet-700 dark:text-violet-300" },
-                  system:     { chip: "bg-muted text-muted-foreground/70",
-                                msg:  "text-muted-foreground/70" },
-                };
-                const cfg = tagCfg[l.level];
-
-                if (l.level === "step") {
-                  return (
-                    <div key={idx} className="flex items-center gap-2 py-1.5 mt-1">
-                      <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold tracking-wider ${cfg.chip}`}>
-                        {l.tag}
-                      </span>
-                      <span className="flex-1 h-px bg-border/60" />
-                      <span className="text-muted-foreground/40 text-[10px]">{l.ts}</span>
-                    </div>
-                  );
-                }
-
-                return (
-                  <div key={idx} className="flex items-start gap-2 px-1 py-0.5 rounded hover:bg-muted/40 transition-colors">
-                    <span className="shrink-0 text-muted-foreground/40 w-[4.2rem] pt-0.5 tabular-nums">{l.ts}</span>
-                    <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold tracking-wider leading-none ${cfg.chip}`}>
-                      {l.tag}
-                    </span>
-                    <span className={`${cfg.msg} break-all`}>{l.message}</span>
-                  </div>
-                );
-              })}
-
-              {!isDone && (
-                <div className="flex items-center gap-2 px-1 py-1 text-muted-foreground/40">
-                  <span className="text-muted-foreground/50">$</span>
-                  <span className="h-3.5 w-1.5 bg-muted-foreground/50 animate-pulse rounded-sm" />
-                </div>
-              )}
-              <div ref={scrollRef} />
-            </div>
-          </ScrollArea>
-        </div>
-
-        {/* Config + Browser feed */}
-        <div className="flex flex-1 min-h-0 flex-col overflow-y-auto">
-
-          {/* ── Config list ──────────────────────────────────────────────── */}
-          <div className="shrink-0 border-b border-border/60 bg-card/30 px-5 py-4 space-y-3">
-
-            {/* Section label */}
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
-              Run Configuration
-            </p>
-
-            {/* Key-value rows */}
-            <div className="space-y-0 divide-y divide-border/40 rounded-lg border border-border/50 overflow-hidden text-sm">
-
-              <div className="flex items-center gap-3 px-3 py-2.5 bg-background/50">
-                <span className="w-28 shrink-0 text-xs text-muted-foreground/60">Test case</span>
-                <span className="font-medium text-foreground truncate">{run?.test_name ?? <span className="text-muted-foreground/40 italic">loading…</span>}</span>
-              </div>
-
-              <div className="flex items-center gap-3 px-3 py-2.5 bg-background/30">
-                <span className="w-28 shrink-0 text-xs text-muted-foreground/60">Browser</span>
-                <span className="inline-flex items-center gap-1.5 text-foreground/80">
-                  <Globe className="size-3 text-muted-foreground/50" />
-                  <span className="capitalize text-sm">{run?.browser_used ?? "chromium"}</span>
-                </span>
-              </div>
-
-              <div className="flex items-center gap-3 px-3 py-2.5 bg-background/50">
-                <span className="w-28 shrink-0 text-xs text-muted-foreground/60">Recording</span>
-                {run?.recording ? (
-                  <span className="inline-flex items-center gap-1.5 text-rose-400">
-                    <Video className="size-3" />
-                    <span className="text-sm font-medium">On</span>
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1.5 text-muted-foreground/60">
-                    <Video className="size-3" />
-                    <span className="text-sm">Off</span>
-                  </span>
-                )}
-              </div>
-
-              <div className="flex items-center gap-3 px-3 py-2.5 bg-background/30">
-                <span className="w-28 shrink-0 text-xs text-muted-foreground/60">Viewport</span>
-                <span className="font-mono text-sm text-foreground/80">
-                  {run?.viewport
-                    ? `${run.viewport.width} × ${run.viewport.height}${run.viewport.device_scale_factor && run.viewport.device_scale_factor !== 1 ? ` @${run.viewport.device_scale_factor}x` : ""}`
-                    : "—"}
-                </span>
-              </div>
-
-              <div className="flex items-start gap-3 px-3 py-2.5 bg-background/50">
-                <span className="w-28 shrink-0 text-xs text-muted-foreground/60 pt-0.5">Model</span>
-                <span className="font-mono text-xs text-foreground/70 break-all leading-relaxed">
-                  {run?.model_used ?? "—"}
-                </span>
-              </div>
-
-              {run?.max_steps_override != null && (
-                <div className="flex items-center gap-3 px-3 py-2.5 bg-background/50">
-                  <span className="w-28 shrink-0 text-xs text-muted-foreground/60">Max steps</span>
-                  <span className="font-mono text-sm text-foreground/80">{run.max_steps_override}</span>
-                </div>
-              )}
-
-              {run?.timeout_override != null && (
-                <div className="flex items-center gap-3 px-3 py-2.5 bg-background/30">
-                  <span className="w-28 shrink-0 text-xs text-muted-foreground/60">Timeout</span>
-                  <span className="font-mono text-sm text-foreground/80">{run.timeout_override}s</span>
-                </div>
-              )}
-
-              <div className="flex items-center gap-3 px-3 py-2.5 bg-background/50">
-                <span className="w-28 shrink-0 text-xs text-muted-foreground/60">Triggered by</span>
-                <span className="inline-flex items-center gap-1.5 text-foreground/70">
-                  <User className="size-3 text-muted-foreground/50" />
-                  <span className="text-sm truncate">{run?.triggered_by ?? "—"}</span>
-                </span>
-              </div>
-
-            </div>
-          </div>
-
-          {/* ── Browser feed ─────────────────────────────────────────────── */}
-          <div className="shrink-0">
-            <div className="flex items-center justify-between border-b border-border/60 bg-muted/20 px-4 py-2.5">
-              <div className="flex items-center gap-2">
-                <Monitor className="size-3.5 text-muted-foreground" />
-                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Browser Feed</span>
-              </div>
-              {novncUrl && (
-                <span className="flex items-center gap-1.5 text-[10px] font-semibold text-emerald-400">
-                  <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  Live
-                </span>
-              )}
-            </div>
-            <div className="p-3">
-              {novncUrl ? (
-                <BrowserFeedFrame url={novncUrl} />
-              ) : (
-                <div className="flex flex-col items-center justify-center gap-3 py-12">
-                  <div className="inline-flex size-12 items-center justify-center rounded-full bg-muted/30">
-                    <Monitor className="size-6 text-muted-foreground/30" />
-                  </div>
-                  <p className="text-xs text-muted-foreground/50">
-                    {status === "running" ? "Awaiting sandbox…" : "Available during active runs"}
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-
-        </div>
-
+        <AgentLogPanel logLines={logLines} isDone={isDone} />
+        <RunConfigAndBrowser run={run} novncUrl={novncUrl} status={status} />
       </div>
     </div>
   );
