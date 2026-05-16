@@ -9,8 +9,6 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./postgres:/docker-entrypoint-initdb.d:ro
-    ports:
-      - "5432:5432"
     networks:
       - hawkeye-net
     restart: unless-stopped
