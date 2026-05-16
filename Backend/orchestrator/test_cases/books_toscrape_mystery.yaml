@@ -1,0 +1,74 @@
+id: "TC-005"
+name: "Books.toscrape  - find cheapest book in Mystery category"
+suite: "eval-dataset-v1"
+priority: "P1"
+tags: ["books", "e-commerce", "navigation", "static", "price-comparison"]
+created_by: "<user-id>"
+project: "<project-id>"
+save_record: false
+
+target:
+  url: "http://books.toscrape.com"
+  browser: "chromium"
+  viewport:
+    width: 1280
+    height: 720
+    device_scale_factor: 1.0
+  page_type: static
+  app_description: |
+    Books to Scrape  - a static demo bookstore built for web-scraping practice.
+    Prices are shown in £ GBP. Genre categories are listed in the left sidebar.
+    No login or JavaScript required.
+
+goal:
+  objective: |
+    Navigate to the Mystery genre category on Books to Scrape. Scan the prices
+    of books on the first page, identify the cheapest one, and click it to open
+    its detail page. Verify the page shows the book is in stock and displays a
+    price in £ GBP. Do not add to basket or proceed to checkout.
+
+  constraints:
+    max_steps: 20
+    timeout_seconds: 120
+    max_retries_per_action: 2
+
+  extra_details: |
+    The left sidebar under 'Books' lists all genre categories  - click 'Mystery'.
+    On the Mystery page, each book card shows a price like £10.99 below the thumbnail.
+    Scan all visible prices and click the title of the book with the lowest price.
+    The detail page has an 'Availability' section showing 'In stock (N available)'.
+    Once on the detail page with price and availability visible, emit <GOAL_COMPLETE>.
+
+  steps:
+    checkpoints:
+      - id: S1
+        description: |
+          Click the 'Mystery' genre category link in the left sidebar.
+        success_signal: |
+          The Mystery category page loads showing a grid of book cards, each
+          with a title, thumbnail, price in £, and star rating.
+
+      - id: S2
+        description: |
+          Scan all book prices on the first page and click the title of the
+          book with the lowest £ price.
+        success_signal: |
+          The book detail page loads showing the book's title, a price in
+          £X.XX format, and an Availability section.
+
+      - id: S3
+        description: |
+          Confirm the detail page shows the book is in stock.
+        success_signal: |
+          The Availability section shows 'In stock' and a price in £ GBP is
+          visible. Goal is complete.
+
+on_failure:
+  capture:
+    screenshot: true
+    dom_snapshot: true
+    network_log: true
+    console_log: true
+    agent_trace: true
+    video: true
+  notify: {}

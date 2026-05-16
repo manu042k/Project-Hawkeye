@@ -1,0 +1,67 @@
+id: "TC-007"
+name: "The-Internet  - login form with known credentials"
+suite: "eval-dataset-v1"
+priority: "P1"
+tags: ["auth", "form", "login", "ssr", "herokuapp"]
+created_by: "<user-id>"
+project: "<project-id>"
+save_record: false
+
+target:
+  url: "https://the-internet.herokuapp.com/login"
+  browser: "chromium"
+  viewport:
+    width: 1280
+    height: 720
+    device_scale_factor: 1.0
+  page_type: ssr
+  app_description: |
+    The Internet (Heroku)  - a practice web automation site. The /login page has
+    a simple username/password form with known test credentials:
+    username 'tomsmith', password 'SuperSecretPassword!'.
+
+goal:
+  objective: |
+    Fill in the login form with username 'tomsmith' and password
+    'SuperSecretPassword!', submit the form, and verify that the secure
+    area page loads with a success flash message 'You logged into a secure area'.
+    Do not navigate to any domain other than the-internet.herokuapp.com.
+
+  constraints:
+    max_steps: 10
+    timeout_seconds: 300
+    max_retries_per_action: 2
+
+  extra_details: |
+    The page may be slow to load (Heroku cold start)  - wait for the form before typing.
+    Include the exclamation mark in the password: SuperSecretPassword!
+    After successful login, a green flash message appears: 'You logged into a secure area!'
+    If login fails (red flash), retry with the exact credentials: tomsmith / SuperSecretPassword!
+
+  steps:
+    checkpoints:
+      - id: S1
+        description: |
+          Click the Username field and type 'tomsmith'. Click the Password field
+          and type 'SuperSecretPassword!' (include the exclamation mark). Click
+          the 'Login' button to submit.
+        success_signal: |
+          The page redirects to the secure area and a green flash message
+          saying 'You logged into a secure area!' appears at the top.
+
+      - id: S2
+        description: |
+          Confirm the success flash message is visible.
+        success_signal: |
+          The text 'You logged into a secure area' is visible in a green banner.
+          Goal is complete.
+
+on_failure:
+  capture:
+    screenshot: true
+    dom_snapshot: true
+    network_log: true
+    console_log: true
+    agent_trace: true
+    video: true
+  notify: {}

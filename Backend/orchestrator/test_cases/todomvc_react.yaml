@@ -1,0 +1,81 @@
+id: "TC-008"
+name: "TodoMVC React  - add, complete, and filter to-do items"
+suite: "eval-dataset-v1"
+priority: "P1"
+tags: ["todo", "spa", "react", "form-input", "state", "filter"]
+created_by: "<user-id>"
+project: "<project-id>"
+save_record: false
+
+target:
+  url: "https://demo.playwright.dev/todomvc"
+  browser: "chromium"
+  viewport:
+    width: 1280
+    height: 720
+    device_scale_factor: 1.0
+  page_type: spa
+  app_description: |
+    TodoMVC React  - the canonical React to-do app. Items are added via the top
+    input and stored in component state. No backend or persistence. Three filter
+    tabs at the bottom: All, Active, Completed.
+
+goal:
+  objective: |
+    Add two to-do items: 'Buy groceries' and 'Read a book'. Mark 'Buy groceries'
+    as complete by clicking its checkbox. Click the 'Active' filter link and verify
+    only 'Read a book' remains visible with the counter showing '1 item left'.
+    Do not navigate to any other domain.
+
+  constraints:
+    max_steps: 20
+    timeout_seconds: 120
+    max_retries_per_action: 2
+
+  extra_details: |
+    Click the large input labeled 'What needs to be done?' and type 'Buy groceries',
+    then press Enter. Type 'Read a book' in the same input and press Enter.
+    Each item has a circular checkbox on its left  - click it for 'Buy groceries'
+    to mark it complete (it gets a strikethrough style).
+    The footer has three filter links: 'All', 'Active', 'Completed'  - click 'Active'.
+    After clicking Active, only 'Read a book' should be visible and the footer
+    should say '1 item left'.
+
+  steps:
+    checkpoints:
+      - id: S1
+        description: |
+          Click the 'What needs to be done?' input, type 'Buy groceries', press Enter.
+        success_signal: |
+          'Buy groceries' appears as a to-do item. Footer shows '1 item left'.
+
+      - id: S2
+        description: |
+          Click the same input, type 'Read a book', press Enter.
+        success_signal: |
+          Both 'Buy groceries' and 'Read a book' appear in the list.
+          Footer shows '2 items left'.
+
+      - id: S3
+        description: |
+          Click the circular checkbox to the left of 'Buy groceries' to complete it.
+        success_signal: |
+          'Buy groceries' has a strikethrough and its checkbox is checked.
+          Footer now shows '1 item left'.
+
+      - id: S4
+        description: |
+          Click the 'Active' filter link at the bottom of the list.
+        success_signal: |
+          Only 'Read a book' is visible. Footer shows '1 item left' and the
+          'Active' filter link is highlighted. Goal is complete.
+
+on_failure:
+  capture:
+    screenshot: true
+    dom_snapshot: true
+    network_log: true
+    console_log: true
+    agent_trace: true
+    video: true
+  notify: {}
