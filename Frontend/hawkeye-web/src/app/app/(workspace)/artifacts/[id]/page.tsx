@@ -57,6 +57,30 @@ function KpiCard({ label, value, sub }: { label: string; value: string; sub?: st
   );
 }
 
+function VideoRecordingCard({ videoArtifact, isFail }: { videoArtifact: ArtifactMeta; isFail: boolean }) {
+  return (
+    <Card data-print-hide className={cn("border-border/60 bg-card/50", isFail && "border-rose-500/40")}>
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Film className="size-4 text-primary" />
+          Session Recording
+          {isFail && (
+            <span className="ml-2 text-xs font-normal text-rose-400">Run failed — review the recording</span>
+          )}
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <video
+          src={`${API_URL}${videoArtifact.url}`}
+          controls
+          className="w-full rounded-lg border border-border/40 bg-black"
+          style={{ maxHeight: "400px" }}
+        />
+      </CardContent>
+    </Card>
+  );
+}
+
 function ScreenshotGallery({ screenshots }: { screenshots: ArtifactMeta[] }) {
   const [lightbox, setLightbox] = useState<string | null>(null);
   return (
@@ -332,30 +356,12 @@ export default function ArtifactDetailPage({ params }: { params: Promise<{ id: s
         </div>
 
         {/* ── Video Recording ─────────────────────────────────────────────────── */}
-        {videoArtifact && (() => {
-          const isFail = run.status === "failed" || run.status === "errored";
-          return (
-            <Card data-print-hide className={cn("border-border/60 bg-card/50", isFail && "border-rose-500/40")}>
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Film className="size-4 text-primary" />
-                  Session Recording
-                  {isFail && (
-                    <span className="ml-2 text-xs font-normal text-rose-400">Run failed — review the recording</span>
-                  )}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <video
-                  src={`${API_URL}${videoArtifact.url}`}
-                  controls
-                  className="w-full rounded-lg border border-border/40 bg-black"
-                  style={{ maxHeight: "400px" }}
-                />
-              </CardContent>
-            </Card>
-          );
-        })()}
+        {videoArtifact && (
+          <VideoRecordingCard
+            videoArtifact={videoArtifact}
+            isFail={run.status === "failed" || run.status === "errored"}
+          />
+        )}
 
         {/* ── Execution Timeline (steps + inline screenshots) ─────────────────── */}
         <Card data-print-card className="border-border/60 bg-card/50">
