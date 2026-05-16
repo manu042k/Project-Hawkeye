@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useTestCases, useCreateRun } from "@/lib/api/hooks";
 import { apiClient, type TestCaseInfo, type Environment } from "@/lib/api/client";
 import { useProjectStore } from "@/lib/project/store";
@@ -26,7 +26,7 @@ const MODEL_PRESETS = [
 ];
 
 function NewRunPageInner() {
-  const projectId = useProjectStore((s) => s.currentProject?.id ?? "default");
+  const { projectId = "default" } = useParams<{ projectId: string }>();
   const searchParams = useSearchParams();
   const preselectedTcId = searchParams.get("tc"); // from /test-cases/:id "Run" button
 
@@ -128,7 +128,7 @@ function NewRunPageInner() {
                   <div className="rounded-lg border border-dashed border-border/60 bg-muted/10 px-4 py-5 text-center">
                     <p className="text-sm font-medium">No test cases in this project</p>
                     <p className="mt-1 text-xs text-muted-foreground">Create a test case first, then come back to run it.</p>
-                    <Link href="/app/test-cases" className={cn(buttonVariants({ variant: "outline", size: "sm" }), "mt-3 gap-1.5")}>
+                    <Link href={`/app/${projectId}/test-cases`} className={cn(buttonVariants({ variant: "outline", size: "sm" }), "mt-3 gap-1.5")}>
                       Go to Test Cases
                     </Link>
                   </div>
@@ -287,7 +287,7 @@ function NewRunPageInner() {
           </div>
 
           <div className="flex items-center justify-end gap-3 border-t border-border/60 pt-6">
-            <Link href="/app/dashboard" className={cn(buttonVariants({ variant: "outline" }))}>
+            <Link href={`/app/${projectId}/dashboard`} className={cn(buttonVariants({ variant: "outline" }))}>
               Cancel
             </Link>
             <Button

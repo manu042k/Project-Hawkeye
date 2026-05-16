@@ -2,7 +2,7 @@
 
 import { use, useState, useEffect } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
   ArrowLeft,
@@ -269,7 +269,7 @@ export default function TestCaseDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id: tcId } = use(params);
-  const projectId = useProjectStore((s) => s.currentProject?.id ?? "default");
+  const { projectId = "default" } = useParams<{ projectId: string }>();
   const router = useRouter();
   const { data: session } = useSession();
 
@@ -429,7 +429,7 @@ export default function TestCaseDetailPage({
       setActiveCheckpoint(cps.length > 0 ? 0 : null);
     } catch {
       toast.error("Failed to load test case");
-      router.push("/app/test-cases");
+      router.push(`/app/${projectId}/test-cases`);
     } finally {
       setLoading(false);
     }
@@ -533,7 +533,7 @@ export default function TestCaseDetailPage({
           body,
         );
         toast.success("Test case created");
-        router.push(`/app/test-cases/${created.id}`);
+        router.push(`/app/${projectId}/test-cases/${created.id}`);
         return;
       }
       await apiClient.updateProjectTestCase(projectId, tcId, body);
@@ -621,7 +621,7 @@ export default function TestCaseDetailPage({
           {/* Header */}
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <Link
-              href="/app/test-cases"
+              href={`/app/${projectId}/test-cases`}
               className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
             >
               <ArrowLeft className="size-3.5" /> Test cases
@@ -1140,7 +1140,7 @@ export default function TestCaseDetailPage({
                 runs.map((r) => (
                   <Link
                     key={r.run_id}
-                    href={`/app/artifacts/${r.run_id}`}
+                    href={`/app/${projectId}/artifacts/${r.run_id}`}
                     className="flex items-center gap-3 rounded-lg border border-border/60 bg-card/50 px-4 py-3 hover:border-border transition-colors"
                   >
                     <span

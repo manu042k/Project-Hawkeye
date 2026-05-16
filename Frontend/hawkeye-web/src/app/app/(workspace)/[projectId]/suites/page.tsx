@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useCallback } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import {
   Calendar, CheckSquare, ChevronDown, ChevronRight,
   Clock, Folder, GitBranch, GripVertical, Play, Plus, Search, Square, Trash2, X, Zap,
@@ -684,11 +684,13 @@ function UnassignedTestCases({
 
 function SuiteRow({
   suite,
+  projectId,
   onDelete,
   onRun,
   onManageTests,
 }: {
   suite: SuiteSummary;
+  projectId: string;
   onDelete: (id: string, name: string) => void;
   onRun: (s: SuiteSummary) => void;
   onManageTests: (s: SuiteSummary) => void;
@@ -713,7 +715,7 @@ function SuiteRow({
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <Link href={`/app/suites/${suite.id}`} className="text-sm font-semibold hover:underline truncate" onClick={(e) => e.stopPropagation()}>
+            <Link href={`/app/${projectId}/suites/${suite.id}`} className="text-sm font-semibold hover:underline truncate" onClick={(e) => e.stopPropagation()}>
               {suite.name}
             </Link>
             <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-mono text-muted-foreground">
@@ -779,7 +781,7 @@ function SuiteRow({
 
 export default function SuitesPage() {
   const project = useProjectStore((s) => s.currentProject);
-  const projectId = project?.id ?? "default";
+  const { projectId = project?.id ?? "default" } = useParams<{ projectId: string }>();
   const router = useRouter();
   const [q, setQ] = useState("");
   const [suites, setSuites] = useState<SuiteSummary[]>([]);
@@ -838,7 +840,7 @@ export default function SuitesPage() {
     try {
       const res = await apiClient.runSuite(projectId, suiteId, { model });
       toast.success(`Queued ${res.total} test(s)`);
-      router.push("/app/runs/live");
+      router.push(`/app/${projectId}/runs/live`);
     } catch (e) {
       toast.error(`Failed to run suite: ${e instanceof Error ? e.message : "Unknown error"}`);
       throw e;
@@ -963,6 +965,7 @@ export default function SuitesPage() {
                 <SuiteRow
                   key={s.id}
                   suite={s}
+                  projectId={projectId}
                   onDelete={handleDelete}
                   onRun={setRunSuite}
                   onManageTests={setManageSuite}

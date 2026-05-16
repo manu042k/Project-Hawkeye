@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
 import { Search } from "lucide-react";
 
 import { AppTopbar } from "@/components/app/app-topbar";
@@ -11,7 +12,6 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 
 import { apiClient, type Baseline } from "@/lib/api/client";
-import { useProjectStore } from "@/lib/project/store";
 import { cn } from "@/lib/utils";
 
 function StatusBadge({ status }: { status: Baseline["status"] }) {
@@ -42,7 +42,7 @@ function DiffBar({ pct }: { pct: number | null }) {
 }
 
 export default function VisualBaselinesPage() {
-  const projectId = useProjectStore((s) => s.currentProject?.id ?? "default");
+  const { projectId = "default" } = useParams<{ projectId: string }>();
   const [tab, setTab] = useState<"pending_review" | "approved" | "rejected">("pending_review");
   const [q, setQ] = useState("");
   const [baselines, setBaselines] = useState<Baseline[]>([]);

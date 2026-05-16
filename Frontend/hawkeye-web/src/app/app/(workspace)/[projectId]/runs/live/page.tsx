@@ -2,7 +2,7 @@
 
 import { Suspense, useMemo, useRef, useEffect, useState } from "react";
 import Link from "next/link";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { CheckCircle2, Cpu, Globe, Monitor, Plus, Terminal as TerminalIcon, User, Video, XCircle } from "lucide-react";
 
 import { AppTopbar } from "@/components/app/app-topbar";
@@ -299,7 +299,7 @@ function RunConfigAndBrowser({ run, novncUrl, status }: {
 
 // ---- Run detail panel ----
 
-function RunDetailPanel({ runId }: { runId: string }) {
+function RunDetailPanel({ runId, projectId }: { runId: string; projectId: string }) {
   const { events, liveStatus } = useRunTraceStream(runId);
   const { data: run, refetch: refetchRun } = useRun(runId);
   const { deleteRun } = useDeleteRun();
@@ -358,7 +358,7 @@ function RunDetailPanel({ runId }: { runId: string }) {
         <div className="ml-auto flex items-center gap-2">
           {isDone ? (
             <Link
-              href={`/app/artifacts/${runId}`}
+              href={`/app/${projectId}/artifacts/${runId}`}
               className={cn(buttonVariants({ variant: "default", size: "sm" }), "h-7 gap-1.5 text-xs")}
             >
               <CheckCircle2 className="size-3.5" />
@@ -454,7 +454,7 @@ function LiveExecutionInner() {
   const [newRunOpen, setNewRunOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
 
-  const projectId = useProjectStore((s) => s.currentProject?.id ?? null);
+  const { projectId = null } = useParams<{ projectId: string }>();
   const { data: runs } = useProjectRuns(projectId);
 
   // Tick every second to update elapsed times for active runs
@@ -539,7 +539,7 @@ function LiveExecutionInner() {
             <>
               <Separator />
               <Link
-                href="/app/artifacts"
+                href={`/app/${projectId}/artifacts`}
                 className="flex items-center justify-center gap-1.5 px-4 py-3 text-xs text-muted-foreground hover:text-foreground transition-colors"
               >
                 {completedCount} completed run{completedCount !== 1 ? "s" : ""} in Artifacts →
@@ -550,7 +550,7 @@ function LiveExecutionInner() {
 
         {/* Right panel */}
         {selectedRunId ? (
-          <RunDetailPanel runId={selectedRunId} />
+          <RunDetailPanel runId={selectedRunId} projectId={projectId ?? "default"} />
         ) : (
           <div className="flex flex-1 items-center justify-center">
             <div className="text-center space-y-2">

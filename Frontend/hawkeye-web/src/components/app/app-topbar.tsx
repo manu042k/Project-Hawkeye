@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
   Bell, CheckCheck, CircleHelp, Menu, Search,
@@ -93,6 +93,8 @@ function NotificationBell() {
   const { markRead, markAllRead, remove } = useNotificationStore();
   const notifications = useNotifications();
   const count = unreadCount(notifications);
+  const params = useParams<{ projectId?: string }>();
+  const projectId = params.projectId;
 
   useNotificationFeeder();
 
@@ -158,7 +160,7 @@ function NotificationBell() {
         {notifications.length > 0 && (
           <div className="border-t border-border/60 px-4 py-2">
             <Link
-              href="/app/settings/project"
+              href={projectId ? `/app/${projectId}/settings/project` : "/app"}
               className="text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
               Manage alert preferences
@@ -181,6 +183,8 @@ export function AppTopbar({
   breadcrumbs,
 }: AppTopbarProps) {
   const { data: session } = useSession();
+  const params = useParams<{ projectId?: string }>();
+  const projectId = params.projectId;
 
   return (
     <header className="shrink-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/70">

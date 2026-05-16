@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useParams } from "next/navigation";
 import { Copy, Eye, EyeOff, MoreVertical, Plus, Search, Trash2 } from "lucide-react";
 
 import { AppTopbar } from "@/components/app/app-topbar";
@@ -19,7 +20,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
 import { apiClient, type VaultSecret } from "@/lib/api/client";
-import { useProjectStore } from "@/lib/project/store";
 import { cn } from "@/lib/utils";
 const ENV_OPTIONS = ["All Environments", "Production", "Staging", "Development"] as const;
 const TYPE_OPTIONS = ["All Types", "API Key", "Database", "Certificate", "Other"] as const;
@@ -37,7 +37,7 @@ function EnvBadge({ env }: { env: string }) {
 }
 
 export default function VaultPage() {
-  const projectId = useProjectStore((s) => s.currentProject?.id ?? "default");
+  const { projectId = "default" } = useParams<{ projectId: string }>();
   const [q, setQ] = useState("");
   const [env, setEnv] = useState("All Environments");
   const [typ, setTyp] = useState("All Types");

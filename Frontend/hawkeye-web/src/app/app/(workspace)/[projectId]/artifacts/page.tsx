@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { Archive, CheckCircle2, ChevronLeft, ChevronRight, Clock, Play, Search, SlidersHorizontal, XCircle } from "lucide-react";
 
 import { AppTopbar } from "@/components/app/app-topbar";
@@ -55,7 +55,7 @@ type StatusFilter = "all" | "passed" | "failed";
 
 export default function ArtifactsPage() {
   const router = useRouter();
-  const projectId = useProjectStore((s) => s.currentProject?.id ?? null);
+  const { projectId = "default" } = useParams<{ projectId: string }>();
   const { data: runs, loading } = useProjectRuns(projectId);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<StatusFilter>("all");
@@ -154,10 +154,10 @@ export default function ArtifactsPage() {
                 Finished runs land here with their full trace, screenshots, and assertion results.
               </p>
               <div className="mt-6 flex gap-2">
-                <Button size="sm" className="gap-1.5" onClick={() => router.push("/app/runs/new")}>
+                <Button size="sm" className="gap-1.5" onClick={() => router.push(`/app/${projectId}/runs/new`)}>
                   <Play className="size-3.5" /> Start a run
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => router.push("/app/test-cases")}>
+                <Button variant="outline" size="sm" onClick={() => router.push(`/app/${projectId}/test-cases`)}>
                   Browse test cases
                 </Button>
               </div>
@@ -181,7 +181,7 @@ export default function ArtifactsPage() {
                 {pageRows.map((run) => (
                   <tr
                     key={run.run_id}
-                    onClick={() => router.push(`/app/artifacts/${run.run_id}`)}
+                    onClick={() => router.push(`/app/${projectId}/artifacts/${run.run_id}`)}
                     className="cursor-pointer transition-colors hover:bg-muted/30 group"
                   >
                     <td className="px-4 py-3.5">
