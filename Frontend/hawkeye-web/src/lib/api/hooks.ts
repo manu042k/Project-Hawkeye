@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useProjectStore } from "@/lib/project/store";
 import {
   apiClient,
   type RunSummary,
@@ -186,6 +187,7 @@ export function useTestCases(): ApiState<TestCaseInfo[]> {
 
 export function useCreateRun() {
   const router = useRouter();
+  const projectId = useProjectStore((s) => s.currentProject?.id ?? "default");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -195,7 +197,7 @@ export function useCreateRun() {
       setError(null);
       try {
         const run = await apiClient.createRun(req);
-        router.push(`/app/runs/live?id=${run.run_id}`);
+        router.push(`/app/${projectId}/runs/live?id=${run.run_id}`);
       } catch (e) {
         setError(String(e));
         setLoading(false);

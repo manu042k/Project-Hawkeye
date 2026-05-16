@@ -28,7 +28,7 @@ export function useNotificationFeeder() {
       notifiedRef.current.add(run.run_id);
 
       const name = run.test_name ?? run.run_id.slice(0, 8);
-      const href = `/app/artifacts/${run.run_id}`;
+      const href = `/app/${projectId}/artifacts/${run.run_id}`;
 
       if ((run.status === "failed" || run.status === "errored") && prefs.onFailure) {
         add({

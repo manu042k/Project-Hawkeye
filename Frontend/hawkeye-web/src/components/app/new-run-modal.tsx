@@ -69,7 +69,7 @@ export function NewRunModal({ open, onClose, initialTestCaseId }: NewRunModalPro
         triggered_by: session?.user?.email ?? null,
       });
       onClose();
-      router.push(`/app/runs/live?id=${run.run_id}`);
+      router.push(`/app/${projectId}/runs/live?id=${run.run_id}`);
     } catch {
       toast.error("Failed to start run");
     } finally {

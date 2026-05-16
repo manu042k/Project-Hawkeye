@@ -74,7 +74,7 @@ export default function GlobalProjectSelectorPage() {
 function ProjectSelectorContent() {
   const router = useRouter();
   const params = useSearchParams();
-  const resume = params.get("resume") || "/app/dashboard";
+  const resume = params.get("resume") || "";
   const { setCurrentProject, setProjectForUser } = useProjectStore();
   const { data: session } = useSession();
 
