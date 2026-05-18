@@ -10,152 +10,187 @@ export type Post = {
 
 export const POSTS: Post[] = [
   {
-    slug: "why-vision-over-selectors",
-    title: "Why We Chose Vision Over Selectors",
+    slug: "web-testing-is-broken",
+    title: "Web Testing Is Broken — So We Built an Agent That Can See",
     excerpt:
-      "Traditional test frameworks break the moment a class name changes. We decided to give the agent eyes instead — here's what we learned.",
-    date: "2026-05-10",
+      "Every major testing framework relies on recorded scripts frozen in time. We decided to give our agent eyes instead, and it changed everything.",
+    date: "2026-05-15",
     readingTime: "5 min read",
-    category: "Architecture",
+    category: "Product",
     content: `
-Every test automation framework we evaluated had the same failure mode: a CSS selector rotted, a data-testid got renamed, a layout shifted — and a hundred tests went red for the wrong reason.
+Every QA engineer has felt this pain. You spend two days writing a test suite — thorough, clean, covering every user flow. Then the designer rounds a button's corners and changes one class name, and half your tests turn red overnight.
 
-We wanted Hawkeye to be different. Instead of selecting elements by identity, our agents observe the page the way a human QA engineer would: they take a screenshot, look at it, and decide what to do next.
+That's the fundamental problem with how we've been testing web applications for the past decade. Tools like Selenium and most codegen-based frameworks record scripts — rigid sequences of DOM queries frozen at a single moment in time. They don't understand the page. They match patterns.
 
-## How it works
+A human QA engineer doesn't work that way. They look at the page, read it visually, decide what to click based on what they see, and verify the result with their own eyes. They don't care what the button's class name is — they click the blue button that says "Submit."
 
-At every step the agent runs two things in parallel:
+That insight is the entire premise behind Project Hawkeye: what if tests could see?
 
-1. **A CDP screenshot** — a raw PNG of the current page state, base64-encoded and sent to the LLM as a vision message.
-2. **A Playwright MCP accessibility tree** — a structured text representation of interactive elements, used to generate precise tool calls (click, type, navigate).
+## The Visual Agent Approach
 
-The LLM gets both. It reasons from the screenshot ("I can see the checkout button in the bottom-right of the viewport") and acts on the accessibility tree ("browser_click(e42)"). The visual reasoning drives intent; the accessibility tree provides the reliable handle.
+At every step of a test, Hawkeye's agent does two things simultaneously. It takes a screenshot of the current browser state and captures the page's accessibility tree — a structured representation of every interactive element. Both go to a vision-capable language model.
 
-## The tradeoff
+The screenshot gives the agent spatial understanding: layout, color, visual hierarchy, error states. If there's a red toast notification in the corner, the agent sees it. If a modal has appeared, the agent sees that too. The accessibility tree gives the agent precision — exact references to elements it can click, type into, or select from.
 
-Vision adds latency and cost. Each step requires a multimodal LLM call instead of a fast deterministic selector lookup. For a 20-step test that's real money.
+This dual-input design is what separates Hawkeye from both traditional testing tools, which have no vision, and pure screenshot-based agents, which can see but lack precision for interaction.
 
-But here's what we found: vision-driven tests are dramatically more resilient to UI changes. In our internal test suite against SauceDemo, zero tests broke across three full UI refactors that would have invalidated dozens of CSS selectors.
+## Writing Tests That Adapt
 
-The economics work when you're testing critical paths — checkout, auth, onboarding — where the cost of a missed regression is orders of magnitude higher than the cost of a slightly more expensive test run.
+Instead of recording a sequence of clicks, you describe a goal in plain language: log in to the app and add the first product to the shopping cart. The agent figures out how to accomplish that goal by looking at what's actually on the screen.
+
+You can provide checkpoints — intermediate milestones the agent should hit in order. Or you can leave it completely open and let the agent plan its own route. The result is a test that doesn't break when you rename a class, move a button, or completely redesign the checkout flow.
+
+## What Happens When a Site Fights Back
+
+Not every test succeeds — and that's intentional. When we ran the agent against a site with aggressive bot detection, it hit a wall and received a CAPTCHA. Against a site that required login credentials it didn't have, it correctly identified the blocker within two steps and stopped.
+
+The agent doesn't crash on hostile sites. It reasons about what it sees, recognizes when the goal is blocked, and returns a clear result with its observations and reasoning. That behavior — graceful failure with evidence — is what makes it useful in a real CI pipeline rather than just a demo.
+
+## The Bigger Picture
+
+The goal of Project Hawkeye isn't to replace human QA. It's to automate the part of QA that's currently too brittle to automate reliably: visual verification against real, changing user interfaces. When a test passes in Hawkeye, it means an agent looked at your application the way a user would, followed a goal, and visually confirmed the outcome. That's a different kind of confidence.
     `.trim(),
   },
   {
-    slug: "building-with-langgraph",
-    title: "Building an AI Agent with LangGraph",
+    slug: "from-cli-to-saas-in-20-days",
+    title: "From CLI Tool to SaaS Platform in 20 Days",
     excerpt:
-      "LangGraph gave us a state machine that we could actually reason about. Here's how we modeled the OBSERVE → REASON → ACT loop.",
-    date: "2026-05-05",
-    readingTime: "7 min read",
-    category: "Engineering",
-    content: `
-When we started building the Hawkeye agent we tried a simple ReAct loop first — system prompt, user message, tool calls, repeat. It worked for happy paths but fell apart on errors. We had no clean way to handle retries, guard rails, or the distinction between "goal complete" and "goal blocked."
-
-LangGraph gave us the right abstraction: a directed state graph where each node is a function and edges are routing decisions.
-
-## The graph
-
-Our state machine has six nodes:
-
-- **OBSERVE** — waits for page stability, takes a screenshot, reads the accessibility tree
-- **REASON** — sends screenshot + tree to the LLM, gets back a reasoning trace and a tool call
-- **GUARD_RAILS** — checks the proposed action against policy (no cross-domain navigation, no destructive actions outside the target)
-- **ACT** — executes the tool call via Playwright MCP or custom tools
-- **GOAL_CHECK** — scans the LLM output for \`<GOAL_COMPLETE>\` or \`<GOAL_BLOCKED>\` signals
-- **FINALIZE** — runs assertions, saves artifacts, emits the final report
-
-The cleanest insight from building this: putting GUARD_RAILS between REASON and ACT meant we could freely let the LLM reason without worrying about it doing something dangerous. The guard is a separate, deterministic function — no LLM involved, no hallucination risk.
-
-## Error recovery
-
-The ERROR_HANDLER node classifies failures and decides whether to retry (MCP reconnect, transient timeout) or terminate (fatal browser crash, max steps exceeded). Because it's a node in the graph, it can inject recovery messages into the conversation context and route back to OBSERVE — the agent literally continues from where it failed, with context about what went wrong.
-
-This turned out to be one of the most valuable features in production. Sandbox containers occasionally hiccup. Without recovery logic, any transient error would fail the whole run.
-    `.trim(),
-  },
-  {
-    slug: "multi-llm-architecture",
-    title: "How We Made Hawkeye Model-Agnostic",
-    excerpt:
-      "GPT-4o, Claude, Gemini, NVIDIA NIM, Ollama — the same test runs on all of them. Here's the abstraction layer that makes it work.",
-    date: "2026-04-28",
-    readingTime: "4 min read",
-    category: "Engineering",
-    content: `
-One of the earliest product decisions we made: no LLM lock-in. A user should be able to run the same test with GPT-4o on Monday and switch to a local Ollama model on Tuesday without touching their test definition.
-
-## The provider string
-
-Every run takes a \`model\` parameter in the format \`provider:model-name\`:
-
-- \`openrouter:openai/gpt-4o\`
-- \`nvidia:moonshotai/kimi-k2.6\`
-- \`ollama:llama3.2\`
-
-A small factory function parses the prefix and returns a LangChain \`BaseChatModel\` configured for that provider. The rest of the agent doesn't know or care which model it's talking to.
-
-## Vision capability detection
-
-Not all models can see screenshots. We maintain an \`is_vision_capable(model)\` function that checks the provider and model name against a known list. When vision is unavailable, the OBSERVE node skips the screenshot step and sends only the accessibility tree. The test still runs — it just loses the visual reasoning layer.
-
-This graceful degradation was important for Ollama users running smaller local models. They get a working agent, not a crash.
-
-## Cost differences in practice
-
-In our benchmarks, a 20-step checkout test costs roughly:
-- GPT-4o: ~$0.04
-- Claude Sonnet: ~$0.03
-- NVIDIA Kimi K2.6: ~$0.02
-- Ollama (local): $0.00
-
-The quality difference is real — GPT-4o and Claude catch more subtle visual anomalies — but for routine regression runs, the cheaper models perform well on well-defined goals.
-    `.trim(),
-  },
-  {
-    slug: "from-script-to-agent",
-    title: "From Flaky Scripts to Autonomous Agents",
-    excerpt:
-      "We killed our Selenium test suite and replaced it with 12 lines of YAML. Here's what the transition looked like.",
-    date: "2026-04-15",
+      "208 commits. 8 development epochs. One team building a complete AI-powered testing platform from scratch. Here's the honest retrospective.",
+    date: "2026-05-12",
     readingTime: "6 min read",
     category: "Product",
     content: `
-Our previous test setup was 340 lines of Selenium Python across 8 files. It took a junior engineer a full day to add a new test. It broke every time the design team shipped. The QA person spent more time fixing tests than writing them.
+We shipped the first version of Hawkeye — a command-line tool that could run a single test against a browser sandbox — in under a week. What followed was 20 days of building everything else: the API, the job queue, the real-time streaming, the frontend, the vault, the billing, the organization management, and the production hardening.
 
-The goal with Hawkeye was to reduce a new test to a declaration: what page, what goal, what counts as success.
+208 commits. Five layers of infrastructure. Two people doing the bulk of the work.
 
-## A test case in YAML
+## How We Structured the Build
 
-\`\`\`yaml
-id: TC-002b
-name: SauceDemo — add item to cart
-target:
-  url: https://www.saucedemo.com
-  browser: chromium
-goal: |
-  Log in as standard_user, add "Sauce Labs Backpack" to the cart,
-  and verify the cart badge shows 1 item.
-assertions:
-  - type: content
-    check: Cart badge displays "1"
-constraints:
-  max_steps: 20
-  timeout_seconds: 120
-\`\`\`
+We didn't build linearly. We built in epochs, each one unlocking the next.
 
-That's it. The agent figures out the rest — how to find the login form, what credentials to use (from the vault), how to navigate the product list, what "cart badge" means visually.
+Epoch one was the sandbox — a Docker container with a full browser, a virtual display, and a live VNC viewer so you could watch the agent work in real time. Without that, there was nothing for an agent to interact with.
 
-## What we gave up
+Epoch two was the agent itself — a state machine that could observe a page, reason about what to do, execute an action, and check whether the goal was complete. The state machine approach turned out to be far more valuable than a simple loop, because it gave us explicit places to add guard-rails, error recovery, and goal verification.
 
-Determinism. A scripted test does exactly the same thing every run. An agent might click a slightly different element, take a different path through the UI, use different reasoning. For some teams that's unacceptable.
+Epochs three and four turned the agent into a platform: a REST API, a job queue so tests could run in the background, WebSocket streaming so the frontend could show live progress, and a full multi-tenant SaaS with projects, test cases, vault secrets, schedules, and billing.
 
-Our answer: the *assertions* are deterministic. We don't care how the agent gets to the cart — we care that the cart badge shows "1". The goal and assertions define correctness; the agent defines the path.
+## The 94-Commit Sprint
 
-## What we gained
+Phase 6 — what we internally called production hardening — was the most intense period. 94 commits in six days, across seven parallel tracks: database persistence, auth middleware, Stripe billing, GitHub CI integration, organization management, and a dozen smaller fixes.
 
-Resilience and speed. When the design team moved the login button from the center of the page to the top-right corner, our Selenium tests broke. Our Hawkeye test didn't — the agent saw the button in its new position and clicked it.
+This is where the real engineering happened. Not building features, but making them reliable. Connection pools that broke under Celery's process model. Real-time log events that appeared one step late due to asyncio task scheduling. Guard-rails that had to maintain conversation validity when blocking an agent's action.
 
-New test time dropped from ~4 hours to ~15 minutes, mostly spent writing the goal statement and assertions clearly.
+Each of these bugs was invisible until we ran the system under real load with real LLM calls. That's the nature of distributed async systems — the problems don't show up in unit tests.
+
+## What We'd Do Differently
+
+We'd invest earlier in observability. The hardest bugs to fix were the ones we couldn't see — events arriving late, connections silently failing on the second task, middleware running in the wrong order. Better internal logging from day one would have saved days of debugging.
+
+We'd also be more aggressive about the SQLite fallback from the start. One of the best decisions we made was designing the database layer so the entire stack runs with zero infrastructure — no PostgreSQL, no containers, just a local file. That made local development fast and iteration tight. We added it late; we should have started there.
+
+## What Surprised Us
+
+How much of the complexity was in the details, not the features. The features — visual agent, vault encryption, Stripe billing — each took hours to build. The details — flushing async tasks before the next operation, draining subprocess stderr to prevent pipe deadlocks, ordering middleware correctly so CORS preflight requests don't get rejected by auth — took days.
+
+That ratio is normal in production systems. The lesson is to allocate time accordingly.
+    `.trim(),
+  },
+  {
+    slug: "observable-browser-sandbox",
+    title: "Building an Observable Browser Sandbox",
+    excerpt:
+      "We needed a browser environment you could watch in real time, record as video, and control programmatically. Here's how we built it.",
+    date: "2026-05-08",
+    readingTime: "5 min read",
+    category: "Architecture",
+    content: `
+Running a browser in a Docker container is easy. Making it observable — where a human can watch it in real time, where the agent can take screenshots, where test runs can be recorded as video — turns out to require a carefully layered stack.
+
+We built the Hawkeye sandbox before we built the agent. The reasoning was simple: without an environment to test against, there's nothing to test. And without observability, debugging agent behavior would be guesswork.
+
+## The Five-Layer Stack
+
+The sandbox container runs five services simultaneously. A virtual display renders the browser to memory rather than a physical screen. A VNC server exposes that virtual display over the network. A WebSocket bridge makes VNC accessible from any browser tab. A noVNC viewer lets you watch the test run live in a browser window, without installing any client software.
+
+Alongside that, a protocol proxy exposes the browser's internal debugging interface to the outside world. This is how the agent captures screenshots, monitors network requests, and reads console output — through a separate channel from the browser actions themselves.
+
+And finally, when recording is enabled, a video encoder captures the virtual display continuously, encoding it to a standard video format that can be reviewed after the run.
+
+## Two Protocols, One Browser
+
+The most interesting architectural decision was using two separate protocols to communicate with the same browser instance.
+
+The first protocol handles actions: clicking, typing, navigating, reading the page structure. It's abstracted at the browser level, which means the same agent code works with Chromium, Firefox, and WebKit without modification.
+
+The second protocol handles observation: screenshots, network traffic, console messages, JavaScript evaluation. It connects to the browser's internal debugging interface directly.
+
+The separation exists because neither protocol does everything. The action protocol is deliberately limited — it exposes the interactions a user would perform, not internal browser data. The debugging protocol fills those gaps.
+
+The timing between them matters. During test setup, the agent navigates to the target page through the action protocol first, then connects the debugging session to the correct tab. Get that order wrong and the debugging session attaches to a blank tab.
+
+## Why Live Viewing Matters
+
+The noVNC live view turned out to be one of the most useful features we built, for reasons we didn't fully anticipate.
+
+The obvious use is debugging: when a test fails, you can watch the replay and understand exactly what the agent saw and why it made the decisions it made. But the more valuable use is trust-building. When a stakeholder can watch an AI agent navigate their application in real time — clicking buttons, filling forms, scrolling through content — the abstract concept of "AI testing" becomes concrete and legible. The VNC view is how we explain what Hawkeye actually does.
+
+## Container Isolation
+
+Each test run gets its own container. There's no shared state between runs, no cookie persistence across tests, no risk of one test's actions affecting another. When the run completes, the container is destroyed and everything inside it disappears.
+
+This isolation is what makes parallel execution safe. Two tests can run simultaneously against the same application without interfering with each other. The container pool pre-warms containers to eliminate the spawn latency — typically ten to fifteen seconds — from hot runs.
+    `.trim(),
+  },
+  {
+    slug: "hard-lessons-async-python",
+    title: "Three Hard Lessons from Running Async Python in Production",
+    excerpt:
+      "Connection pools that break between tasks. Events that arrive a step late. Pipes that deadlock silently. Here's what we learned the hard way.",
+    date: "2026-05-05",
+    readingTime: "6 min read",
+    category: "Engineering",
+    content: `
+Building Hawkeye involved a lot of async Python: an async web framework, an async database driver, an async job queue, and an async agent that runs for minutes at a time. Most of it worked smoothly. Three things did not, and each failure taught us something we hadn't known before.
+
+## Lesson One: Connection Pools Don't Survive Event Loop Changes
+
+The first time a background worker executed a test run, everything worked. The second time, it crashed with a cryptic error about a closed connection.
+
+The root cause took a while to find. Our job queue uses a process model where each task creates a brand new event loop. The database connection pool was created during the first task's event loop. On the second task, the pool tried to reuse connections from the old, now-closed loop — and the database driver correctly rejected them.
+
+The fix was conceptually simple once we understood the problem: don't pool connections across tasks. Use a pool that opens a fresh connection for every operation and closes it immediately. More overhead per query, but no cross-task state.
+
+The same bug existed in the Redis client. The global connection singleton was bound to the first task's event loop. We fixed it by detecting when the current loop differs from when the connection was created, and recreating the connection pool when that happens.
+
+The lesson: in a process-based task queue with asyncio, treat every task as a fresh process. Any connection created outside a task's event loop will eventually fail.
+
+## Lesson Two: Scheduling a Task Is Not Executing It
+
+Our live trace streaming system showed a strange symptom: every log event appeared one step late. The "observe" event showed up just as the "reason" phase started. The "reason" event appeared when "act" began.
+
+The agent was working correctly. The streaming was working correctly. But there was a one-step lag that made the live feed feel disconnected from reality.
+
+The root cause was a single line of code. When emitting a real-time event, we were scheduling the network publish rather than awaiting it. In Python's async model, a scheduled task only runs when the event loop gets control — which happens at the next await point. In our observe phase, the next await was the browser action call. In the reason phase, it was the LLM invocation.
+
+The fix was a single zero-second sleep after each emit. This yields control to the event loop for one iteration, forcing all pending scheduled tasks to execute before the next operation begins. It's a pattern that appears in async Python documentation but is easy to miss in practice.
+
+The lesson: scheduling and executing are not the same thing. If you need an async task to complete before the next operation, await it or explicitly yield to the event loop.
+
+## Lesson Three: Always Drain Subprocess Output
+
+On Windows, the agent would occasionally hang completely — no response from the browser control subprocess, no error message, just silence.
+
+The cause was a 65-kilobyte pipe buffer. The browser control process was writing diagnostic messages to its error output. Nobody was reading them. When the buffer filled, the subprocess blocked on its next write attempt. Because output streams share the same underlying process, the main output channel stopped producing responses too.
+
+The fix was a background task that continuously reads the error output for the lifetime of the subprocess, discarding or logging each line as it arrives. Simple, but easy to overlook.
+
+The lesson generalizes beyond Windows: whenever you spawn a subprocess, read all its output streams, always. Unread output will eventually block the process, and the failure mode — silent hang with no error message — is one of the hardest to diagnose.
+
+## The Pattern Across All Three
+
+All three bugs shared a structure: a resource that worked correctly in isolation, failed silently when the environment changed, and took significant investigation to diagnose because the error message pointed to a symptom rather than a cause.
+
+That's the nature of production async systems. The unit tests pass. The happy path works. The failures appear in the combination of concurrency, process model, and platform behavior that only shows up under real load. The best defense is aggressive logging and an understanding of where your runtime's assumptions can break.
     `.trim(),
   },
 ];
